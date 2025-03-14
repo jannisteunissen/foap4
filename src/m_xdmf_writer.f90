@@ -20,7 +20,7 @@ module m_xdmf_writer
 contains
 
   subroutine xdmf_write_blocks_2DCoRect(mpicomm, filename, n_blocks, nx, n_cc, &
-       cc_names, n_gc, origin, dr, cc_data, get_block_cc_data, time)
+       cc_names, n_gc, origin, dr, cc_data, get_block_cc_data, time, viewer)
     use mpi_f08
     type(MPI_comm), intent(in)  :: mpicomm !< MPI communicator
     character(len=*), intent(in)   :: filename            !< File name without extension
@@ -34,12 +34,24 @@ contains
     real(dp), intent(in), optional :: cc_data(nx(1), nx(2), n_cc, n_blocks) !< Cell-centered data
     procedure(subr_cc_data), optional :: get_block_cc_data   !< Method to get cell-centered data
     real(dp), intent(in), optional :: time                !< Simulation time
+    character(len=*), intent(in), optional :: viewer !< Which viewer (visit, paraview) will be used
 
-    integer :: my_unit, n, iv, mpirank, mpisize, ierr, rank, n_prev_blocks
-    integer, allocatable :: blocks_per_rank(:)
-    real(dp), allocatable :: cc_block(:, :, :)
+    integer                              :: my_unit, n, iv, mpirank, mpisize, ierr
+    integer                              :: rank, n_prev_blocks, coord_ix(2)
+    integer, allocatable                 :: blocks_per_rank(:)
+    real(dp), allocatable                :: cc_block(:, :, :)
     character(len=len_trim(filename)+10) :: binary_fname
-    character(len=5) :: suffix
+    character(len=20)                    :: suffix, for_viewer
+
+    for_viewer = "visit"; if (present(viewer)) for_viewer = viewer
+    select case (for_viewer)
+       case ("visit")
+          coord_ix = [1, 2]
+       case ("paraview")
+          coord_ix = [2, 1]
+       case default
+          error stop "viewer can be: visit, paraview"
+    end select
 
     call MPI_COMM_RANK(mpicomm, mpirank, ierr)
     call MPI_COMM_SIZE(mpicomm, mpisize, ierr)
@@ -109,10 +121,10 @@ contains
              write(my_unit, "(a)") &
                   '    <Geometry GeometryType="ORIGIN_DXDY">'
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 2, '">'
-             write(my_unit, *) origin(2, n), origin(1, n)
+             write(my_unit, *) origin(coord_ix, n)
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 2, '">'
-             write(my_unit, *) dr(2, n), dr(1, n)
+             write(my_unit, *) dr(coord_ix, n)
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a)") '    </Geometry>'
 

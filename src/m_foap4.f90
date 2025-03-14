@@ -1,4 +1,4 @@
-! Module for subdividing a grid into blocks
+! Main foap4 module
 module m_foap4
   use, intrinsic :: iso_c_binding
   use mpi_f08
@@ -95,6 +95,7 @@ module m_foap4
      integer  :: n_vars         ! Number of variables
      character(len=32), allocatable :: var_names(:)
 
+     real(dp) :: block_length(2) ! Length of blocks
      real(dp)             :: dr_lvl(2, 0:p4est_maxlevel-1)  ! Grid spacing per level
      integer, allocatable :: block_level(:) ! Level of each block
      real(dp), allocatable :: block_origin(:, :) ! Origin of each block
@@ -102,6 +103,8 @@ module m_foap4
      real(dp), allocatable :: uu(:, :, :, :) ! Block storage
      real(dp), allocatable :: uu_copy(:, :, :, :) ! Copy of block storage
 
+     integer, allocatable :: recv_offset(:) ! 0:mpisize offsets for receiving
+     integer, allocatable :: send_offset(:) ! 0:mpisize offsets for sending
      real(dp), allocatable :: recv_buffer(:)
      real(dp), allocatable :: send_buffer(:)
   end type foap4_t
@@ -114,13 +117,13 @@ module m_foap4
   public :: f4_get_quadrants
   public :: f4_cell_coord
   public :: f4_fill_ghostcell_buffers
-  public :: f4_exchange_ghostcell_buffers
+  public :: f4_exchange_buffers
   public :: f4_update_ghostcells
 
 contains
 
-  subroutine f4_initialize_grid(n_blocks_per_dim, block_length, bx, n_gc, n_vars, &
-       var_names, periodic, min_level, max_blocks, f4)
+  subroutine f4_initialize_grid(n_blocks_per_dim, block_length, bx, n_gc, &
+       n_vars, var_names, periodic, min_level, max_blocks, f4)
     integer, intent(in)          :: n_blocks_per_dim(2)
     real(dp), intent(in)         :: block_length(2)
     integer, intent(in)          :: bx(2)
@@ -138,6 +141,7 @@ contains
     f4%n_gc       = n_gc
     f4%n_vars     = n_vars
     f4%max_blocks = max_blocks
+    f4%block_length = block_length
 
     where (periodic)
        periodic_as_int = 1
@@ -173,13 +177,15 @@ contains
     i = max_blocks * 4 * face_gc%data_size
     allocate(f4%recv_buffer(i))
     allocate(f4%send_buffer(i))
+    allocate(f4%recv_offset(0:mpisize))
+    allocate(f4%send_offset(0:mpisize))
 
     f4%uu = 0.0_dp
 
     call f4_get_quadrants(f4)
 
     call f4_get_faces(bnd_face)
-    call f4_get_ghost_cell_pattern(f4, size(bnd_face), bnd_face, mpirank, mpisize)
+    call f4_get_ghost_cell_pattern(size(bnd_face), bnd_face, mpirank, mpisize)
 
   end subroutine f4_initialize_grid
 
@@ -197,24 +203,29 @@ contains
 
   subroutine f4_get_quadrants(f4)
     type(foap4_t), intent(inout) :: f4
+    integer                      :: n
 
     f4%n_blocks = f4_get_num_local_blocks()
-
     if (.not. allocated(f4%block_origin)) error stop "block_origin not allocated"
     if (.not. allocated(f4%block_level)) error stop "block_level not allocated"
     if (f4%n_blocks > f4%max_blocks) error stop "n_blocks > max_blocks"
 
     call pw_get_quadrants(f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks), &
          f4%block_level(1:f4%n_blocks))
+
+    do n = 1, f4%n_blocks
+       f4%block_origin(:, n) = f4%block_origin(:, n) * f4%block_length
+    end do
   end subroutine f4_get_quadrants
 
-  subroutine f4_write_grid(f4, fname, time)
+  subroutine f4_write_grid(f4, fname, time, viewer)
     use m_xdmf_writer
-    type(foap4_t), intent(in)      :: f4
-    character(len=*), intent(in)   :: fname
-    real(dp), intent(in), optional :: time
-    integer                        :: n
-    real(dp), allocatable          :: dr(:, :)
+    type(foap4_t), intent(in)              :: f4
+    character(len=*), intent(in)           :: fname
+    real(dp), intent(in), optional         :: time
+    character(len=*), intent(in), optional :: viewer
+    integer                                :: n
+    real(dp), allocatable                  :: dr(:, :)
 
     call pw_vtk_write_file(trim(fname) // C_null_char)
 
@@ -227,7 +238,7 @@ contains
     call xdmf_write_blocks_2DCoRect(mpicomm, trim(fname), &
          f4%n_blocks, f4%bx+2*f4%n_gc, f4%n_vars, &
          f4%var_names, f4%n_gc, f4%block_origin(:, 1:f4%n_blocks), dr, &
-         cc_data=f4%uu(:, :, :, 1:f4%n_blocks), time=time)
+         cc_data=f4%uu(:, :, :, 1:f4%n_blocks), time=time, viewer=viewer)
   end subroutine f4_write_grid
 
   pure function f4_cell_coord(f4, i_block, i, j) result(rr)
@@ -248,8 +259,7 @@ contains
     call c_f_pointer(tmp, bnd_face, shape=[n_faces])
   end subroutine f4_get_faces
 
-  subroutine f4_get_ghost_cell_pattern(f4, n_faces, bnd_face, mpirank, mpisize)
-    type(foap4_t), intent(in)       :: f4
+  subroutine f4_get_ghost_cell_pattern(n_faces, bnd_face, mpirank, mpisize)
     integer, intent(in)             :: n_faces
     type(bnd_face_t), intent(inout) :: bnd_face(n_faces)
     integer, intent(in)             :: mpirank
@@ -294,6 +304,7 @@ contains
     ! received is always the same as the amount sent.
     allocate(face_gc%recv_offset(0:mpisize))
     face_gc%recv_offset(0) = 0
+
     do rank = 1, mpisize
        ! How much to receive from rank - 1
        if (rank-1 == mpirank) then
@@ -369,15 +380,12 @@ contains
              i_same_nonlocal = i_same_nonlocal + 1
 
              ! Location in recv and send buffer (with the same layout)
-             i_buf = face_gc%recv_offset(rank) + (n-1) * face_gc%data_size + 1
+             i_buf = face_gc%recv_offset(rank) + (n-1) * face_gc%data_size
 
              face_gc%same_nonlocal_from_buf(:, i_same_nonlocal) = &
                   [bnd_face(i)%quadid(1), i_buf, bnd_face(i)%face]
              face_gc%same_nonlocal_to_buf(:, i_same_nonlocal) = &
                   [bnd_face(j)%quadid(1), i_buf, bnd_face(j)%face]
-
-             ! if (mpirank == 0) print *, mpirank, rank, i, bnd_face(i)%quadid(1), bnd_face(i)%face, &
-             !      j, bnd_face(j)%quadid(2), bnd_face(j)%face, i_buf
           end do
 
        end if
@@ -466,131 +474,166 @@ contains
 
   end subroutine sort_for_recv_or_send
 
-  subroutine f4_fill_ghostcell_buffers(f4, ivar)
+  subroutine f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: ivar
-    integer                      :: i, j, n
-    integer                      :: iq, ibuf, face
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer                      :: i, j, n, ivar, iv
+    integer                      :: iq, i_buf, face
+
+    if (maxval(face_gc%recv_offset) * n_vars > size(f4%send_buffer)) &
+         error stop "send buffer too small"
 
     associate (bx => f4%bx, n_gc => f4%n_gc)
       do n = 1, size(face_gc%same_nonlocal_to_buf, 2)
          ! +1 to account for index offset between C and Fortran
          iq = face_gc%same_nonlocal_to_buf(1, n) + 1
-         ibuf = face_gc%same_nonlocal_to_buf(2, n)
+         i_buf = face_gc%same_nonlocal_to_buf(2, n) * n_vars
          face = face_gc%same_nonlocal_to_buf(3, n)
 
          select case (face)
          case (0)
-            do j = 1, bx(2)
-               do i = 1, n_gc
-                  f4%send_buffer(ibuf) = f4%uu(i, j, ivar, iq)
-                  ibuf = ibuf + 1
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, bx(2)
+                  do i = 1, n_gc
+                     i_buf = i_buf + 1
+                     f4%send_buffer(i_buf) = f4%uu(i, j, ivar, iq)
+                  end do
                end do
             end do
          case (1)
-            do j = 1, bx(2)
-               do i = 1, n_gc
-                  f4%send_buffer(ibuf) = f4%uu(bx(1)-n_gc+i, j, ivar, iq)
-                  ibuf = ibuf + 1
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, bx(2)
+                  do i = 1, n_gc
+                     i_buf = i_buf + 1
+                     f4%send_buffer(i_buf) = f4%uu(bx(1)-n_gc+i, j, ivar, iq)
+                  end do
                end do
             end do
          case (2)
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  f4%send_buffer(ibuf) = f4%uu(i, j, ivar, iq)
-                  ibuf = ibuf + 1
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, n_gc
+                  do i = 1, bx(1)
+                     i_buf = i_buf + 1
+                     f4%send_buffer(i_buf) = f4%uu(i, j, ivar, iq)
+                  end do
                end do
             end do
          case (3)
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  f4%send_buffer(ibuf) = f4%uu(i, bx(2)-n_gc+j, ivar, iq)
-                  ibuf = ibuf + 1
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, n_gc
+                  do i = 1, bx(1)
+                     i_buf = i_buf + 1
+                     f4%send_buffer(i_buf) = f4%uu(i, bx(2)-n_gc+j, ivar, iq)
+                  end do
                end do
             end do
          end select
       end do
     end associate
 
+    f4%recv_offset = face_gc%recv_offset * n_vars
+    f4%send_offset = face_gc%recv_offset * n_vars
   end subroutine f4_fill_ghostcell_buffers
 
-  subroutine f4_exchange_ghostcell_buffers(f4)
+  ! Exchange the receive and send buffers according to the specified offsets
+  ! per MPI rank
+  subroutine f4_exchange_buffers(f4)
     type(foap4_t), intent(inout) :: f4
-    type(MPI_Request) :: send_req(0:mpisize-1)
-    type(MPI_Request) :: recv_req(0:mpisize-1)
-    integer           :: n_transfer, ilo, ihi, ierr, rank
+    type(MPI_Request)            :: send_req(0:mpisize-1)
+    type(MPI_Request)            :: recv_req(0:mpisize-1)
+    integer                      :: n_send, n_recv, ilo, ihi, ierr, rank
+    integer, parameter           :: tag = 0
 
-    n_transfer = 0
+    n_send = 0
+    n_recv = 0
 
     do rank = 0, mpisize - 1
-       ilo = face_gc%recv_offset(rank) + 1
-       ihi = face_gc%recv_offset(rank+1)
+       ilo = f4%send_offset(rank) + 1
+       ihi = f4%send_offset(rank+1)
 
        if (ihi >= ilo) then
-          n_transfer = n_transfer + 1
-          call mpi_isend(f4%send_buffer(ilo:ihi), ihi-ilo+1, MPI_DOUBLE_PRECISION, &
-               rank, 0, mpicomm, send_req(n_transfer), ierr)
+          n_send = n_send + 1
+          call mpi_isend(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
+               MPI_DOUBLE_PRECISION, rank, tag, mpicomm, &
+               send_req(n_send), ierr)
+       end if
+
+       ilo = f4%recv_offset(rank) + 1
+       ihi = f4%recv_offset(rank+1)
+
+       if (ihi >= ilo) then
+          n_recv = n_recv + 1
           call mpi_irecv(f4%recv_buffer(ilo:ihi), ihi-ilo+1, MPI_DOUBLE_PRECISION, &
-               rank, 0, mpicomm, recv_req(n_transfer), ierr)
+               rank, 0, mpicomm, recv_req(n_recv), ierr)
        end if
     end do
 
-    call mpi_waitall(n_transfer, recv_req(1:n_transfer), MPI_STATUSES_IGNORE, ierr)
-    call mpi_waitall(n_transfer, send_req(1:n_transfer), MPI_STATUSES_IGNORE, ierr)
+    call mpi_waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
+    call mpi_waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
 
-    ! if (mpirank == 0) then
-    !    do rank = 0, mpisize - 1
-    !       ilo = face_gc%recv_offset(rank) + 1
-    !       ihi = face_gc%recv_offset(rank+1)
-    !       print *, "XX", rank, ilo, ihi, f4%recv_buffer(ilo:ihi)
-    !       print *, ""
-    !    end do
-    ! end if
-  end subroutine f4_exchange_ghostcell_buffers
+  end subroutine f4_exchange_buffers
 
-  subroutine f4_update_ghostcells(f4, ivar)
+  subroutine f4_update_ghostcells(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: ivar
-    integer                      :: n, i, j, iq, jq, face, ibuf
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer                      :: n, i, j, iq, jq, face, i_buf, iv, ivar
     real(dp)                     :: slope
 
-    call f4_fill_ghostcell_buffers(f4, ivar)
-    call f4_exchange_ghostcell_buffers(f4)
+    call f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
+    call f4_exchange_buffers(f4)
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
       do n = 1, size(face_gc%same_nonlocal_from_buf, 2)
          ! +1 to account for index offset between C and Fortran
          iq = face_gc%same_nonlocal_from_buf(1, n) + 1
-         ibuf = face_gc%same_nonlocal_from_buf(2, n)
+         i_buf = face_gc%same_nonlocal_from_buf(2, n) * n_vars
          face = face_gc%same_nonlocal_from_buf(3, n)
 
          select case (face)
          case (0)
-            do j = 1, bx(2)
-               do i = 1, n_gc
-                  uu(-n_gc+1, j, ivar, iq) = f4%recv_buffer(ibuf)
-                  ibuf = ibuf + 1
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, bx(2)
+                  do i = 1, n_gc
+                     i_buf = i_buf + 1
+                     uu(-n_gc+1, j, ivar, iq) = f4%recv_buffer(i_buf)
+                  end do
                end do
             end do
          case (1)
-            do j = 1, bx(2)
-               do i = 1, n_gc
-                  uu(bx(1)+i, j, ivar, iq) = f4%recv_buffer(ibuf)
-                  ibuf = ibuf + 1
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, bx(2)
+                  do i = 1, n_gc
+                     i_buf = i_buf + 1
+                     uu(bx(1)+i, j, ivar, iq) = f4%recv_buffer(i_buf)
+                  end do
                end do
             end do
          case (2)
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  uu(i, -n_gc+j, ivar, iq) = f4%recv_buffer(ibuf)
-                  ibuf = ibuf + 1
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, n_gc
+                  do i = 1, bx(1)
+                     i_buf = i_buf + 1
+                     uu(i, -n_gc+j, ivar, iq) = f4%recv_buffer(i_buf)
+                  end do
                end do
             end do
          case (3)
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  uu(i, bx(2)+j, ivar, iq) = f4%recv_buffer(ibuf)
-                  ibuf = ibuf + 1
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, n_gc
+                  do i = 1, bx(1)
+                     i_buf = i_buf + 1
+                     uu(i, bx(2)+j, ivar, iq) = f4%recv_buffer(i_buf)
+                  end do
                end do
             end do
          end select
@@ -602,19 +645,27 @@ contains
          face = face_gc%same_local(3, n)
 
          if (face == 1) then
-            do j = 1, bx(2)
-               do i = 1, n_gc
-                  uu(bx(1)+i, j, ivar, iq) = uu(i, j, ivar, jq)
-                  uu(-n_gc+i, j, ivar, jq) = uu(bx(1)-n_gc+i, j, ivar, iq)
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, bx(2)
+                  do i = 1, n_gc
+                     uu(bx(1)+i, j, ivar, iq) = uu(i, j, ivar, jq)
+                     uu(-n_gc+i, j, ivar, jq) = uu(bx(1)-n_gc+i, j, ivar, iq)
+                  end do
                end do
             end do
          else if (face == 3) then
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  uu(i, bx(2)+j, ivar, iq) = uu(i, j, ivar, jq)
-                  uu(i, -n_gc+j, ivar, jq) = uu(i, bx(2)-n_gc+j, ivar, iq)
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, n_gc
+                  do i = 1, bx(1)
+                     uu(i, bx(2)+j, ivar, iq) = uu(i, j, ivar, jq)
+                     uu(i, -n_gc+j, ivar, jq) = uu(i, bx(2)-n_gc+j, ivar, iq)
+                  end do
                end do
             end do
+         else
+            error stop "face not implemented"
          end if
       end do
 
@@ -624,31 +675,43 @@ contains
 
          select case (face)
          case (0)
-            do j = 1, bx(2)
-               slope = uu(2, j, ivar, iq) - uu(1, j, ivar, iq)
-               do i = 1, n_gc
-                  uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * slope
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, bx(2)
+                  slope = uu(2, j, ivar, iq) - uu(1, j, ivar, iq)
+                  do i = 1, n_gc
+                     uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * slope
+                  end do
                end do
             end do
          case (1)
-            do j = 1, bx(2)
-               slope = uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq)
-               do i = 1, n_gc
-                  uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * slope
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, bx(2)
+                  slope = uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq)
+                  do i = 1, n_gc
+                     uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * slope
+                  end do
                end do
             end do
          case (2)
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  slope = uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq)
-                  uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * slope
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, n_gc
+                  do i = 1, bx(1)
+                     slope = uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq)
+                     uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * slope
+                  end do
                end do
             end do
          case (3)
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  slope = uu(2, j, ivar, iq) - uu(1, j, ivar, iq)
-                  uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * slope
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, n_gc
+                  do i = 1, bx(1)
+                     slope = uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq)
+                     uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * slope
+                  end do
                end do
             end do
          end select
