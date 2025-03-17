@@ -9,6 +9,7 @@ module m_foap4
   integer, parameter, private :: dp = kind(0.0d0)
   integer, parameter :: P4EST_MAXLEVEL = 30
   integer, parameter :: face_swap(0:3) = [1, 0, 3, 2]
+  integer, parameter :: child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
 
   integer, parameter :: FACE_BOUNDARY = -1
   integer, parameter :: FACE_SAME_LEVEL = 0
@@ -28,6 +29,7 @@ module m_foap4
   end type bnd_face_t
 
   type face_gc_t
+     integer              :: mesh_revision = -1
      integer              :: data_size
      integer, allocatable :: recv_offset(:)
      integer, allocatable :: same_local(:, :)
@@ -35,6 +37,29 @@ module m_foap4
      integer, allocatable :: same_nonlocal_to_buf(:, :)
      integer, allocatable :: phys(:, :)
   end type face_gc_t
+
+  type, public :: foap4_t
+     integer   :: bx(2)                         ! Block size (cells)
+     integer   :: n_gc                          ! Number of ghost cells
+     integer   :: n_blocks                      ! Number of blocks used
+     integer   :: max_blocks                    ! Maximum number of blocks used
+     integer   :: n_vars                        ! Number of variables
+     real(dp)  :: tree_length(2)                ! Length of tree
+     real(dp)  :: dr_lvl(2, 0:p4est_maxlevel-1) ! Grid spacing per level
+     character(len=32), allocatable :: var_names(:) ! Names of the variables
+
+     ! The data per block
+     integer, allocatable  :: block_level(:)      ! Level of each block
+     real(dp), allocatable :: block_origin(:, :)  ! Origin of each block
+     real(dp), allocatable :: uu(:, :, :, :)      ! Block storage
+     integer, allocatable  :: refinement_flags(:) ! Refinement flags
+
+     ! For communication
+     integer, allocatable :: recv_offset(:) ! 0:mpisize offsets for receiving
+     integer, allocatable :: send_offset(:) ! 0:mpisize offsets for sending
+     real(dp), allocatable :: recv_buffer(:)
+     real(dp), allocatable :: send_buffer(:)
+  end type foap4_t
 
   interface
      subroutine pw_initialize_mpi_and_p4est(mpicomm, max_blocks) bind(c)
@@ -59,6 +84,11 @@ module m_foap4
        integer(c_int) :: n
      end function pw_get_num_local_quadrants
 
+     pure function pw_get_mesh_revision() result(n) bind(c)
+       import c_int
+       integer(c_int) :: n
+     end function pw_get_mesh_revision
+
      subroutine pw_get_quadrants(n_quadrants, coord, level) bind(c)
        import c_int, c_double
        integer(c_int), value, intent(in) :: n_quadrants
@@ -79,53 +109,35 @@ module m_foap4
        integer(c_int), intent(out) :: n_faces
        type(c_ptr), intent(out)    :: bnd_face_ptr
      end subroutine pw_get_all_faces
+
+     subroutine pw_adjust_refinement(n_quadrants, flags, has_changed) bind(c)
+       import
+       integer(c_int), value, intent(in) :: n_quadrants
+       integer(c_int), intent(in)        :: flags(n_quadrants)
+       integer(c_int), intent(out)       :: has_changed
+     end subroutine pw_adjust_refinement
   end interface
 
-  type(bnd_face_t), pointer :: bnd_face(:)
   type(face_gc_t)           :: face_gc
 
   type(MPI_comm), protected  :: mpicomm
   integer, public, protected :: mpirank, mpisize
 
-  type, public :: foap4_t
-     integer  :: bx(2)          ! Block size (cells)
-     integer  :: n_gc           ! Number of ghost cells
-     integer  :: n_blocks       ! Number of blocks used
-     integer  :: max_blocks     ! Maximum number of blocks used
-     integer  :: n_vars         ! Number of variables
-     character(len=32), allocatable :: var_names(:)
-
-     real(dp) :: block_length(2) ! Length of blocks
-     real(dp)             :: dr_lvl(2, 0:p4est_maxlevel-1)  ! Grid spacing per level
-     integer, allocatable :: block_level(:) ! Level of each block
-     real(dp), allocatable :: block_origin(:, :) ! Origin of each block
-
-     real(dp), allocatable :: uu(:, :, :, :) ! Block storage
-     real(dp), allocatable :: uu_copy(:, :, :, :) ! Copy of block storage
-
-     integer, allocatable :: recv_offset(:) ! 0:mpisize offsets for receiving
-     integer, allocatable :: send_offset(:) ! 0:mpisize offsets for sending
-     real(dp), allocatable :: recv_buffer(:)
-     real(dp), allocatable :: send_buffer(:)
-  end type foap4_t
-
   public :: f4_initialize_grid
   public :: f4_finalize_grid
-  public :: f4_get_ghost_cell_pattern
   public :: f4_write_grid
   public :: f4_get_num_local_blocks
-  public :: f4_get_quadrants
   public :: f4_cell_coord
-  public :: f4_fill_ghostcell_buffers
   public :: f4_exchange_buffers
   public :: f4_update_ghostcells
+  public :: f4_adjust_refinement
 
 contains
 
-  subroutine f4_initialize_grid(n_blocks_per_dim, block_length, bx, n_gc, &
+  subroutine f4_initialize_grid(n_blocks_per_dim, tree_length, bx, n_gc, &
        n_vars, var_names, periodic, min_level, max_blocks, f4)
     integer, intent(in)          :: n_blocks_per_dim(2)
-    real(dp), intent(in)         :: block_length(2)
+    real(dp), intent(in)         :: tree_length(2)
     integer, intent(in)          :: bx(2)
     integer, intent(in)          :: n_gc
     integer, intent(in)          :: n_vars
@@ -137,11 +149,14 @@ contains
 
     integer :: i, ierr, periodic_as_int(2)
 
+    if (bx(1) /= bx(2)) error stop "Unequal bx(:) not yet implemented"
+    if (any(iand(bx, 1) == 1)) error stop "All bx(:) have to be even"
+
     f4%bx         = bx
     f4%n_gc       = n_gc
     f4%n_vars     = n_vars
     f4%max_blocks = max_blocks
-    f4%block_length = block_length
+    f4%tree_length = tree_length
 
     where (periodic)
        periodic_as_int = 1
@@ -155,7 +170,7 @@ contains
     end do
 
     do i = 0, P4EST_MAXLEVEL-1
-       f4%dr_lvl(:, i) = (block_length/bx) * 0.5**i
+       f4%dr_lvl(:, i) = (tree_length/bx) * 0.5**i
     end do
 
     call pw_initialize_mpi_and_p4est(mpicomm%MPI_VAL, max_blocks)
@@ -168,6 +183,7 @@ contains
 
     allocate(f4%block_origin(2, max_blocks))
     allocate(f4%block_level(max_blocks))
+    allocate(f4%refinement_flags(max_blocks))
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, n_vars, max_blocks))
     f4%uu(:, :, :, :) = 0.0_dp
 
@@ -183,9 +199,6 @@ contains
     f4%uu = 0.0_dp
 
     call f4_get_quadrants(f4)
-
-    call f4_get_faces(bnd_face)
-    call f4_get_ghost_cell_pattern(size(bnd_face), bnd_face, mpirank, mpisize)
 
   end subroutine f4_initialize_grid
 
@@ -214,7 +227,7 @@ contains
          f4%block_level(1:f4%n_blocks))
 
     do n = 1, f4%n_blocks
-       f4%block_origin(:, n) = f4%block_origin(:, n) * f4%block_length
+       f4%block_origin(:, n) = f4%block_origin(:, n) * f4%tree_length
     end do
   end subroutine f4_get_quadrants
 
@@ -250,14 +263,22 @@ contains
     rr = f4%block_origin(:, i_block) + dr * [i-0.5_dp, j-0.5_dp]
   end function f4_cell_coord
 
-  subroutine f4_get_faces(bnd_face)
-    type(bnd_face_t), pointer, intent(out) :: bnd_face(:)
-    type(c_ptr)                            :: tmp
-    integer                                :: n_faces
+  subroutine f4_update_ghostcell_pattern(face_gc)
+    type(face_gc_t), intent(inout) :: face_gc
+    integer                        :: mesh_revision
+    type(bnd_face_t), pointer      :: bnd_face(:)
+    type(c_ptr)                    :: tmp
+    integer                        :: n_faces
+
+    mesh_revision = pw_get_mesh_revision()
+    if (mesh_revision == face_gc%mesh_revision) return
 
     call pw_get_all_faces(n_faces, tmp)
     call c_f_pointer(tmp, bnd_face, shape=[n_faces])
-  end subroutine f4_get_faces
+
+    call f4_get_ghost_cell_pattern(size(bnd_face), bnd_face, mpirank, mpisize)
+    face_gc%mesh_revision = mesh_revision
+  end subroutine f4_update_ghostcell_pattern
 
   subroutine f4_get_ghost_cell_pattern(n_faces, bnd_face, mpirank, mpisize)
     integer, intent(in)             :: n_faces
@@ -302,7 +323,8 @@ contains
 
     ! Determine (cumulatively) how much to receive from each rank. The amount
     ! received is always the same as the amount sent.
-    allocate(face_gc%recv_offset(0:mpisize))
+    if (.not. allocated(face_gc%recv_offset)) &
+         allocate(face_gc%recv_offset(0:mpisize))
     face_gc%recv_offset(0) = 0
 
     do rank = 1, mpisize
@@ -315,6 +337,13 @@ contains
 
        face_gc%recv_offset(rank) = face_gc%recv_offset(rank-1) + n
     end do
+
+    if (allocated(face_gc%same_local)) then
+       deallocate(face_gc%same_local, &
+            face_gc%phys, &
+            face_gc%same_nonlocal_from_buf, &
+            face_gc%same_nonlocal_to_buf)
+    end if
 
     ! Local ghost cell exchange at the same level
     allocate(face_gc%same_local(3, i_same(mpirank)))
@@ -585,6 +614,7 @@ contains
     integer                      :: n, i, j, iq, jq, face, i_buf, iv, ivar
     real(dp)                     :: slope
 
+    call f4_update_ghostcell_pattern(face_gc)
     call f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
     call f4_exchange_buffers(f4)
 
@@ -719,5 +749,167 @@ contains
     end associate
 
   end subroutine f4_update_ghostcells
+
+  subroutine f4_adjust_refinement(f4)
+    type(foap4_t), intent(inout) :: f4
+    integer                      :: n, n_blocks_new, n_blocks_old, k, iv
+    integer                      :: has_changed
+
+    f4%refinement_flags(1:f4%n_blocks) = 0
+    if (mpirank == 0) f4%refinement_flags(f4%n_blocks) = 1
+
+    n_blocks_old = f4%n_blocks
+    call pw_adjust_refinement(f4%n_blocks, f4%refinement_flags(1:f4%n_blocks), &
+         has_changed)
+
+    if (has_changed == 0) return
+
+    n_blocks_new = pw_get_num_local_quadrants()
+
+    if (n_blocks_new + f4%n_blocks > f4%max_blocks) &
+         error stop "Not enough memory for tree copy during refinement"
+
+    ! Copy blocks to end of list. The backward order ensures old data is not
+    ! overwritten before it is copied.
+    do n = n_blocks_old, 1, -1
+       call copy_block(f4, n, n_blocks_new+n)
+    end do
+
+    call f4_get_quadrants(f4)
+
+    k = n_blocks_new + 1
+    n = 1
+    do
+       select case (f4%block_level(n) - f4%block_level(k))
+       case (0)
+          ! Same refinement level
+          call copy_block(f4, k, n)
+          n = n + 1
+          k = k + 1
+       case (1)
+          ! Block has been refined
+          do iv = 1, f4%n_vars
+             call prolong_to_blocks(f4, k, n, iv)
+          end do
+          n = n + 4
+          k = k + 1
+       case (-1)
+          ! Block has been coarsened
+          do iv = 1, f4%n_vars
+             call coarsen_from_blocks(f4, k, n, iv)
+          end do
+          n = n + 1
+          k = k + 4
+       case default
+          error stop "Refinement: difference in levels > 1"
+       end select
+
+       if (n == n_blocks_new + 1) then
+          if (k /= n_blocks_new + n_blocks_old + 1) &
+               error stop "Refinement: loops do not end simultaneously"
+          exit
+       end if
+    end do
+  end subroutine f4_adjust_refinement
+
+  ! Copy block data
+  subroutine copy_block(f4, i_from, i_to)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: i_from, i_to
+    f4%block_origin(:, i_to) = f4%block_origin(:, i_from)
+    f4%block_level(i_to)     = f4%block_level(i_from)
+    f4%uu(:, :, :, i_to)     = f4%uu(:, :, :, i_from)
+  end subroutine copy_block
+
+  ! Coarsen a family of child blocks to their parent
+  subroutine coarsen_from_blocks(f4, i_from, i_to, iv)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: i_from
+    integer, intent(in)          :: i_to
+    integer, intent(in)          :: iv
+    integer                      :: n, i, j, i_c, j_c, i_f, j_f
+    integer                      :: half_bx(2), ix_offset(2)
+
+    half_bx = f4%bx / 2
+
+    do n = 1, 4
+       ix_offset = child_offset(:, n) * half_bx
+
+       do j = 1, half_bx(2)
+          j_c = j + ix_offset(2)
+          j_f = 2 * j - 1
+          do i = 1, half_bx(1)
+             i_c = i + ix_offset(1)
+             i_f = 2 * i - 1
+
+             f4%uu(i_c, j_c, iv, i_to) = 0.25_dp * (&
+                  f4%uu(i_f,   j_f, iv, i_from+n-1) + &
+                  f4%uu(i_f+1, j_f, iv, i_from+n-1) + &
+                  f4%uu(i_f,   j_f+1, iv, i_from+n-1) + &
+                  f4%uu(i_f+1, j_f+1, iv, i_from+n-1))
+          end do
+       end do
+    end do
+  end subroutine coarsen_from_blocks
+
+  ! Prolong to family of child blocks
+  subroutine prolong_to_blocks(f4, i_from, i_to, iv)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: i_from
+    integer, intent(in)          :: i_to
+    integer, intent(in)          :: iv
+    integer                      :: n, i, j, i_c, j_c, i_f, j_f
+    integer                      :: half_bx(2), ix_offset(2)
+    real(dp)                     :: f(0:2), slopes_a(2), slopes_b(2)
+
+    half_bx = f4%bx / 2
+
+    do n = 1, 4
+       ix_offset = child_offset(:, n) * half_bx
+
+       do j = 1, half_bx(2)
+          j_c = j + ix_offset(2)
+          j_f = 2 * j - 1
+          do i = 1, half_bx(1)
+             i_c = i + ix_offset(1)
+             i_f = 2 * i - 1
+
+             f(0) = f4%uu(i_c, j_c, iv, i_from)
+             slopes_a = [f4%uu(i_c, j_c, iv, i_from) - f4%uu(i_c-1, j_c, iv, i_from), &
+                  f4%uu(i_c, j_c, iv, i_from) - f4%uu(i_c, j_c-1, iv, i_from)]
+             slopes_b = [f4%uu(i_c+1, j_c, iv, i_from) - f4%uu(i_c, j_c, iv, i_from), &
+                  f4%uu(i_c, j_c+1, iv, i_from) - f4%uu(i_c, j_c, iv, i_from)]
+             f(1:2) = 0.25_dp * af_limiter_minmod(slopes_a, slopes_b)
+
+             f4%uu(i_f,   j_f, iv, i_to+n-1)   = f(0) - f(1) - f(2)
+             f4%uu(i_f+1, j_f, iv, i_to+n-1)   = f(0) + f(1) - f(2)
+             f4%uu(i_f,   j_f+1, iv, i_to+n-1) = f(0) - f(1) + f(2)
+             f4%uu(i_f+1, j_f+1, iv, i_to+n-1) = f(0) + f(1) + f(2)
+          end do
+       end do
+    end do
+  end subroutine prolong_to_blocks
+
+  !> Generalized minmod limiter. The parameter theta controls how dissipative
+  !> the limiter is, with 1 corresponding to the minmod limiter and 2 to the MC
+  !> limiter.
+  elemental function af_limiter_gminmod(a, b, theta) result(phi)
+    real(dp), intent(in) :: a, b, theta
+    real(dp)             :: phi
+
+    if (a * b > 0) then
+       phi = sign(minval(abs([theta * a, theta * b, &
+            0.5_dp * (a + b)])), a)
+    else
+       phi = 0.0_dp
+    end if
+  end function af_limiter_gminmod
+
+  elemental function af_limiter_minmod(a, b) result(phi)
+    real(dp), intent(in) :: a
+    real(dp), intent(in) :: b
+    real(dp)             :: phi
+    phi = af_limiter_gminmod(a, b, 1.0_dp)
+  end function af_limiter_minmod
 
 end module m_foap4

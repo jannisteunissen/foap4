@@ -12,8 +12,6 @@ const int FACE_COARSE_FINE = 1;
 /* Global variables */
 p4est_t              *p4est;
 p4est_connectivity_t *conn;
-p4est_ghost_t        *ghost;
-p4est_mesh_t         *mesh;
 sc_MPI_Comm           mpicomm;
 
 int n_faces = 0;
@@ -119,14 +117,6 @@ void pw_finalize_mpi_and_p4est() {
     p4est_connectivity_destroy (conn);
   }
 
-  if (ghost != NULL) {
-    p4est_ghost_destroy (ghost);
-  }
-
-  if (mesh != NULL) {
-    p4est_mesh_destroy (mesh);
-  }
-
   if (bnd_face != NULL) {
     free (bnd_face);
   }
@@ -186,8 +176,11 @@ void pw_vtk_write_file(char *fname) {
 
 /* Store information about all faces between quadrants */
 void pw_get_all_faces (int *n_faces_arg, bnd_face_t **bnd_face_arg) {
+  p4est_ghost_t        *ghost;
+  p4est_mesh_t         *mesh;
+
   const int compute_tree_index = 1;
-  const int compute_level_lists = 1;
+  const int compute_level_lists = 0;
 
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FACE);
   mesh = p4est_mesh_new_ext(p4est, ghost, compute_tree_index,
@@ -235,4 +228,60 @@ void pw_get_all_faces (int *n_faces_arg, bnd_face_t **bnd_face_arg) {
   *n_faces_arg = n_faces;
 
   free (ghost_rank);
+  p4est_mesh_destroy (mesh);
+  p4est_ghost_destroy (ghost);
+}
+
+/* callback to tell p4est which quadrants shall be refined */
+static int refine_function (p4est_t *p4est, p4est_topidx_t which_tree,
+                          p4est_quadrant_t *quadrant) {
+  return (quadrant->p.user_int > 0);
+}
+
+/* callback to tell p4est which quadrants shall be coarsened */
+static int coarsen_function (p4est_t *p4est, p4est_topidx_t which_tree,
+                             p4est_quadrant_t *quadrant[])
+{
+  int coarsen = 1;
+
+  for (int i = 0; i < P4EST_CHILDREN; ++i) {
+    coarsen = (coarsen && quadrant[i]->p.user_int < 0);
+  }
+  return coarsen;
+}
+
+int pw_get_mesh_revision() {
+  return p4est->revision;
+}
+
+void pw_adjust_refinement(const int n_quadrants, const int *flags,
+                          int *has_changed) {
+  p4est_topidx_t tt;
+  size_t         zz;
+  int            i_quad;
+  long           old_revision;
+
+  P4EST_ASSERT (n_quadrants == p4est->local_num_quadrants);
+  old_revision = p4est->revision;
+  i_quad = 0;
+
+  for (tt = p4est->first_local_tree; tt <= p4est->last_local_tree; ++tt) {
+    p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, tt);
+    sc_array_t *tquadrants = &tree->quadrants;
+    for (zz = 0; zz < tquadrants->elem_count; ++zz) {
+      p4est_quadrant_t *quadrant = p4est_quadrant_array_index (tquadrants, zz);
+      quadrant->p.user_int = flags[i_quad];
+      i_quad++;
+    }
+  }
+
+  /* adapt the new forest non-recursively */
+  p4est_refine (p4est, 0, refine_function, NULL);
+  p4est_coarsen (p4est, 0, coarsen_function, NULL);
+
+  /* P4EST_CONNECT_FULL is required for filling ghost cells near refinement
+     boundaries. */
+  p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
+
+  *has_changed = (p4est->revision > old_revision);
 }

@@ -4,9 +4,9 @@ program first_test
 
   implicit none
   integer, parameter :: dp = kind(0.0d0)
-  integer, parameter :: n_blocks_per_dim(2) = [1, 2]
+  integer, parameter :: n_blocks_per_dim(2) = [1, 1]
   real(dp), parameter :: block_length(2) = [1.0_dp, 1.0_dp]
-  integer, parameter :: bx(2) = [32, 32]
+  integer, parameter :: bx(2) = [16, 16]
   integer, parameter :: n_gc = 1
   integer, parameter :: n_vars = 2
   character(len=20) :: var_names(n_vars) = ['rho', 'phi']
@@ -22,10 +22,16 @@ program first_test
 
   call set_init_cond(f4)
 
-  call f4_write_grid(f4, "test_0", viewer="visit")
+  call f4_write_grid(f4, "test_0")
   call f4_update_ghostcells(f4, 2, [1, 2])
   call local_average(f4)
-  call f4_write_grid(f4, "test_1", viewer="visit")
+  call f4_write_grid(f4, "test_1")
+  call f4_update_ghostcells(f4, 2, [1, 2])
+
+  call f4_adjust_refinement(f4)
+  call f4_update_ghostcells(f4, 2, [1, 2])
+  call f4_write_grid(f4, "test_2")
+  call local_average(f4)
 
   call f4_finalize_grid(f4)
 

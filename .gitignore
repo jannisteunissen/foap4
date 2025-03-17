@@ -3,4 +3,5 @@
 *.xdmf
 *.pvtu
 *.visit
-
+*.o
+*.mod

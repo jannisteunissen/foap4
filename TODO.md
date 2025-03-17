@@ -26,3 +26,10 @@ Use p4est_iterate with the face callback.
 2. For each type of face, store how many to send/recv to each other proc
 
 Then, run with a different callback function that populates arrays with communication info and local exchanges.
+
+## Questions
+
+- Can refine and coarsen be combined with a single flag?
+- How to construct coarse grid hierarchy?
+- Is there a simpler way to get all faces for ghost cell communication?
+- Get cumulative index of quadrant in e.g. refine callback?
