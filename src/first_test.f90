@@ -30,8 +30,13 @@ program first_test
 
   call f4_adjust_refinement(f4)
   call f4_update_ghostcells(f4, 2, [1, 2])
-  call f4_write_grid(f4, "test_2")
   call local_average(f4)
+  call f4_write_grid(f4, "test_2")
+
+  call f4_adjust_refinement(f4)
+  call f4_update_ghostcells(f4, 2, [1, 2])
+  call local_average(f4)
+  call f4_write_grid(f4, "test_3")
 
   call f4_finalize_grid(f4)
 

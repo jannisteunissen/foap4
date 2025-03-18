@@ -5,49 +5,57 @@
 
 /* This file provides methods to use p4est from Fortran */
 
-const int FACE_BOUNDARY = -1;
-const int FACE_SAME_LEVEL = 0;
-const int FACE_COARSE_FINE = 1;
+const int FACE_BOUNDARY = 0;
+const int FACE_SAME_LEVEL = 1;
+const int FACE_COARSE_TO_FINE = 2;
+const int FACE_FINE_TO_COARSE = 3;
 
 /* Global variables */
 p4est_t              *p4est;
 p4est_connectivity_t *conn;
+p4est_ghost_t        *ghost;
 sc_MPI_Comm           mpicomm;
 
-int n_faces = 0;
+int global_n_faces = 0;
 
 typedef struct bnd_face {
   int face_type;
-  int face;                     /* In our geometries, one entry is enough */
-  int procs[2];
-  int treeid[2];
-  int quadid[3];                /* Size 3 for hanging faces */
+  int face;
+  int other_proc;
+  int quadid[2];
+  int extra;                    /* For hanging faces */
 } bnd_face_t;
 
 bnd_face_t *bnd_face;
 
 void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
-  p4est_iter_face_side_t *sides = (p4est_iter_face_side_t *) (info->sides.array);
+  int                     i, j;
+  sc_array_t             *trees;
+  int                    *ghost_rank;
+  p4est_tree_t           *tree;
+  p4est_iter_face_side_t *sides;
+  bnd_face_t             *bf;
+  int                     ghost_ix;
+  p4est_quadrant_t       *quad;
 
-  bnd_face_t *bf = &bnd_face[n_faces];
+  trees = (sc_array_t *) p4est->trees;
+  ghost_rank = (int *) user_data;
 
-  bf->treeid[0] = sides[0].treeid;
-  bf->quadid[2] = -2;
+  sides = (p4est_iter_face_side_t *) (info->sides.array);
+  bf = &bnd_face[global_n_faces];
 
   if (info->sides.elem_count == 1) {
+    /* A physical boundary, so there is just one full (and local) face side */
     bf->face_type = FACE_BOUNDARY;
     bf->face = sides[0].face;
 
-    /* A physical boundary, so there is one full and local face side */
-    bf->quadid[0] = sides[0].is.full.quadid;
-    bf->procs[0] = sides[0].is.full.is_ghost;
-    bf->procs[1] = sides[0].is.full.is_ghost;
-    bf->treeid[1] = -2;
+    tree = p4est_tree_array_index (trees, sides[0].treeid);
+    bf->quadid[0] = sides[0].is.full.quadid + tree->quadrants_offset;
+    bf->other_proc = p4est->mpirank;
     bf->quadid[1] = -2;
+    bf->extra = -2;
   } else if (sides[0].is_hanging | sides[1].is_hanging) {
     /* A coarse-to-fine interface */
-    bf->face_type = FACE_COARSE_FINE;
-
     p4est_iter_face_side_t *face_hanging, *face_full;
 
     if (sides[0].is_hanging) {
@@ -58,34 +66,88 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
       face_full = &sides[0];
     }
 
-    bf->face = face_full->face;
+    /* Store local side first */
+    if (face_full->is.full.is_ghost) {
+      /* The coarse side is a ghost */
+      bf->face_type = FACE_FINE_TO_COARSE;
+      bf->face = face_hanging->face;
 
-    /* Store coarse face as first entry */
-    bf->quadid[0] = face_full->is.full.quadid;
-    bf->procs[0] = face_full->is.full.is_ghost;
+      tree = p4est_tree_array_index (trees, face_hanging->treeid);
+      bf->quadid[0] = face_hanging->is.hanging.quadid[0] +
+        tree->quadrants_offset;
+      bf->extra = face_hanging->is.hanging.quadid[1]; /* same tree */
 
-    /* Store hanging faces */
-    bf->quadid[1] = face_hanging->is.hanging.quadid[0];
-    bf->quadid[2] = face_hanging->is.hanging.quadid[1];
+      /* Index in the ghost array has been stored */
+      ghost_ix = bf->quadid[1];
+      quad = (p4est_quadrant_t *) (ghost->ghosts.array +
+                                   ghost_ix * sizeof(p4est_quadrant_t));
 
-    bf->procs[1] = face_hanging->is.hanging.is_ghost[0];
+      bf->other_proc = ghost_rank[ghost_ix];
+      bf->quadid[1] = quad->p.piggy3.local_num;
+    } else if (face_full->is.hanging.is_ghost[0]) {
+      /* The fine side is a ghost */
+      bf->face_type = FACE_COARSE_TO_FINE;
+      bf->face = face_full->face;
 
-    /* The two hanging faces should be on the same rank */
-    P4EST_ASSERT (face_hanging->is.hanging.is_ghost[0] ==
-                  face_hanging->is.hanging.is_ghost[1]);
+      tree = p4est_tree_array_index (trees, face_full->treeid);
+      bf->quadid[0] = face_full->is.full.quadid + tree->quadrants_offset;
+
+      ghost_ix = face_hanging->is.hanging.quadid[0];
+      bf->other_proc = ghost_rank[ghost_ix];
+      quad = (p4est_quadrant_t *) (ghost->ghosts.array +
+                                   ghost_ix * sizeof(p4est_quadrant_t));
+      bf->quadid[1] = quad->p.piggy3.local_num;
+
+      ghost_ix = face_hanging->is.hanging.quadid[1];
+      quad = (p4est_quadrant_t *) (ghost->ghosts.array +
+                                   ghost_ix * sizeof(p4est_quadrant_t));
+      bf->extra = quad->p.piggy3.local_num;
+    } else {
+      /* Coarse and fine side are local */
+      bf->face_type = FACE_COARSE_TO_FINE;
+      bf->face = face_full->face;
+
+      tree = p4est_tree_array_index (trees, face_full->treeid);
+      bf->quadid[0] = face_full->is.full.quadid + tree->quadrants_offset;
+
+      bf->other_proc = p4est->mpirank;
+      tree = p4est_tree_array_index (trees, face_hanging->treeid);
+      bf->quadid[1] = face_hanging->is.hanging.quadid[0] +
+        tree->quadrants_offset;
+      bf->extra = face_hanging->is.hanging.quadid[1] +
+        tree->quadrants_offset; /* same tree */
+    }
   } else {
+    /* Boundary at the same refinement level */
+
+    /* Store local side first */
+    i = sides[0].is.full.is_ghost; /* 1 or 0 */
+    j = !i;
+
     /* Two faces at the same refinement level */
     bf->face_type = FACE_SAME_LEVEL;
-    bf->face = sides[0].face;
-    bf->treeid[1] = sides[1].treeid;
-    bf->quadid[0] = sides[0].is.full.quadid;
-    bf->quadid[1] = sides[1].is.full.quadid;
+    bf->face      = sides[i].face;
 
-    bf->procs[0] = sides[0].is.full.is_ghost;
-    bf->procs[1] = sides[1].is.full.is_ghost;
+    tree = p4est_tree_array_index (trees, sides[0].treeid);
+    bf->quadid[0] = sides[0].is.full.quadid + tree->quadrants_offset;
+
+    if (sides[j].is.full.is_ghost) {
+      ghost_ix = sides[j].is.full.quadid;
+      quad = (p4est_quadrant_t *) (ghost->ghosts.array +
+                                   ghost_ix * sizeof(p4est_quadrant_t));
+
+      bf->other_proc = ghost_rank[ghost_ix];
+      bf->quadid[1] = quad->p.piggy3.local_num;
+
+    } else {
+      bf->other_proc = p4est->mpirank;
+      tree = p4est_tree_array_index (trees, sides[j].treeid);
+      bf->quadid[1] = sides[j].is.full.quadid + tree->quadrants_offset;
+    }
+    bf->extra = -2;
   }
 
-  n_faces++;
+  global_n_faces++;
 }
 
 /* Initialize MPI and p4est */
@@ -176,8 +238,7 @@ void pw_vtk_write_file(char *fname) {
 
 /* Store information about all faces between quadrants */
 void pw_get_all_faces (int *n_faces_arg, bnd_face_t **bnd_face_arg) {
-  p4est_ghost_t        *ghost;
-  p4est_mesh_t         *mesh;
+  p4est_mesh_t  *mesh;
 
   const int compute_tree_index = 1;
   const int compute_level_lists = 0;
@@ -195,37 +256,11 @@ void pw_get_all_faces (int *n_faces_arg, bnd_face_t **bnd_face_arg) {
     }
   }
 
-  n_faces = 0;
-
-  p4est_iterate (p4est, ghost, NULL, NULL, callback_get_faces, NULL);
-
-  /* Change quadids for ghosts to actual ids */
-  for (int n = 0; n < n_faces; n++) {
-    for (int i = 0; i < 2; i++) {
-      if (bnd_face[n].procs[i]) {
-        /* Data from ghost */
-        bnd_face[n].procs[i] = ghost_rank[bnd_face[n].quadid[i]];
-
-        int qid = bnd_face[n].quadid[i];
-        p4est_quadrant_t *quad = (p4est_quadrant_t *)
-          (ghost->ghosts.array + qid * sizeof(p4est_quadrant_t));
-
-        /* This is the quadid cumulative over trees */
-        bnd_face[n].quadid[i] = quad->p.piggy3.local_num;
-      } else {
-        /* Local data */
-        bnd_face[n].procs[i] = p4est->mpirank;
-
-        /* Account for tree offset in quadid */
-        p4est_tree_t *tree;
-        tree = p4est_tree_array_index (p4est->trees, bnd_face[n].treeid[i]);
-        bnd_face[n].quadid[i] += tree->quadrants_offset;
-      }
-    }
-  }
+  global_n_faces = 0;
+  p4est_iterate (p4est, ghost, ghost_rank, NULL, callback_get_faces, NULL);
 
   *bnd_face_arg = bnd_face;
-  *n_faces_arg = n_faces;
+  *n_faces_arg = global_n_faces;
 
   free (ghost_rank);
   p4est_mesh_destroy (mesh);

@@ -11,10 +11,10 @@ module m_foap4
   integer, parameter :: face_swap(0:3) = [1, 0, 3, 2]
   integer, parameter :: child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
 
-  integer, parameter :: FACE_BOUNDARY = -1
-  integer, parameter :: FACE_SAME_LEVEL = 0
-  integer, parameter :: FACE_COARSE_FINE = 1
-  integer, parameter :: FACE_FINE_COARSE = 2
+  integer, parameter :: FACE_BOUNDARY = 0
+  integer, parameter :: FACE_SAME_LEVEL = 1
+  integer, parameter :: FACE_COARSE_TO_FINE = 2
+  integer, parameter :: FACE_FINE_TO_COARSE = 3
 
   type int_array_t
      integer, allocatable :: i(:)
@@ -23,9 +23,9 @@ module m_foap4
   type, bind(c) :: bnd_face_t
      integer(c_int) :: face_type
      integer(c_int) :: face
-     integer(c_int) :: procs(2)
-     integer(c_int) :: treeid(2)
-     integer(c_int) :: quadid(3)
+     integer(c_int) :: other_proc
+     integer(c_int) :: quadid(2)
+     integer(c_int) :: extra
   end type bnd_face_t
 
   type face_gc_t
@@ -35,6 +35,7 @@ module m_foap4
      integer, allocatable :: same_local(:, :)
      integer, allocatable :: same_nonlocal_from_buf(:, :)
      integer, allocatable :: same_nonlocal_to_buf(:, :)
+     integer, allocatable :: c2f_local(:, :)
      integer, allocatable :: phys(:, :)
   end type face_gc_t
 
@@ -303,18 +304,15 @@ contains
 
     ! Count different communication patterns
     do n = 1, n_faces
-       ! Ensure first processor is mpirank
-       call ensure_local_side_first(bnd_face(n), mpirank)
-
-       rank = bnd_face(n)%procs(2)
+       rank = bnd_face(n)%other_proc
 
        if (bnd_face(n)%face_type == FACE_SAME_LEVEL) then
           i_same(rank) = i_same(rank) + 1
        else if (bnd_face(n)%face_type == FACE_BOUNDARY) then
           i_phys = i_phys + 1
-       else if (bnd_face(n)%face_type == FACE_COARSE_FINE) then
+       else if (bnd_face(n)%face_type == FACE_COARSE_TO_FINE) then
           i_c2f(rank) = i_c2f(rank) + 1
-       else if (bnd_face(n)%face_type == FACE_FINE_COARSE) then
+       else if (bnd_face(n)%face_type == FACE_FINE_TO_COARSE) then
           i_f2c(rank) = i_f2c(rank) + 1
        else
           error stop "Unknown face type"
@@ -339,14 +337,19 @@ contains
     end do
 
     if (allocated(face_gc%same_local)) then
+       ! Deallocate, since they probably changed size
        deallocate(face_gc%same_local, &
             face_gc%phys, &
             face_gc%same_nonlocal_from_buf, &
-            face_gc%same_nonlocal_to_buf)
+            face_gc%same_nonlocal_to_buf, &
+            face_gc%c2f_local)
     end if
 
     ! Local ghost cell exchange at the same level
     allocate(face_gc%same_local(3, i_same(mpirank)))
+
+    ! Local ghost cell exchange at refinement boundaries
+    allocate(face_gc%c2f_local(4, i_c2f(mpirank)))
 
     ! Physical boundaries
     allocate(face_gc%phys(2, i_phys))
@@ -365,7 +368,7 @@ contains
     ! cell exchange. For other faces, store indices corresponding to different
     ! types/ranks.
     do n = 1, n_faces
-       rank = bnd_face(n)%procs(2)
+       rank = bnd_face(n)%other_proc
 
        if (bnd_face(n)%face_type == FACE_SAME_LEVEL) then
           i_same(rank) = i_same(rank) + 1
@@ -379,9 +382,16 @@ contains
        else if (bnd_face(n)%face_type == FACE_BOUNDARY) then
           i_phys = i_phys + 1
           face_gc%phys(:, i_phys) = [bnd_face(n)%quadid(1), bnd_face(n)%face]
-       else if (bnd_face(n)%face_type == FACE_COARSE_FINE) then
+       else if (bnd_face(n)%face_type == FACE_COARSE_TO_FINE) then
           i_c2f(rank) = i_c2f(rank) + 1
-       else if (bnd_face(n)%face_type == FACE_FINE_COARSE) then
+
+          if (rank == mpirank) then
+             face_gc%c2f_local(:, i_c2f(rank)) = [bnd_face(n)%quadid(1), &
+                  bnd_face(n)%quadid(2), bnd_face(n)%extra, bnd_face(n)%face]
+          else
+             error stop "c2f MPI not implemented"
+          end if
+       else if (bnd_face(n)%face_type == FACE_FINE_TO_COARSE) then
           i_f2c(rank) = i_f2c(rank) + 1
        else
           error stop "Unknown face type"
@@ -421,29 +431,6 @@ contains
     end do
 
   end subroutine f4_get_ghost_cell_pattern
-
-  ! Reorder so that procs(1) == mpirank
-  subroutine ensure_local_side_first(bnd_face, mpirank)
-    type(bnd_face_t), intent(inout) :: bnd_face
-    integer, intent(in)             :: mpirank
-
-    if (bnd_face%procs(1) == mpirank) then
-       return
-    else if (bnd_face%procs(2) == mpirank) then
-       ! Swap order
-       bnd_face%face = face_swap(bnd_face%face)
-       bnd_face%procs = [bnd_face%procs(2), bnd_face%procs(1)]
-       bnd_face%treeid = [bnd_face%treeid(2), bnd_face%treeid(1)]
-
-       if (bnd_face%face_type == FACE_COARSE_FINE) then
-          bnd_face%face_type = FACE_FINE_COARSE
-          bnd_face%quadid = [bnd_face%quadid(2), bnd_face%quadid(3), &
-               bnd_face%quadid(1)]
-       else
-          bnd_face%quadid(1:2) = [bnd_face%quadid(2), bnd_face%quadid(1)]
-       end if
-    end if
-  end subroutine ensure_local_side_first
 
   ! Sort face boundaries for receiving or sending
   subroutine sort_for_recv_or_send(recv, ix, n_bnd_face, bnd_face)
@@ -611,12 +598,19 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer                      :: n, i, j, iq, jq, face, i_buf, iv, ivar
-    real(dp)                     :: slope
+    integer                      :: n, i, j, iq, jq, kq, face
+    integer                      :: i_buf, iv, ivar, i_f, j_f, i_c, j_c
+    integer                      :: half_bx(2), half_n_gc
+    real(dp)                     :: slope, fine(4)
+    logical                      :: odd_n_gc
 
     call f4_update_ghostcell_pattern(face_gc)
     call f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
     call f4_exchange_buffers(f4)
+
+    half_bx   = f4%bx/2
+    half_n_gc = f4%n_gc/2 ! Round down
+    odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
       do n = 1, size(face_gc%same_nonlocal_from_buf, 2)
@@ -669,6 +663,65 @@ contains
          end select
       end do
 
+      ! Handle local fine-to-coarse refinement boundaries
+      do n = 1, size(face_gc%c2f_local, 2)
+         iq   = face_gc%c2f_local(1, n) + 1 ! Coarse block
+         jq   = face_gc%c2f_local(2, n) + 1 ! First fine block
+         kq   = face_gc%c2f_local(3, n) + 1 ! Second fine block
+         face = face_gc%c2f_local(4, n)
+
+         if (face == 1) then
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+
+               ! First fine block
+               do j = 1, half_bx(2)
+                  j_f = 2 * j - 1
+                  do i = 1, n_gc
+                     i_f = 2 * i - 1
+                     uu(bx(1)+i, j, ivar, iq) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
+                  end do
+               end do
+
+               ! Second fine block
+               do j = 1, half_bx(2)
+                  j_f = 2 * j - 1
+                  do i = 1, n_gc
+                     i_f = 2 * i - 1
+                     uu(bx(1)+i, half_bx(2)+j, ivar, iq) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, kq))
+                  end do
+               end do
+            end do
+         else if (face == 3) then
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+
+               ! First fine block
+               do j = 1, n_gc
+                  j_f = 2 * j - 1
+                  do i = 1, half_bx(1)
+                     i_f = 2 * i - 1
+                     uu(i, bx(2)+j, ivar, iq) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
+                  end do
+               end do
+
+               ! Second fine block
+               do j = 1, n_gc
+                  j_f = 2 * j - 1
+                  do i = 1, half_bx(1)
+                     i_f = 2 * i - 1
+                     uu(half_bx(1)+i, bx(2)+j, ivar, iq) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, kq))
+                  end do
+               end do
+            end do
+         end if
+      end do
+
+      ! Local boundaries at the same refinement level
       do n = 1, size(face_gc%same_local, 2)
          iq   = face_gc%same_local(1, n) + 1
          jq   = face_gc%same_local(2, n) + 1
@@ -699,6 +752,7 @@ contains
          end if
       end do
 
+      ! Physical boundaries
       do n = 1, size(face_gc%phys, 2)
          iq = face_gc%phys(1, n) + 1
          face = face_gc%phys(2, n)
@@ -745,6 +799,114 @@ contains
                end do
             end do
          end select
+      end do
+
+      ! Do coarse-to-fine refinement boundaries last, so that ghost cells
+      ! required for interpolation have been filled
+      ! Handle local fine-to-coarse refinement boundaries
+      do n = 1, size(face_gc%c2f_local, 2)
+         iq   = face_gc%c2f_local(1, n) + 1 ! Coarse block
+         jq   = face_gc%c2f_local(2, n) + 1 ! First fine block
+         kq   = face_gc%c2f_local(3, n) + 1 ! Second fine block
+         face = face_gc%c2f_local(4, n)
+
+         if (face == 1) then
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+
+               do j = 1, half_bx(2)
+                  j_f = 2 * j - 1
+                  do i = 1, half_n_gc
+                     i_c = bx(1) - half_n_gc + i
+                     i_f = -(2 * half_n_gc) + 2*i - 1
+
+                     ! First fine block
+                     j_c = j
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = reshape(fine, [2, 2])
+
+                     ! Second fine block
+                     j_c = j_c + half_bx(2)
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, kq) = reshape(fine, [2, 2])
+                  end do
+
+                  if (odd_n_gc) then
+                     i_c = bx(1) - half_n_gc
+                     i_f = -n_gc + 1
+
+                     ! First fine block
+                     j_c = j
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                     f4%uu(i_f, j_f:j_f+1, ivar, jq) = fine([2, 4])
+
+                     ! Second fine block
+                     j_c = j_c + half_bx(2)
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                     f4%uu(i_f, j_f:j_f+1, ivar, kq) = fine([2, 4])
+                  end if
+               end do
+            end do
+         else if (face == 3) then
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+
+               do j = 1, half_n_gc
+                  j_c = bx(2) - half_n_gc + j
+                  j_f = -(2 * half_n_gc) + 2*j - 1
+                  do i = 1, half_bx(1)
+                     i_f = 2 * i - 1
+
+                     ! First fine block
+                     i_c = i
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = reshape(fine, [2, 2])
+
+                     ! Second fine block
+                     i_c = i_c + half_bx(1)
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, kq) = reshape(fine, [2, 2])
+                  end do
+               end do
+
+               if (odd_n_gc) then
+                  j_c = bx(2) - half_n_gc
+                  j_f = -n_gc + 1
+
+                  do i = 1, half_bx(1)
+                     i_f = 2 * i - 1
+
+                     ! First fine block
+                     i_c = i
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                     f4%uu(i_f:i_f+1, j_f, ivar, jq) = fine([3, 4])
+
+                     ! Second fine block
+                     i_c = i_c + half_bx(2)
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                     f4%uu(i_f:i_f+1, j_f, ivar, kq) = fine([3, 4])
+                  end do
+               end if
+            end do
+         else
+            error stop "not implemented"
+         end if
       end do
     end associate
 
@@ -860,7 +1022,7 @@ contains
     integer, intent(in)          :: iv
     integer                      :: n, i, j, i_c, j_c, i_f, j_f
     integer                      :: half_bx(2), ix_offset(2)
-    real(dp)                     :: f(0:2), slopes_a(2), slopes_b(2)
+    real(dp)                     :: fine(4)
 
     half_bx = f4%bx / 2
 
@@ -874,21 +1036,37 @@ contains
              i_c = i + ix_offset(1)
              i_f = 2 * i - 1
 
-             f(0) = f4%uu(i_c, j_c, iv, i_from)
-             slopes_a = [f4%uu(i_c, j_c, iv, i_from) - f4%uu(i_c-1, j_c, iv, i_from), &
-                  f4%uu(i_c, j_c, iv, i_from) - f4%uu(i_c, j_c-1, iv, i_from)]
-             slopes_b = [f4%uu(i_c+1, j_c, iv, i_from) - f4%uu(i_c, j_c, iv, i_from), &
-                  f4%uu(i_c, j_c+1, iv, i_from) - f4%uu(i_c, j_c, iv, i_from)]
-             f(1:2) = 0.25_dp * af_limiter_minmod(slopes_a, slopes_b)
+             call prolong_local_5point(f4%uu(i_c, j_c, iv, i_from), &
+                  [f4%uu(i_c-1, j_c, iv, i_from), f4%uu(i_c+1, j_c, iv, i_from)], &
+                  [f4%uu(i_c, j_c-1, iv, i_from), f4%uu(i_c, j_c+1, iv, i_from)], &
+                  fine)
 
-             f4%uu(i_f,   j_f, iv, i_to+n-1)   = f(0) - f(1) - f(2)
-             f4%uu(i_f+1, j_f, iv, i_to+n-1)   = f(0) + f(1) - f(2)
-             f4%uu(i_f,   j_f+1, iv, i_to+n-1) = f(0) - f(1) + f(2)
-             f4%uu(i_f+1, j_f+1, iv, i_to+n-1) = f(0) + f(1) + f(2)
+             f4%uu(i_f,   j_f, iv, i_to+n-1)   = fine(1)
+             f4%uu(i_f+1, j_f, iv, i_to+n-1)   = fine(2)
+             f4%uu(i_f,   j_f+1, iv, i_to+n-1) = fine(3)
+             f4%uu(i_f+1, j_f+1, iv, i_to+n-1) = fine(4)
           end do
        end do
     end do
   end subroutine prolong_to_blocks
+
+  subroutine prolong_local_5point(coarse_c, coarse_x, coarse_y, fine)
+    real(dp), intent(in)  :: coarse_c    ! Center value
+    real(dp), intent(in)  :: coarse_x(2) ! x-neighbors (-1, +1)
+    real(dp), intent(in)  :: coarse_y(2) ! y-neighbors (-1, +1)
+    real(dp), intent(out) :: fine(4)
+    real(dp)              :: f(0:2), slopes_a(2), slopes_b(2)
+
+    f(0) = coarse_c          ! Identical to coarse_y(2)
+    slopes_a = [coarse_c - coarse_x(1), coarse_c - coarse_y(1)]
+    slopes_b = [coarse_x(2) - coarse_c, coarse_y(2) - coarse_c]
+    f(1:2) = 0.25_dp * af_limiter_minmod(slopes_a, slopes_b)
+
+    fine(1) = f(0) - f(1) - f(2)
+    fine(2) = f(0) + f(1) - f(2)
+    fine(3) = f(0) - f(1) + f(2)
+    fine(4) = f(0) + f(1) + f(2)
+  end subroutine prolong_local_5point
 
   !> Generalized minmod limiter. The parameter theta controls how dissipative
   !> the limiter is, with 1 corresponding to the minmod limiter and 2 to the MC

@@ -33,3 +33,4 @@ Then, run with a different callback function that populates arrays with communic
 - How to construct coarse grid hierarchy?
 - Is there a simpler way to get all faces for ghost cell communication?
 - Get cumulative index of quadrant in e.g. refine callback?
+- is face always 1 or 3 when both sides are local?
