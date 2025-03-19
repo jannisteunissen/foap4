@@ -26,8 +26,8 @@ program first_test
   call f4_update_ghostcells(f4, 2, [1, 2])
   call local_average(f4)
   call f4_write_grid(f4, "test_1")
-  call f4_update_ghostcells(f4, 2, [1, 2])
 
+  call f4_update_ghostcells(f4, 2, [1, 2])
   call f4_adjust_refinement(f4)
   call f4_update_ghostcells(f4, 2, [1, 2])
   call local_average(f4)
@@ -90,7 +90,7 @@ contains
              sol = f4%uu(i, j, iv, n)
              err = tmp(i, j) - sol
              if (abs(err) > 1e-15_dp) then
-                print *, n, i, j, err
+                print *, n, f4%block_level(n), i, j, err
              end if
           end do
        end do

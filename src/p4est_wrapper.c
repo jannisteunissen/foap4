@@ -78,14 +78,13 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
       bf->extra = face_hanging->is.hanging.quadid[1]; /* same tree */
 
       /* Index in the ghost array has been stored */
-      ghost_ix = bf->quadid[1];
+      ghost_ix = face_full->is.full.quadid;
       quad = (p4est_quadrant_t *) (ghost->ghosts.array +
                                    ghost_ix * sizeof(p4est_quadrant_t));
-
       bf->other_proc = ghost_rank[ghost_ix];
       bf->quadid[1] = quad->p.piggy3.local_num;
-    } else if (face_full->is.hanging.is_ghost[0]) {
-      /* The fine side is a ghost */
+    } else if (face_hanging->is.hanging.is_ghost[0]) {
+      /* The fine sides are both ghosts */
       bf->face_type = FACE_COARSE_TO_FINE;
       bf->face = face_full->face;
 
@@ -128,8 +127,8 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
     bf->face_type = FACE_SAME_LEVEL;
     bf->face      = sides[i].face;
 
-    tree = p4est_tree_array_index (trees, sides[0].treeid);
-    bf->quadid[0] = sides[0].is.full.quadid + tree->quadrants_offset;
+    tree = p4est_tree_array_index (trees, sides[i].treeid);
+    bf->quadid[0] = sides[i].is.full.quadid + tree->quadrants_offset;
 
     if (sides[j].is.full.is_ghost) {
       ghost_ix = sides[j].is.full.quadid;
@@ -240,7 +239,7 @@ void pw_vtk_write_file(char *fname) {
 void pw_get_all_faces (int *n_faces_arg, bnd_face_t **bnd_face_arg) {
   p4est_mesh_t  *mesh;
 
-  const int compute_tree_index = 1;
+  const int compute_tree_index = 0;
   const int compute_level_lists = 0;
 
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FACE);
