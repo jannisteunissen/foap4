@@ -30,8 +30,7 @@ typedef struct pw_state {
 } pw_state_t;
 
 /* Initialize MPI and p4est */
-void pw_initialize(pw_state_t **pw_ptr, MPI_Fint *comm_fortran,
-                   const int max_blocks) {
+void pw_initialize(pw_state_t **pw_ptr, MPI_Fint *comm_fortran) {
 
   int         argc = 0;
   int         mpiret;
@@ -48,9 +47,36 @@ void pw_initialize(pw_state_t **pw_ptr, MPI_Fint *comm_fortran,
 
   *comm_fortran = MPI_Comm_c2f(pw->mpicomm);
 
-  pw->bnd_face = malloc(max_blocks * 4 * sizeof(bnd_face_t));
   *pw_ptr = pw;
 }
+
+/* Destroy p4est data */
+void pw_destroy(pw_state_t *pw) {
+  if (pw->p4est != NULL) {
+    p4est_destroy (pw->p4est);
+  }
+
+  if (pw->conn != NULL) {
+    p4est_connectivity_destroy (pw->conn);
+  }
+
+  if (pw->bnd_face != NULL) {
+    free (pw->bnd_face);
+  }
+}
+
+/* Finalize MPI and p4est */
+void pw_finalize(pw_state_t *pw) {
+  int mpiret;
+
+  /* check memory balance and clean up internal registrations */
+  sc_finalize ();
+
+  /* release the MPI subsytem */
+  mpiret = sc_MPI_Finalize ();
+  SC_CHECK_MPI (mpiret);
+}
+
 
 void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
   int                     i, j;
@@ -173,37 +199,17 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
   }
 }
 
-/* Finalize MPI and p4est */
-void pw_finalize_mpi_and_p4est(pw_state_t *pw) {
-  int mpiret;
-
-  if (pw->p4est != NULL) {
-    p4est_destroy (pw->p4est);
-  }
-
-  if (pw->conn != NULL) {
-    p4est_connectivity_destroy (pw->conn);
-  }
-
-  if (pw->bnd_face != NULL) {
-    free (pw->bnd_face);
-  }
-
-  /* check memory balance and clean up internal registrations */
-  sc_finalize ();
-
-  /* release the MPI subsytem */
-  mpiret = sc_MPI_Finalize ();
-  SC_CHECK_MPI (mpiret);
-}
-
 /* Set brick connectivity */
-void pw_set_connectivity_brick(pw_state_t *pw, int mi, int ni,
-                               int periodic_a, int periodic_b,
-                               int min_level, int fill_uniform) {
+void pw_set_connectivity_brick(pw_state_t *pw, const int mi, const int ni,
+                               const int periodic_a, const int periodic_b,
+                               const int min_level, const int fill_uniform,
+                               const int max_blocks) {
   pw->conn = p4est_connectivity_new_brick (mi, ni, periodic_a, periodic_b);
   pw->p4est = p4est_new_ext (pw->mpicomm, pw->conn, 0, min_level, fill_uniform,
                          0, NULL, NULL);
+
+  /* Allocate storage for face boundaries */
+  pw->bnd_face = malloc(max_blocks * 4 * sizeof(bnd_face_t));
 }
 
 int pw_get_num_local_quadrants(pw_state_t *pw) {

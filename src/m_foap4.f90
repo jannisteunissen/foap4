@@ -57,7 +57,7 @@ module m_foap4
      integer   :: max_blocks                    ! Maximum number of blocks used
      integer   :: n_vars                        ! Number of variables
      real(dp)  :: tree_length(2)                ! Length of tree
-     real(dp)  :: dr_lvl(2, 0:p4est_maxlevel-1) ! Grid spacing per level
+     real(dp)  :: dr_level(2, 0:p4est_maxlevel-1) ! Grid spacing per level
      character(len=32), allocatable :: var_names(:) ! Names of the variables
 
      ! The data per block
@@ -77,18 +77,31 @@ module m_foap4
 
      ! p4est state
      type(c_ptr) :: pw
+
+     ! MPI state
+     integer :: mpirank
+     integer :: mpisize
   end type foap4_t
 
   interface
-     subroutine pw_initialize(pw, mpicomm, max_blocks) bind(c)
+     subroutine pw_initialize(pw, mpicomm) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(out)          :: pw
        integer(c_int), intent(out)       :: mpicomm
-       integer(c_int), intent(in), value :: max_blocks
      end subroutine pw_initialize
 
+     subroutine pw_destroy(pw) bind(c)
+       import c_ptr
+       type(c_ptr), intent(in), value :: pw
+     end subroutine pw_destroy
+
+     subroutine pw_finalize(pw) bind(c)
+       import c_ptr
+       type(c_ptr), intent(in), value :: pw
+     end subroutine pw_finalize
+
      subroutine pw_set_connectivity_brick(pw, mi, ni, periodic_a, periodic_b, &
-          min_level, fill_uniform) bind(c)
+          min_level, fill_uniform, max_blocks) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(in), value    :: pw
        integer(c_int), value, intent(in) :: mi
@@ -97,6 +110,7 @@ module m_foap4
        integer(c_int), value, intent(in) :: periodic_b
        integer(c_int), value, intent(in) :: min_level
        integer(c_int), value, intent(in) :: fill_uniform
+       integer(c_int), intent(in), value :: max_blocks
      end subroutine pw_set_connectivity_brick
 
      pure function pw_get_num_local_quadrants(pw) result(n) bind(c)
@@ -125,11 +139,6 @@ module m_foap4
        character(kind=C_char), intent(in) :: fname(*)
      end subroutine pw_vtk_write_file
 
-     subroutine pw_finalize_mpi_and_p4est(pw) bind(c)
-       import c_ptr
-       type(c_ptr), intent(in), value :: pw
-     end subroutine pw_finalize_mpi_and_p4est
-
      subroutine pw_get_all_faces(pw, n_faces, bnd_face_ptr) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(in), value :: pw
@@ -147,10 +156,11 @@ module m_foap4
   end interface
 
   type(MPI_comm), protected  :: mpicomm
-  integer, public, protected :: mpirank, mpisize
 
-  public :: f4_initialize_grid
-  public :: f4_finalize_grid
+  public :: f4_initialize
+  public :: f4_destroy
+  public :: f4_finalize
+  public :: f4_set_grid
   public :: f4_write_grid
   public :: f4_get_num_local_blocks
   public :: f4_cell_coord
@@ -160,8 +170,34 @@ module m_foap4
 
 contains
 
-  subroutine f4_initialize_grid(n_blocks_per_dim, tree_length, bx, n_gc, &
-       n_vars, var_names, periodic, min_level, max_blocks, f4)
+  subroutine f4_initialize(f4)
+    type(foap4_t), intent(inout) :: f4
+    call pw_initialize(f4%pw, mpicomm%MPI_VAL)
+  end subroutine f4_initialize
+
+  subroutine f4_destroy(f4)
+    type(foap4_t), intent(inout) :: f4
+    call pw_destroy(f4%pw)
+
+    deallocate(f4%var_names)
+    deallocate(f4%block_origin)
+    deallocate(f4%block_level)
+    deallocate(f4%refinement_flags)
+    deallocate(f4%uu)
+    deallocate(f4%recv_buffer)
+    deallocate(f4%send_buffer)
+    deallocate(f4%recv_offset)
+    deallocate(f4%send_offset)
+  end subroutine f4_destroy
+
+  subroutine f4_finalize(f4)
+    type(foap4_t), intent(inout) :: f4
+    call pw_finalize(f4%pw)
+  end subroutine f4_finalize
+
+  subroutine f4_set_grid(f4, n_blocks_per_dim, tree_length, bx, n_gc, &
+       n_vars, var_names, periodic, min_level, max_blocks)
+    type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_blocks_per_dim(2)
     real(dp), intent(in)         :: tree_length(2)
     integer, intent(in)          :: bx(2)
@@ -171,7 +207,6 @@ contains
     logical, intent(in)          :: periodic(2)
     integer, intent(in)          :: min_level
     integer, intent(in)          :: max_blocks
-    type(foap4_t), intent(out)   :: f4
 
     integer :: i, ierr, periodic_as_int(2)
 
@@ -197,17 +232,15 @@ contains
     end do
 
     do i = 0, P4EST_MAXLEVEL-1
-       f4%dr_lvl(:, i) = (tree_length/bx) * 0.5**i
+       f4%dr_level(:, i) = (tree_length/bx) * 0.5**i
     end do
 
-    call pw_initialize(f4%pw, mpicomm%MPI_VAL, max_blocks)
-
-    call MPI_COMM_RANK(mpicomm, mpirank, ierr)
-    call MPI_COMM_SIZE(mpicomm, mpisize, ierr)
+    call MPI_COMM_RANK(mpicomm, f4%mpirank, ierr)
+    call MPI_COMM_SIZE(mpicomm, f4%mpisize, ierr)
 
     call pw_set_connectivity_brick(f4%pw, &
          n_blocks_per_dim(1), n_blocks_per_dim(2), &
-         periodic_as_int(1), periodic_as_int(2), min_level, 1)
+         periodic_as_int(1), periodic_as_int(2), min_level, 1, max_blocks)
 
     allocate(f4%block_origin(2, max_blocks))
     allocate(f4%block_level(max_blocks))
@@ -221,22 +254,14 @@ contains
     i = max_blocks * 4 * f4%face_gc%data_size
     allocate(f4%recv_buffer(i))
     allocate(f4%send_buffer(i))
-    allocate(f4%recv_offset(0:mpisize))
-    allocate(f4%send_offset(0:mpisize))
+    allocate(f4%recv_offset(0:f4%mpisize))
+    allocate(f4%send_offset(0:f4%mpisize))
 
     f4%uu = 0.0_dp
 
     call f4_get_quadrants(f4)
 
-  end subroutine f4_initialize_grid
-
-  subroutine f4_finalize_grid(f4)
-    type(foap4_t), intent(inout) :: f4
-
-    ! TODO: deallocate
-
-    call pw_finalize_mpi_and_p4est(f4%pw)
-  end subroutine f4_finalize_grid
+  end subroutine f4_set_grid
 
   pure integer function f4_get_num_local_blocks(f4)
     type(foap4_t), intent(in) :: f4
@@ -261,24 +286,28 @@ contains
     end do
   end subroutine f4_get_quadrants
 
-  subroutine f4_write_grid(f4, fname, time, viewer)
+  subroutine f4_write_grid(f4, fname, n_output, time, viewer)
     use m_xdmf_writer
     type(foap4_t), intent(in)              :: f4
     character(len=*), intent(in)           :: fname
+    integer, intent(in)                    :: n_output
     real(dp), intent(in), optional         :: time
     character(len=*), intent(in), optional :: viewer
+    character(len=len_trim(fname)+7)       :: full_fname
     integer                                :: n
     real(dp), allocatable                  :: dr(:, :)
 
-    call pw_vtk_write_file(f4%pw, trim(fname) // C_null_char)
+    write(full_fname, "(A,A,I06.6)") trim(fname), "_", n_output
+
+    call pw_vtk_write_file(f4%pw, trim(full_fname) // C_null_char)
 
     allocate(dr(2, f4%n_blocks))
 
     do n = 1, f4%n_blocks
-       dr(:, n) = f4%dr_lvl(:, f4%block_level(n))
+       dr(:, n) = f4%dr_level(:, f4%block_level(n))
     end do
 
-    call xdmf_write_blocks_2DCoRect(mpicomm, trim(fname), &
+    call xdmf_write_blocks_2DCoRect(mpicomm, trim(full_fname), &
          f4%n_blocks, f4%bx+2*f4%n_gc, f4%n_vars, &
          f4%var_names, f4%n_gc, f4%block_origin(:, 1:f4%n_blocks), dr, &
          cc_data=f4%uu(:, :, :, 1:f4%n_blocks), time=time, viewer=viewer)
@@ -289,7 +318,7 @@ contains
     integer, intent(in)       :: i_block, i, j
     real(dp)                  :: rr(2), dr(2)
 
-    dr = f4%dr_lvl(:, f4%block_level(i_block))
+    dr = f4%dr_level(:, f4%block_level(i_block))
     rr = f4%block_origin(:, i_block) + dr * [i-0.5_dp, j-0.5_dp]
   end function f4_cell_coord
 
@@ -308,7 +337,7 @@ contains
     call c_f_pointer(tmp, bnd_face, shape=[n_faces])
 
     call f4_get_ghost_cell_pattern(f4%face_gc, size(bnd_face), bnd_face, &
-         mpirank, mpisize)
+         f4%mpirank, f4%mpisize)
     f4%face_gc%mesh_revision = mesh_revision
   end subroutine f4_update_ghostcell_pattern
 
@@ -1043,15 +1072,15 @@ contains
   ! per MPI rank
   subroutine f4_exchange_buffers(f4)
     type(foap4_t), intent(inout) :: f4
-    type(MPI_Request)            :: send_req(0:mpisize-1)
-    type(MPI_Request)            :: recv_req(0:mpisize-1)
+    type(MPI_Request)            :: send_req(0:f4%mpisize-1)
+    type(MPI_Request)            :: recv_req(0:f4%mpisize-1)
     integer                      :: n_send, n_recv, ilo, ihi, ierr, rank
     integer, parameter           :: tag = 0
 
     n_send = 0
     n_recv = 0
 
-    do rank = 0, mpisize - 1
+    do rank = 0, f4%mpisize - 1
        ilo = f4%send_offset(rank) + 1
        ihi = f4%send_offset(rank+1)
 
@@ -1788,13 +1817,11 @@ contains
 
   end subroutine f4_update_ghostcells
 
+  ! Refine the mesh according to f4%refinement_flags
   subroutine f4_adjust_refinement(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, n_blocks_new, n_blocks_old, k, iv
     integer                      :: has_changed
-
-    f4%refinement_flags(1:f4%n_blocks) = 0
-    if (mpirank == 0) f4%refinement_flags(1) = 1
 
     n_blocks_old = f4%n_blocks
     call pw_adjust_refinement(f4%pw, f4%n_blocks, &
