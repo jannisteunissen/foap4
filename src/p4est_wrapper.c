@@ -2,6 +2,7 @@
 #include <p4est_extended.h>
 #include <p4est_iterate.h>
 #include <p4est_vtk.h>
+#include <p4est_communication.h>
 
 /* This file provides methods to use p4est from Fortran */
 
@@ -77,7 +78,60 @@ void pw_finalize(pw_state_t *pw) {
   SC_CHECK_MPI (mpiret);
 }
 
+/* Set brick connectivity */
+void pw_set_connectivity_brick(pw_state_t *pw, const int mi, const int ni,
+                               const int periodic_a, const int periodic_b,
+                               const int min_level, const int fill_uniform,
+                               const int max_blocks) {
+  pw->conn = p4est_connectivity_new_brick (mi, ni, periodic_a, periodic_b);
+  pw->p4est = p4est_new_ext (pw->mpicomm, pw->conn, 0, min_level, fill_uniform,
+                         0, NULL, NULL);
 
+  /* Allocate storage for face boundaries */
+  pw->bnd_face = malloc(max_blocks * 4 * sizeof(bnd_face_t));
+}
+
+int pw_get_num_local_quadrants(pw_state_t *pw) {
+  return pw->p4est->local_num_quadrants;
+}
+
+/* Get information about local quadrants */
+void pw_get_quadrants(pw_state_t *pw, int n_quadrants,
+                      double *coord, int *level) {
+  p4est_topidx_t    tt;
+  size_t            zz;
+  p4est_tree_t     *tree;
+  p4est_quadrant_t *quadrant;
+  sc_array_t       *tquadrants;
+  int               i_quad;
+  double            vxyz[3];
+  p4est_t           *p4est;
+
+  p4est = pw->p4est;
+  P4EST_ASSERT (n_quadrants == p4est->local_num_quadrants);
+  i_quad = 0;
+
+  for (tt = p4est->first_local_tree; tt <= p4est->last_local_tree; ++tt) {
+    tree = p4est_tree_array_index (p4est->trees, tt);
+    tquadrants = &tree->quadrants;
+    for (zz = 0; zz < tquadrants->elem_count; ++zz) {
+      quadrant = p4est_quadrant_array_index (tquadrants, zz);
+
+      p4est_qcoord_to_vertex (pw->conn, tt, quadrant->x, quadrant->y, vxyz);
+      coord[2*i_quad] = vxyz[0];
+      coord[2*i_quad+1] = vxyz[1];
+      level[i_quad] = quadrant->level;
+      i_quad++;
+    }
+  }
+}
+
+/* Write mesh to file */
+void pw_vtk_write_file(pw_state_t *pw, char *fname) {
+  p4est_vtk_write_file (pw->p4est, NULL, fname);
+}
+
+/* Callback function to store a list with all the faces between quadrants */
 void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
   int                     i, j;
   sc_array_t             *trees;
@@ -199,59 +253,6 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
   }
 }
 
-/* Set brick connectivity */
-void pw_set_connectivity_brick(pw_state_t *pw, const int mi, const int ni,
-                               const int periodic_a, const int periodic_b,
-                               const int min_level, const int fill_uniform,
-                               const int max_blocks) {
-  pw->conn = p4est_connectivity_new_brick (mi, ni, periodic_a, periodic_b);
-  pw->p4est = p4est_new_ext (pw->mpicomm, pw->conn, 0, min_level, fill_uniform,
-                         0, NULL, NULL);
-
-  /* Allocate storage for face boundaries */
-  pw->bnd_face = malloc(max_blocks * 4 * sizeof(bnd_face_t));
-}
-
-int pw_get_num_local_quadrants(pw_state_t *pw) {
-  return pw->p4est->local_num_quadrants;
-}
-
-/* Get information about local quadrants */
-void pw_get_quadrants(pw_state_t *pw, int n_quadrants,
-                      double *coord, int *level) {
-  p4est_topidx_t    tt;
-  size_t            zz;
-  p4est_tree_t     *tree;
-  p4est_quadrant_t *quadrant;
-  sc_array_t       *tquadrants;
-  int               i_quad;
-  double            vxyz[3];
-  p4est_t           *p4est;
-
-  p4est = pw->p4est;
-  P4EST_ASSERT (n_quadrants == p4est->local_num_quadrants);
-  i_quad = 0;
-
-  for (tt = p4est->first_local_tree; tt <= p4est->last_local_tree; ++tt) {
-    tree = p4est_tree_array_index (p4est->trees, tt);
-    tquadrants = &tree->quadrants;
-    for (zz = 0; zz < tquadrants->elem_count; ++zz) {
-      quadrant = p4est_quadrant_array_index (tquadrants, zz);
-
-      p4est_qcoord_to_vertex (pw->conn, tt, quadrant->x, quadrant->y, vxyz);
-      coord[2*i_quad] = vxyz[0];
-      coord[2*i_quad+1] = vxyz[1];
-      level[i_quad] = quadrant->level;
-      i_quad++;
-    }
-  }
-}
-
-/* Write mesh to file */
-void pw_vtk_write_file(pw_state_t *pw, char *fname) {
-  p4est_vtk_write_file (pw->p4est, NULL, fname);
-}
-
 /* Store information about all faces between quadrants */
 void pw_get_all_faces (pw_state_t *pw, int *n_faces_arg,
                        bnd_face_t **bnd_face_arg) {
@@ -277,13 +278,13 @@ void pw_get_all_faces (pw_state_t *pw, int *n_faces_arg,
   p4est_ghost_destroy (pw->ghost);
 }
 
-/* callback to tell p4est which quadrants shall be refined */
+/* Callback to tell p4est which quadrants shall be refined */
 static int refine_function (p4est_t *p4est, p4est_topidx_t which_tree,
                           p4est_quadrant_t *quadrant) {
   return (quadrant->p.user_int > 0);
 }
 
-/* callback to tell p4est which quadrants shall be coarsened */
+/* Callback to tell p4est which quadrants shall be coarsened */
 static int coarsen_function (p4est_t *p4est, p4est_topidx_t which_tree,
                              p4est_quadrant_t *quadrant[])
 {
@@ -295,10 +296,13 @@ static int coarsen_function (p4est_t *p4est, p4est_topidx_t which_tree,
   return coarsen;
 }
 
+/* Return the mesh revision number, which is incremented when the
+   mesh or partition changes */
 int pw_get_mesh_revision(pw_state_t *pw) {
   return pw->p4est->revision;
 }
 
+/* Update the refinement non-recursively based on refinement flags */
 void pw_adjust_refinement(pw_state_t *pw, const int n_quadrants,
                           const int  *flags, int *has_changed) {
   p4est_topidx_t  tt;
@@ -321,13 +325,36 @@ void pw_adjust_refinement(pw_state_t *pw, const int n_quadrants,
     }
   }
 
-  /* adapt the new forest non-recursively */
+  /* Adapt the new forest non-recursively */
   p4est_refine (p4est, 0, refine_function, NULL);
   p4est_coarsen (p4est, 0, coarsen_function, NULL);
 
-  /* P4EST_CONNECT_FULL is required for filling ghost cells near refinement
-     boundaries. */
+  /* P4EST_CONNECT_FULL is required to ensure ghost cells near refinement
+     boundaries are always filled correctly */
   p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
 
   *has_changed = (p4est->revision > old_revision);
+}
+
+/* Re-partition the quadrants over the MPI ranks */
+void pw_partition(pw_state_t *pw, int *n_changed, int64_t *gfq_old) {
+  /* Ensures siblings are at the same MPI rank */
+  const int allow_for_coarsening = 1;
+
+  for (int rank = 0; rank < pw->p4est->mpisize+1; rank++) {
+    gfq_old[rank] = pw->p4est->global_first_quadrant[rank];
+  }
+
+  *n_changed = p4est_partition_ext (pw->p4est, allow_for_coarsening, NULL);
+}
+
+/* Transfer user data after partitioning */
+void pw_partition_transfer(pw_state_t *pw, const int64_t *gfq_old,
+                           const void *src_data, void *dest_data,
+                           const int data_size) {
+  const int tag = 0;
+
+  p4est_transfer_fixed (pw->p4est->global_first_quadrant, gfq_old,
+                        pw->p4est->mpicomm, tag,
+                        dest_data, src_data, data_size);
 }

@@ -153,6 +153,22 @@ module m_foap4
        integer(c_int), intent(in)        :: flags(n_quadrants)
        integer(c_int), intent(out)       :: has_changed
      end subroutine pw_adjust_refinement
+
+     subroutine pw_partition(pw, n_changed, gfq_old) bind(c)
+       import c_int, c_int64_t, c_ptr
+       type(c_ptr), intent(in), value    :: pw
+       integer(c_int), intent(out)       :: n_changed
+       integer(c_int64_t), intent(out)   :: gfq_old(*)
+     end subroutine pw_partition
+
+     subroutine pw_partition_transfer(pw, gfq_old, src_data, dest_data, data_size) bind(c)
+       import c_int, c_int64_t, c_ptr
+       type(c_ptr), intent(in), value    :: pw
+       integer(c_int64_t), intent(in)    :: gfq_old(*)
+       type(c_ptr), value                :: src_data
+       type(c_ptr), value                :: dest_data
+       integer(c_int), intent(in), value :: data_size
+     end subroutine pw_partition_transfer
   end interface
 
   type(MPI_comm), protected  :: mpicomm
@@ -167,6 +183,7 @@ module m_foap4
   public :: f4_exchange_buffers
   public :: f4_update_ghostcells
   public :: f4_adjust_refinement
+  public :: f4_partition
 
 contains
 
@@ -1818,8 +1835,9 @@ contains
   end subroutine f4_update_ghostcells
 
   ! Refine the mesh according to f4%refinement_flags
-  subroutine f4_adjust_refinement(f4)
+  subroutine f4_adjust_refinement(f4, partition)
     type(foap4_t), intent(inout) :: f4
+    logical, intent(in)          :: partition
     integer                      :: n, n_blocks_new, n_blocks_old, k, iv
     integer                      :: has_changed
 
@@ -1875,6 +1893,8 @@ contains
           exit
        end if
     end do
+
+    if (partition) call f4_partition(f4)
   end subroutine f4_adjust_refinement
 
   ! Copy block data
@@ -1992,5 +2012,32 @@ contains
     real(dp)             :: phi
     phi = af_limiter_gminmod(a, b, 1.0_dp)
   end function af_limiter_minmod
+
+  subroutine f4_partition(f4)
+    type(foap4_t), intent(inout), target :: f4
+    integer                      :: n_changed, n_blocks_old, n_blocks_new
+    integer(c_int64_t)           :: gfq_old(0:f4%mpisize)
+    integer                      :: n, dsize
+
+    n_blocks_old = f4%n_blocks
+    call pw_partition(f4%pw, n_changed, gfq_old)
+
+    print *, f4%mpirank, n_changed
+
+    ! Copy blocks to end of list. The backward order ensures old data is not
+    ! overwritten before it is copied.
+    do n = n_blocks_old, 1, -1
+       call copy_block(f4, n, f4%n_blocks+n)
+    end do
+
+    ! Size of a block
+    dsize = product(f4%bx + 2 * f4%n_gc) * f4%n_vars * storage_size(1.0_dp)/8
+
+    ! Call p4est routine to transfer the block data
+    call pw_partition_transfer(f4%pw, gfq_old, &
+         c_loc(f4%uu(:, :, :, f4%n_blocks+1)), c_loc(f4%uu), dsize)
+
+    call f4_get_quadrants(f4)
+  end subroutine f4_partition
 
 end module m_foap4
