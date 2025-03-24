@@ -21,8 +21,10 @@ program first_test
        periodic, min_level, max_blocks, f4)
 
   call set_init_cond(f4)
-
   call f4_write_grid(f4, "test_0")
+
+  call f4_update_ghostcells(f4, 2, [1, 2])
+  call f4_adjust_refinement(f4)
   call f4_update_ghostcells(f4, 2, [1, 2])
   call local_average(f4)
   call f4_write_grid(f4, "test_1")
@@ -76,7 +78,7 @@ contains
     real(dp), allocatable        :: tmp(:, :)
 
     allocate(tmp(bx(1), bx(2)))
-    iv = 2
+    iv = 1
 
     do n = 1, f4%n_blocks
        do j = 1, f4%bx(2)
@@ -87,7 +89,7 @@ contains
                   f4%uu(i+1, j, iv, n) + &
                   f4%uu(i, j-1, iv, n) + &
                   f4%uu(i, j+1, iv, n))
-             sol = f4%uu(i, j, iv, n)
+             sol = rho_init(rr(1), rr(2))
              err = tmp(i, j) - sol
              if (abs(err) > 1e-15_dp) then
                 print *, n, f4%block_level(n), i, j, err

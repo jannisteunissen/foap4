@@ -1,4 +1,7 @@
-! Main foap4 module
+! Foap4 stands for "Fortran OpenACC p4est". Together with p4est_wrapper.c,
+! this module implements the required data structures and methods.
+!
+! Author(s): Jannis Teunissen
 module m_foap4
   use, intrinsic :: iso_c_binding
   use mpi_f08
@@ -7,6 +10,7 @@ module m_foap4
   private
 
   integer, parameter, private :: dp = kind(0.0d0)
+
   integer, parameter :: P4EST_MAXLEVEL = 30
   integer, parameter :: face_swap(0:3) = [1, 0, 3, 2]
   integer, parameter :: child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
@@ -67,18 +71,26 @@ module m_foap4
      integer, allocatable :: send_offset(:) ! 0:mpisize offsets for sending
      real(dp), allocatable :: recv_buffer(:)
      real(dp), allocatable :: send_buffer(:)
+
+     ! Information about ghost cells on faces
+     type(face_gc_t) :: face_gc
+
+     ! p4est state
+     type(c_ptr) :: pw
   end type foap4_t
 
   interface
-     subroutine pw_initialize_mpi_and_p4est(mpicomm, max_blocks) bind(c)
-       import
-       integer(c_int), intent(out) :: mpicomm
-       integer(c_int), intent(in), value  :: max_blocks
-     end subroutine pw_initialize_mpi_and_p4est
+     subroutine pw_initialize(pw, mpicomm, max_blocks) bind(c)
+       import c_int, c_ptr
+       type(c_ptr), intent(out)          :: pw
+       integer(c_int), intent(out)       :: mpicomm
+       integer(c_int), intent(in), value :: max_blocks
+     end subroutine pw_initialize
 
-     subroutine pw_set_connectivity_brick(mi, ni, periodic_a, periodic_b, &
+     subroutine pw_set_connectivity_brick(pw, mi, ni, periodic_a, periodic_b, &
           min_level, fill_uniform) bind(c)
-       import c_int
+       import c_int, c_ptr
+       type(c_ptr), intent(in), value    :: pw
        integer(c_int), value, intent(in) :: mi
        integer(c_int), value, intent(in) :: ni
        integer(c_int), value, intent(in) :: periodic_a
@@ -87,46 +99,52 @@ module m_foap4
        integer(c_int), value, intent(in) :: fill_uniform
      end subroutine pw_set_connectivity_brick
 
-     pure function pw_get_num_local_quadrants() result(n) bind(c)
-       import c_int
-       integer(c_int) :: n
+     pure function pw_get_num_local_quadrants(pw) result(n) bind(c)
+       import c_int, c_ptr
+       type(c_ptr), intent(in), value :: pw
+       integer(c_int)                 :: n
      end function pw_get_num_local_quadrants
 
-     pure function pw_get_mesh_revision() result(n) bind(c)
-       import c_int
-       integer(c_int) :: n
+     pure function pw_get_mesh_revision(pw) result(n) bind(c)
+       import c_int, c_ptr
+       type(c_ptr), intent(in), value :: pw
+       integer(c_int)                 :: n
      end function pw_get_mesh_revision
 
-     subroutine pw_get_quadrants(n_quadrants, coord, level) bind(c)
-       import c_int, c_double
-       integer(c_int), value, intent(in) :: n_quadrants
+     subroutine pw_get_quadrants(pw, n_quadrants, coord, level) bind(c)
+       import c_int, c_ptr, c_double
+       type(c_ptr), intent(in), value     :: pw
+       integer(c_int), value, intent(in)  :: n_quadrants
        real(kind=c_double), intent(inout) :: coord(*)
-       integer(c_int), intent(inout) :: level(n_quadrants)
+       integer(c_int), intent(inout)      :: level(n_quadrants)
      end subroutine pw_get_quadrants
 
-     subroutine pw_vtk_write_file(fname) bind(c)
-       import C_char
+     subroutine pw_vtk_write_file(pw, fname) bind(c)
+       import c_char, c_ptr
+       type(c_ptr), intent(in), value     :: pw
        character(kind=C_char), intent(in) :: fname(*)
      end subroutine pw_vtk_write_file
 
-     subroutine pw_finalize_mpi_and_p4est() bind(c)
+     subroutine pw_finalize_mpi_and_p4est(pw) bind(c)
+       import c_ptr
+       type(c_ptr), intent(in), value :: pw
      end subroutine pw_finalize_mpi_and_p4est
 
-     subroutine pw_get_all_faces(n_faces, bnd_face_ptr) bind(c)
-       import
-       integer(c_int), intent(out) :: n_faces
-       type(c_ptr), intent(out)    :: bnd_face_ptr
+     subroutine pw_get_all_faces(pw, n_faces, bnd_face_ptr) bind(c)
+       import c_int, c_ptr
+       type(c_ptr), intent(in), value :: pw
+       integer(c_int), intent(out)    :: n_faces
+       type(c_ptr), intent(out)       :: bnd_face_ptr
      end subroutine pw_get_all_faces
 
-     subroutine pw_adjust_refinement(n_quadrants, flags, has_changed) bind(c)
-       import
+     subroutine pw_adjust_refinement(pw, n_quadrants, flags, has_changed) bind(c)
+       import c_int, c_ptr
+       type(c_ptr), intent(in), value    :: pw
        integer(c_int), value, intent(in) :: n_quadrants
        integer(c_int), intent(in)        :: flags(n_quadrants)
        integer(c_int), intent(out)       :: has_changed
      end subroutine pw_adjust_refinement
   end interface
-
-  type(face_gc_t)           :: face_gc
 
   type(MPI_comm), protected  :: mpicomm
   integer, public, protected :: mpirank, mpisize
@@ -182,12 +200,13 @@ contains
        f4%dr_lvl(:, i) = (tree_length/bx) * 0.5**i
     end do
 
-    call pw_initialize_mpi_and_p4est(mpicomm%MPI_VAL, max_blocks)
+    call pw_initialize(f4%pw, mpicomm%MPI_VAL, max_blocks)
 
     call MPI_COMM_RANK(mpicomm, mpirank, ierr)
     call MPI_COMM_SIZE(mpicomm, mpisize, ierr)
 
-    call pw_set_connectivity_brick(n_blocks_per_dim(1), n_blocks_per_dim(2), &
+    call pw_set_connectivity_brick(f4%pw, &
+         n_blocks_per_dim(1), n_blocks_per_dim(2), &
          periodic_as_int(1), periodic_as_int(2), min_level, 1)
 
     allocate(f4%block_origin(2, max_blocks))
@@ -196,10 +215,10 @@ contains
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, n_vars, max_blocks))
     f4%uu(:, :, :, :) = 0.0_dp
 
-    face_gc%data_size = f4%bx(1) * f4%n_gc
+    f4%face_gc%data_size = f4%bx(1) * f4%n_gc
 
     ! Maximum size of recv/send buffer
-    i = max_blocks * 4 * face_gc%data_size
+    i = max_blocks * 4 * f4%face_gc%data_size
     allocate(f4%recv_buffer(i))
     allocate(f4%send_buffer(i))
     allocate(f4%recv_offset(0:mpisize))
@@ -216,23 +235,25 @@ contains
 
     ! TODO: deallocate
 
-    call pw_finalize_mpi_and_p4est()
+    call pw_finalize_mpi_and_p4est(f4%pw)
   end subroutine f4_finalize_grid
 
-  pure integer function f4_get_num_local_blocks()
-    f4_get_num_local_blocks = pw_get_num_local_quadrants()
+  pure integer function f4_get_num_local_blocks(f4)
+    type(foap4_t), intent(in) :: f4
+    f4_get_num_local_blocks = pw_get_num_local_quadrants(f4%pw)
   end function f4_get_num_local_blocks
 
   subroutine f4_get_quadrants(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n
 
-    f4%n_blocks = f4_get_num_local_blocks()
+    f4%n_blocks = f4_get_num_local_blocks(f4)
     if (.not. allocated(f4%block_origin)) error stop "block_origin not allocated"
     if (.not. allocated(f4%block_level)) error stop "block_level not allocated"
     if (f4%n_blocks > f4%max_blocks) error stop "n_blocks > max_blocks"
 
-    call pw_get_quadrants(f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks), &
+    call pw_get_quadrants(f4%pw, f4%n_blocks, &
+         f4%block_origin(:, 1:f4%n_blocks), &
          f4%block_level(1:f4%n_blocks))
 
     do n = 1, f4%n_blocks
@@ -249,7 +270,7 @@ contains
     integer                                :: n
     real(dp), allocatable                  :: dr(:, :)
 
-    call pw_vtk_write_file(trim(fname) // C_null_char)
+    call pw_vtk_write_file(f4%pw, trim(fname) // C_null_char)
 
     allocate(dr(2, f4%n_blocks))
 
@@ -272,24 +293,27 @@ contains
     rr = f4%block_origin(:, i_block) + dr * [i-0.5_dp, j-0.5_dp]
   end function f4_cell_coord
 
-  subroutine f4_update_ghostcell_pattern(face_gc)
-    type(face_gc_t), intent(inout) :: face_gc
-    integer                        :: mesh_revision
-    type(bnd_face_t), pointer      :: bnd_face(:)
-    type(c_ptr)                    :: tmp
-    integer                        :: n_faces
+  subroutine f4_update_ghostcell_pattern(f4)
+    type(foap4_t), intent(inout) :: f4
+    integer                      :: mesh_revision
+    type(bnd_face_t), pointer    :: bnd_face(:)
+    type(c_ptr)                  :: tmp
+    integer                      :: n_faces
 
-    mesh_revision = pw_get_mesh_revision()
-    if (mesh_revision == face_gc%mesh_revision) return
+    mesh_revision = pw_get_mesh_revision(f4%pw)
+    if (mesh_revision == f4%face_gc%mesh_revision) return
 
-    call pw_get_all_faces(n_faces, tmp)
+    call pw_get_all_faces(f4%pw, n_faces, tmp)
+
     call c_f_pointer(tmp, bnd_face, shape=[n_faces])
 
-    call f4_get_ghost_cell_pattern(size(bnd_face), bnd_face, mpirank, mpisize)
-    face_gc%mesh_revision = mesh_revision
+    call f4_get_ghost_cell_pattern(f4%face_gc, size(bnd_face), bnd_face, &
+         mpirank, mpisize)
+    f4%face_gc%mesh_revision = mesh_revision
   end subroutine f4_update_ghostcell_pattern
 
-  subroutine f4_get_ghost_cell_pattern(n_faces, bnd_face, mpirank, mpisize)
+  subroutine f4_get_ghost_cell_pattern(face_gc, n_faces, bnd_face, mpirank, mpisize)
+    type(face_gc_t), intent(inout)  :: face_gc
     integer, intent(in)             :: n_faces
     type(bnd_face_t), intent(inout) :: bnd_face(n_faces)
     integer, intent(in)             :: mpirank
@@ -616,12 +640,12 @@ contains
     integer                      :: i_f, j_f, half_bx(2)
     integer                      :: iq, jq, i_buf, face
 
-    if (maxval(face_gc%send_offset) * n_vars > size(f4%send_buffer)) &
+    if (maxval(f4%face_gc%send_offset) * n_vars > size(f4%send_buffer)) &
          error stop "send buffer too small"
 
     half_bx = f4%bx/2
 
-    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
       do n = 1, size(face_gc%same_to_buf, 2)
          ! +1 to account for index offset between C and Fortran
          iq = face_gc%same_to_buf(1, n) + 1
@@ -789,10 +813,10 @@ contains
          end select
       end do
 
+      f4%recv_offset = face_gc%recv_offset * n_vars
+      f4%send_offset = face_gc%send_offset * n_vars
     end associate
 
-    f4%recv_offset = face_gc%recv_offset * n_vars
-    f4%send_offset = face_gc%send_offset * n_vars
   end subroutine f4_fill_ghostcell_buffers
 
   subroutine f4_fill_ghostcell_buffers_c2f(f4, n_vars, i_vars)
@@ -806,14 +830,14 @@ contains
     logical                      :: odd_n_gc
     real(dp)                     :: fine(4)
 
-    if (maxval(face_gc%send_offset_c2f) * n_vars > size(f4%send_buffer)) &
+    if (maxval(f4%face_gc%send_offset_c2f) * n_vars > size(f4%send_buffer)) &
          error stop "send buffer too small"
 
     half_bx = f4%bx/2
     half_n_gc = f4%n_gc/2 ! Round down
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
-    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
 
       do n = 1, size(face_gc%c2f_to_buf, 2)
          iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
@@ -1009,10 +1033,10 @@ contains
          end select
       end do
 
+      f4%recv_offset = face_gc%recv_offset_c2f * n_vars
+      f4%send_offset = face_gc%send_offset_c2f * n_vars
     end associate
 
-    f4%recv_offset = face_gc%recv_offset_c2f * n_vars
-    f4%send_offset = face_gc%send_offset_c2f * n_vars
   end subroutine f4_fill_ghostcell_buffers_c2f
 
   ! Exchange the receive and send buffers according to the specified offsets
@@ -1063,7 +1087,7 @@ contains
     real(dp)                     :: slope, fine(4)
     logical                      :: odd_n_gc
 
-    call f4_update_ghostcell_pattern(face_gc)
+    call f4_update_ghostcell_pattern(f4)
     call f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
     call f4_exchange_buffers(f4)
 
@@ -1071,7 +1095,7 @@ contains
     half_n_gc = f4%n_gc/2 ! Round down
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
-    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
       do n = 1, size(face_gc%same_from_buf, 2)
          ! +1 to account for index offset between C and Fortran
          iq = face_gc%same_from_buf(1, n) + 1
@@ -1770,15 +1794,15 @@ contains
     integer                      :: has_changed
 
     f4%refinement_flags(1:f4%n_blocks) = 0
-    if (mpirank == 1) f4%refinement_flags(2) = 1
+    if (mpirank == 0) f4%refinement_flags(1) = 1
 
     n_blocks_old = f4%n_blocks
-    call pw_adjust_refinement(f4%n_blocks, f4%refinement_flags(1:f4%n_blocks), &
-         has_changed)
+    call pw_adjust_refinement(f4%pw, f4%n_blocks, &
+         f4%refinement_flags(1:f4%n_blocks), has_changed)
 
     if (has_changed == 0) return
 
-    n_blocks_new = pw_get_num_local_quadrants()
+    n_blocks_new = pw_get_num_local_quadrants(f4%pw)
 
     if (n_blocks_new + f4%n_blocks > f4%max_blocks) &
          error stop "Not enough memory for tree copy during refinement"
