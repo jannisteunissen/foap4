@@ -641,21 +641,23 @@ contains
       b = ix%i(ib)
 
       if (recv) then
-         ! Order by quadid and face of 'this' side
-         if (bnd_face(a)%quadid(1) /= bnd_face(b)%quadid(1)) then
-            less_than = (bnd_face(a)%quadid(1) < bnd_face(b)%quadid(1))
-         else if (bnd_face(a)%face /= bnd_face(b)%face) then
+         ! Order by face and quadid of 'this' side
+         if (bnd_face(a)%face /= bnd_face(b)%face) then
             less_than = (bnd_face(a)%face < bnd_face(b)%face)
+         else if (bnd_face(a)%quadid(1) /= bnd_face(b)%quadid(1)) then
+            less_than = (bnd_face(a)%quadid(1) < bnd_face(b)%quadid(1))
          else
+            ! For hanging faces, sort by offset
             less_than = (bnd_face(a)%offset < bnd_face(b)%offset)
          end if
       else
-         ! Order by quadid and face of 'other' side
-         if (bnd_face(a)%quadid(2) /= bnd_face(b)%quadid(2)) then
-            less_than = (bnd_face(a)%quadid(2) < bnd_face(b)%quadid(2))
-         else if (bnd_face(a)%face /= bnd_face(b)%face) then
+         ! Order by face and quadid of 'other' side
+         if (bnd_face(a)%face /= bnd_face(b)%face) then
             ! Note that the face is swapped for the receiving side
-            less_than = (face_swap(bnd_face(a)%face) < face_swap(bnd_face(b)%face))
+            less_than = (face_swap(bnd_face(a)%face) < &
+                 face_swap(bnd_face(b)%face))
+         else if (bnd_face(a)%quadid(2) /= bnd_face(b)%quadid(2)) then
+            less_than = (bnd_face(a)%quadid(2) < bnd_face(b)%quadid(2))
          else
             less_than = (bnd_face(a)%offset < bnd_face(b)%offset)
          end if
