@@ -29,7 +29,7 @@ module m_foap4
      integer(c_int) :: face
      integer(c_int) :: other_proc
      integer(c_int) :: quadid(2)
-     integer(c_int) :: extra
+     integer(c_int) :: offset
   end type bnd_face_t
 
   type face_gc_t
@@ -42,7 +42,7 @@ module m_foap4
      integer, allocatable :: same_local(:, :)
      integer, allocatable :: same_from_buf(:, :)
      integer, allocatable :: same_to_buf(:, :)
-     integer, allocatable :: c2f_local(:, :)
+     integer, allocatable :: f2c_local(:, :)
      integer, allocatable :: c2f_from_buf(:, :)
      integer, allocatable :: c2f_to_buf(:, :)
      integer, allocatable :: f2c_from_buf(:, :)
@@ -428,16 +428,18 @@ contains
           face_gc%send_offset_c2f(rank) = face_gc%send_offset_c2f(rank-1)
        else
           face_gc%recv_offset(rank) = face_gc%recv_offset(rank-1) + &
-               face_gc%data_size * (i_same(rank-1) + i_c2f(rank-1))
+               face_gc%data_size * i_same(rank-1) + &
+               face_gc%data_size/2 * i_c2f(rank-1)
           face_gc%send_offset(rank) = face_gc%send_offset(rank-1) + &
-               face_gc%data_size * (i_same(rank-1) + i_f2c(rank-1))
+               face_gc%data_size * i_same(rank-1) + &
+               face_gc%data_size/2 * i_f2c(rank-1)
 
           ! In a second round of communication, handle the fine side of
           ! refinement boundaries
           face_gc%recv_offset_c2f(rank) = face_gc%recv_offset_c2f(rank-1) + &
-               face_gc%data_size * 2 * i_f2c(rank-1)
+               face_gc%data_size * i_f2c(rank-1)
           face_gc%send_offset_c2f(rank) = face_gc%send_offset_c2f(rank-1) + &
-               face_gc%data_size * 2 * i_c2f(rank-1)
+               face_gc%data_size * i_c2f(rank-1)
        end if
     end do
 
@@ -447,7 +449,7 @@ contains
             face_gc%phys, &
             face_gc%same_from_buf, &
             face_gc%same_to_buf, &
-            face_gc%c2f_local, &
+            face_gc%f2c_local, &
             face_gc%c2f_from_buf, &
             face_gc%c2f_to_buf, &
             face_gc%f2c_from_buf, &
@@ -458,7 +460,7 @@ contains
     allocate(face_gc%same_local(3, i_same(mpirank)))
 
     ! Local ghost cell exchange at refinement boundaries
-    allocate(face_gc%c2f_local(4, i_c2f(mpirank)))
+    allocate(face_gc%f2c_local(4, i_f2c(mpirank)))
 
     ! Physical boundaries
     allocate(face_gc%phys(2, i_phys))
@@ -496,17 +498,17 @@ contains
        else if (bnd_face(n)%face_type == FACE_COARSE_TO_FINE) then
           i_c2f(rank) = i_c2f(rank) + 1
 
-          if (rank == mpirank) then
-             face_gc%c2f_local(:, i_c2f(rank)) = [bnd_face(n)%quadid(1), &
-                  bnd_face(n)%quadid(2), bnd_face(n)%extra, bnd_face(n)%face]
-          else
-             c2f_ix(rank)%i(i_c2f(rank)) = n
-          end if
+          ! Always non-local
+          c2f_ix(rank)%i(i_c2f(rank)) = n
        else if (bnd_face(n)%face_type == FACE_FINE_TO_COARSE) then
           i_f2c(rank) = i_f2c(rank) + 1
 
-          ! Always non-local; local ones are stored as FACE_COARSE_TO_FINE
-          f2c_ix(rank)%i(i_f2c(rank)) = n
+          if (rank == mpirank) then
+             face_gc%f2c_local(:, i_f2c(rank)) = [bnd_face(n)%quadid(1), &
+                  bnd_face(n)%quadid(2), bnd_face(n)%offset, bnd_face(n)%face]
+          else
+             f2c_ix(rank)%i(i_f2c(rank)) = n
+          end if
        else
           error stop "Unknown face type"
        end if
@@ -519,13 +521,13 @@ contains
 
     ! Non-local ghost cell exchange from fine to coarse
     n = sum(i_f2c) - i_f2c(mpirank)
-    allocate(face_gc%f2c_from_buf(4, n))
-    allocate(face_gc%f2c_to_buf(4, n))
+    allocate(face_gc%f2c_from_buf(3, n))
+    allocate(face_gc%f2c_to_buf(3, n))
 
     ! Non-local ghost cell exchange from coarse to fine
     n = sum(i_c2f) - i_c2f(mpirank)
-    allocate(face_gc%c2f_from_buf(3, n))
-    allocate(face_gc%c2f_to_buf(3, n))
+    allocate(face_gc%c2f_from_buf(4, n))
+    allocate(face_gc%c2f_to_buf(4, n))
 
     i_same_nonlocal = 0
     i_f2c_to_buf = 0
@@ -567,10 +569,9 @@ contains
           i = f2c_ix(rank)%i(n) ! Index in bnd_face array
           i_f2c_to_buf = i_f2c_to_buf + 1
 
-          face_gc%f2c_to_buf(:, i_f2c_to_buf) = &
-               [bnd_face(i)%quadid(1), bnd_face(i)%extra, i_buf_send(rank), &
-               bnd_face(i)%face]
-          i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size
+          face_gc%f2c_to_buf(:, i_f2c_to_buf) = [bnd_face(i)%quadid(1), &
+               i_buf_send(rank), bnd_face(i)%face]
+          i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size / 2
        end do
 
        ! Receiving coarse from fine
@@ -580,12 +581,12 @@ contains
           i = c2f_ix(rank)%i(n) ! Index in bnd_face array
           i_c2f_from_buf = i_c2f_from_buf + 1
 
-          face_gc%c2f_from_buf(:, i_c2f_from_buf) = &
-               [bnd_face(i)%quadid(1), i_buf_recv(rank), bnd_face(i)%face]
-          i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size
+          face_gc%c2f_from_buf(:, i_c2f_from_buf) = [bnd_face(i)%quadid(1), &
+               bnd_face(i)%offset, i_buf_recv(rank), bnd_face(i)%face]
+          i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size / 2
        end do
 
-       ! After the above ghost cells have been update, we can handle the fine
+       ! After the above ghost cells have been updated, we can handle the fine
        ! side of refinement boundaries. This involves a new round of
        ! communication, so reset buffer offsets.
        i_buf_recv(rank) = face_gc%recv_offset_c2f(rank)
@@ -598,9 +599,9 @@ contains
           i = c2f_ix(rank)%i(n) ! Index in bnd_face array
           i_c2f_to_buf = i_c2f_to_buf + 1
 
-          face_gc%c2f_to_buf(:, i_c2f_to_buf) = &
-               [bnd_face(i)%quadid(1), i_buf_send(rank), bnd_face(i)%face]
-          i_buf_send(rank) = i_buf_send(rank) + 2 * face_gc%data_size
+          face_gc%c2f_to_buf(:, i_c2f_to_buf) = [bnd_face(i)%quadid(1), &
+               bnd_face(i)%offset, i_buf_send(rank), bnd_face(i)%face]
+          i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size
        end do
 
        ! Receiving fine from coarse
@@ -610,10 +611,9 @@ contains
           i = f2c_ix(rank)%i(n) ! Index in bnd_face array
           i_f2c_from_buf = i_f2c_from_buf + 1
 
-          face_gc%f2c_from_buf(:, i_f2c_from_buf) = &
-               [bnd_face(i)%quadid(1), bnd_face(i)%extra, i_buf_recv(rank), &
-               bnd_face(i)%face]
-          i_buf_recv(rank) = i_buf_recv(rank) + 2 * face_gc%data_size
+          face_gc%f2c_from_buf(:, i_f2c_from_buf) = [bnd_face(i)%quadid(1), &
+               i_buf_recv(rank), bnd_face(i)%face]
+          i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size
        end do
 
     end do
@@ -644,16 +644,20 @@ contains
          ! Order by quadid and face of 'this' side
          if (bnd_face(a)%quadid(1) /= bnd_face(b)%quadid(1)) then
             less_than = (bnd_face(a)%quadid(1) < bnd_face(b)%quadid(1))
-         else
+         else if (bnd_face(a)%face /= bnd_face(b)%face) then
             less_than = (bnd_face(a)%face < bnd_face(b)%face)
+         else
+            less_than = (bnd_face(a)%offset < bnd_face(b)%offset)
          end if
       else
          ! Order by quadid and face of 'other' side
          if (bnd_face(a)%quadid(2) /= bnd_face(b)%quadid(2)) then
             less_than = (bnd_face(a)%quadid(2) < bnd_face(b)%quadid(2))
-         else
+         else if (bnd_face(a)%face /= bnd_face(b)%face) then
             ! Note that the face is swapped for the receiving side
             less_than = (face_swap(bnd_face(a)%face) < face_swap(bnd_face(b)%face))
+         else
+            less_than = (bnd_face(a)%offset < bnd_face(b)%offset)
          end if
       end if
     end function less_than
@@ -684,7 +688,7 @@ contains
     integer, intent(in)          :: i_vars(n_vars)
     integer                      :: i, j, n, ivar, iv
     integer                      :: i_f, j_f, half_bx(2)
-    integer                      :: iq, jq, i_buf, face
+    integer                      :: iq, i_buf, face
 
     if (maxval(f4%face_gc%send_offset) * n_vars > size(f4%send_buffer)) &
          error stop "send buffer too small"
@@ -742,18 +746,16 @@ contains
          end select
       end do
 
+      ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
       do n = 1, size(face_gc%f2c_to_buf, 2)
          iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
-         jq = face_gc%f2c_to_buf(2, n) + 1 ! fine block
-         i_buf = face_gc%f2c_to_buf(3, n) * n_vars
-         face = face_gc%f2c_to_buf(4, n)
+         i_buf = face_gc%f2c_to_buf(2, n) * n_vars
+         face = face_gc%f2c_to_buf(3, n)
 
          select case (face)
          case (0)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, half_bx(2)
                   j_f = 2 * j - 1
                   do i = 1, n_gc
@@ -763,24 +765,10 @@ contains
                           sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                   end do
                end do
-
-               ! Second fine block
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, n_gc
-                     i_f = 2 * i - 1
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
-                  end do
-               end do
             end do
-
          case (1)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, half_bx(2)
                   j_f = 2 * j - 1
                   do i = 1, n_gc
@@ -790,24 +778,10 @@ contains
                           sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                   end do
                end do
-
-               ! Second fine block
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, n_gc
-                     i_f = bx(1) - 2 * n_gc + 2 * i - 1
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
-                  end do
-               end do
             end do
-
          case (2)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, n_gc
                   j_f = 2 * j - 1
                   do i = 1, half_bx(1)
@@ -815,26 +789,12 @@ contains
                      i_buf = i_buf + 1
                      f4%send_buffer(i_buf) = 0.25_dp * &
                           sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, n_gc
-                  j_f = 2 * j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
                   end do
                end do
             end do
-
          case (3)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, n_gc
                   j_f = bx(2) - 2 * n_gc + 2 * j - 1
                   do i = 1, half_bx(1)
@@ -842,17 +802,6 @@ contains
                      i_buf = i_buf + 1
                      f4%send_buffer(i_buf) = 0.25_dp * &
                           sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, n_gc
-                  j_f = bx(2) - 2 * n_gc + 2 * j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
                   end do
                end do
             end do
@@ -871,7 +820,7 @@ contains
     integer, intent(in)          :: i_vars(n_vars)
     integer                      :: i, j, n, ivar, iv
     integer                      :: i_c, j_c, half_bx(2)
-    integer                      :: iq, i_buf, face
+    integer                      :: iq, i_buf, offset, face
     integer                      :: half_n_gc
     logical                      :: odd_n_gc
     real(dp)                     :: fine(4)
@@ -887,27 +836,19 @@ contains
 
       do n = 1, size(face_gc%c2f_to_buf, 2)
          iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
-         i_buf = face_gc%c2f_to_buf(2, n) * n_vars
-         face = face_gc%c2f_to_buf(3, n)
+         offset = face_gc%c2f_to_buf(2, n)
+         i_buf = face_gc%c2f_to_buf(3, n) * n_vars
+         face = face_gc%c2f_to_buf(4, n)
 
          select case (face)
          case (0)
             do iv = 1, n_vars
                ivar = i_vars(iv)
                do j = 1, half_bx(2)
+                  j_c = j + offset * half_bx(2)
+
                   do i = 1, half_n_gc
                      i_c = i
-
-                     ! First fine block
-                     j_c = j
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+4) = fine
-                     i_buf = i_buf + 4
-
-                     ! Second fine block
-                     j_c = j_c + half_bx(2)
                      call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
                           [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
                           [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
@@ -917,17 +858,6 @@ contains
 
                   if (odd_n_gc) then
                      i_c = 1 + half_n_gc
-
-                     ! First fine block
-                     j_c = j
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+2) = fine([1, 3])
-                     i_buf = i_buf + 2
-
-                     ! Second fine block
-                     j_c = j_c + half_bx(2)
                      call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
                           [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
                           [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
@@ -942,19 +872,9 @@ contains
                ivar = i_vars(iv)
 
                do j = 1, half_bx(2)
+                  j_c = j + offset * half_bx(2)
                   do i = 1, half_n_gc
                      i_c = bx(1) - half_n_gc + i
-
-                     ! First fine block
-                     j_c = j
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+4) = fine
-                     i_buf = i_buf + 4
-
-                     ! Second fine block
-                     j_c = j_c + half_bx(2)
                      call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
                           [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
                           [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
@@ -964,17 +884,6 @@ contains
 
                   if (odd_n_gc) then
                      i_c = bx(1) - half_n_gc
-
-                     ! First fine block
-                     j_c = j
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+2) = fine([2, 4])
-                     i_buf = i_buf + 2
-
-                     ! Second fine block
-                     j_c = j_c + half_bx(2)
                      call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
                           [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
                           [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
@@ -991,16 +900,7 @@ contains
                do j = 1, half_n_gc
                   j_c = j
                   do i = 1, half_bx(1)
-                     ! First fine block
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+4) = fine
-                     i_buf = i_buf + 4
-
-                     ! Second fine block
-                     i_c = i_c + half_bx(1)
+                     i_c = i + offset * half_bx(1)
                      call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
                           [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
                           [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
@@ -1012,16 +912,7 @@ contains
                if (odd_n_gc) then
                   j_c = 1 + half_n_gc
                   do i = 1, half_bx(1)
-                     ! First fine block
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+2) = fine([1, 2])
-                     i_buf = i_buf + 2
-
-                     ! Second fine block
-                     i_c = i_c + half_bx(2)
+                     i_c = i + offset * half_bx(1)
                      call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
                           [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
                           [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
@@ -1037,16 +928,7 @@ contains
                do j = 1, half_n_gc
                   j_c = bx(2) - half_n_gc + j
                   do i = 1, half_bx(1)
-                     ! First fine block
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+4) = fine
-                     i_buf = i_buf + 4
-
-                     ! Second fine block
-                     i_c = i_c + half_bx(1)
+                     i_c = i + offset * half_bx(1)
                      call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
                           [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
                           [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
@@ -1058,16 +940,7 @@ contains
                if (odd_n_gc) then
                   j_c = bx(2) - half_n_gc
                   do i = 1, half_bx(1)
-                     ! First fine block
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+2) = fine([3, 4])
-                     i_buf = i_buf + 2
-
-                     ! Second fine block
-                     i_c = i_c + half_bx(2)
+                     i_c = i + offset * half_bx(1)
                      call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
                           [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
                           [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
@@ -1127,9 +1000,9 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer                      :: n, i, j, iq, jq, kq, face
+    integer                      :: n, i, j, iq, jq, face
     integer                      :: i_buf, iv, ivar, i_f, j_f, i_c, j_c
-    integer                      :: half_bx(2), half_n_gc
+    integer                      :: half_bx(2), half_n_gc, offset
     real(dp)                     :: slope, fine(4)
     logical                      :: odd_n_gc
 
@@ -1192,107 +1065,59 @@ contains
          end select
       end do
 
-      ! Local coarse-to-fine refinement boundaries, fill coarse side
-      do n = 1, size(face_gc%c2f_local, 2)
-         iq   = face_gc%c2f_local(1, n) + 1 ! Coarse block
-         jq   = face_gc%c2f_local(2, n) + 1 ! First fine block
-         kq   = face_gc%c2f_local(3, n) + 1 ! Second fine block
-         face = face_gc%c2f_local(4, n)
+      ! Local fine-to-coarse refinement boundaries, fill coarse side
+      do n = 1, size(face_gc%f2c_local, 2)
+         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
+         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
+         offset = face_gc%f2c_local(3, n)     ! offset
+         face   = face_gc%f2c_local(4, n)
 
          select case (face)
          case (0)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, half_bx(2)
                   j_f = 2 * j - 1
                   do i = 1, n_gc
-                     i_f = bx(1) - 2 * n_gc + 2 * i - 1
-                     uu(-n_gc+i, j, ivar, iq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, n_gc
-                     i_f = bx(1) - 2 * n_gc + 2 * i - 1
-                     uu(-n_gc+i, half_bx(2)+j, ivar, iq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, kq))
+                     i_f = 2 * i - 1
+                     uu(bx(1)+i, offset*half_bx(2)+j, ivar, jq) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                   end do
                end do
             end do
          case (1)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, half_bx(2)
                   j_f = 2 * j - 1
                   do i = 1, n_gc
-                     i_f = 2 * i - 1
-                     uu(bx(1)+i, j, ivar, iq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, n_gc
-                     i_f = 2 * i - 1
-                     uu(bx(1)+i, half_bx(2)+j, ivar, iq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, kq))
+                     i_f = bx(1) - 2 * n_gc + 2 * i - 1
+                     uu(-n_gc+i, offset*half_bx(2)+j, ivar, jq) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                   end do
                end do
             end do
          case (2)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, n_gc
-                  j_f = bx(2) - 2 * n_gc + 2 * j - 1
+                  j_f = 2 * j - 1
                   do i = 1, half_bx(1)
                      i_f = 2 * i - 1
-                     uu(i, -n_gc+j, ivar, iq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, n_gc
-                  j_f = bx(2) - 2 * n_gc + 2 * j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     uu(half_bx(1)+i, -n_gc+j, ivar, iq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, kq))
+                     uu(offset*half_bx(1)+i, bx(2)+j, ivar, jq) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                   end do
                end do
             end do
          case (3)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, n_gc
-                  j_f = 2 * j - 1
+                  j_f = bx(2) - 2 * n_gc + 2 * j - 1
                   do i = 1, half_bx(1)
                      i_f = 2 * i - 1
-                     uu(i, bx(2)+j, ivar, iq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, jq))
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, n_gc
-                  j_f = 2 * j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     uu(half_bx(1)+i, bx(2)+j, ivar, iq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, kq))
+                     uu(offset*half_bx(1)+i, -n_gc+j, ivar, jq) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                   end do
                end do
             end do
@@ -1301,88 +1126,53 @@ contains
 
       ! Coarse-to-fine, update coarse side from buffers
       do n = 1, size(face_gc%c2f_from_buf, 2)
-         iq    = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
-         i_buf = face_gc%c2f_from_buf(2, n) * n_vars
-         face  = face_gc%c2f_from_buf(3, n)
+         iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
+         offset = face_gc%c2f_from_buf(2, n)     ! Offset
+         i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
+         face   = face_gc%c2f_from_buf(4, n)
 
          select case (face)
          case (0)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, half_bx(2)
                   do i = 1, n_gc
                      i_buf = i_buf + 1
-                     uu(-n_gc+i, j, ivar, iq) = f4%recv_buffer(i_buf)
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, half_bx(2)
-                  do i = 1, n_gc
-                     i_buf = i_buf + 1
-                     uu(-n_gc+i, half_bx(2)+j, ivar, iq) = f4%recv_buffer(i_buf)
+                     uu(-n_gc+i, offset*half_bx(2)+j, ivar, iq) = &
+                          f4%recv_buffer(i_buf)
                   end do
                end do
             end do
          case (1)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, half_bx(2)
                   do i = 1, n_gc
                      i_buf = i_buf + 1
-                     uu(bx(1)+i, j, ivar, iq) = f4%recv_buffer(i_buf)
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, half_bx(2)
-                  do i = 1, n_gc
-                     i_buf = i_buf + 1
-                     uu(bx(1)+i, half_bx(2)+j, ivar, iq) = f4%recv_buffer(i_buf)
+                     uu(bx(1)+i, offset*half_bx(2)+j, ivar, iq) = &
+                          f4%recv_buffer(i_buf)
                   end do
                end do
             end do
          case (2)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, n_gc
                   do i = 1, half_bx(1)
                      i_buf = i_buf + 1
-                     uu(i, -n_gc+j, ivar, iq) = f4%recv_buffer(i_buf)
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, n_gc
-                  do i = 1, half_bx(1)
-                     i_buf = i_buf + 1
-                     uu(half_bx(1)+i, -n_gc+j, ivar, iq) = f4%recv_buffer(i_buf)
+                     uu(offset*half_bx(1)+i, -n_gc+j, ivar, iq) = &
+                          f4%recv_buffer(i_buf)
                   end do
                end do
             end do
          case (3)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-
-               ! First fine block
                do j = 1, n_gc
                   do i = 1, half_bx(1)
                      i_buf = i_buf + 1
-                     uu(i, bx(2)+j, ivar, iq) = f4%recv_buffer(i_buf)
-                  end do
-               end do
-
-               ! Second fine block
-               do j = 1, n_gc
-                  do i = 1, half_bx(1)
-                     i_buf = i_buf + 1
-                     uu(half_bx(1)+i, bx(2)+j, ivar, iq) = f4%recv_buffer(i_buf)
+                     uu(offset*half_bx(1)+i, bx(2)+j, ivar, iq) = &
+                          f4%recv_buffer(i_buf)
                   end do
                end do
             end do
@@ -1475,11 +1265,11 @@ contains
       call f4_exchange_buffers(f4)
 
       ! Local coarse-to-fine boundaries, fill fine side
-      do n = 1, size(face_gc%c2f_local, 2)
-         iq   = face_gc%c2f_local(1, n) + 1 ! Coarse block
-         jq   = face_gc%c2f_local(2, n) + 1 ! First fine block
-         kq   = face_gc%c2f_local(3, n) + 1 ! Second fine block
-         face = face_gc%c2f_local(4, n)
+      do n = 1, size(face_gc%f2c_local, 2)
+         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
+         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
+         offset = face_gc%f2c_local(3, n)     ! Offset
+         face   = face_gc%f2c_local(4, n)
 
          select case (face)
          case (0)
@@ -1488,42 +1278,23 @@ contains
 
                do j = 1, half_bx(2)
                   j_f = 2 * j - 1
+                  j_c = j + offset * half_bx(2)
                   do i = 1, half_n_gc
-                     i_c = i
-                     i_f = bx(1) + 2*i - 1
-
-                     ! First fine block
-                     j_c = j
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = reshape(fine, [2, 2])
-
-                     ! Second fine block
-                     j_c = j_c + half_bx(2)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, kq) = reshape(fine, [2, 2])
+                     i_c = bx(1) - half_n_gc + i
+                     i_f = -(2 * half_n_gc) + 2*i - 1
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
                   end do
 
                   if (odd_n_gc) then
-                     i_c = 1 + half_n_gc
-                     i_f = bx(1) + n_gc
-
-                     ! First fine block
-                     j_c = j
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f, j_f:j_f+1, ivar, jq) = fine([1, 3])
-
-                     ! Second fine block
-                     j_c = j_c + half_bx(2)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f, j_f:j_f+1, ivar, kq) = fine([1, 3])
+                     i_c = bx(1) - half_n_gc
+                     i_f = -n_gc + 1
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                     f4%uu(i_f, j_f:j_f+1, ivar, iq) = fine([2, 4])
                   end if
                end do
             end do
@@ -1534,97 +1305,28 @@ contains
 
                do j = 1, half_bx(2)
                   j_f = 2 * j - 1
+                  j_c = j + offset * half_bx(2)
                   do i = 1, half_n_gc
-                     i_c = bx(1) - half_n_gc + i
-                     i_f = -(2 * half_n_gc) + 2*i - 1
-
-                     ! First fine block
-                     j_c = j
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = reshape(fine, [2, 2])
-
-                     ! Second fine block
-                     j_c = j_c + half_bx(2)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, kq) = reshape(fine, [2, 2])
+                     i_c = i
+                     i_f = bx(1) + 2*i - 1
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
                   end do
 
                   if (odd_n_gc) then
-                     i_c = bx(1) - half_n_gc
-                     i_f = -n_gc + 1
-
-                     ! First fine block
-                     j_c = j
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f, j_f:j_f+1, ivar, jq) = fine([2, 4])
-
-                     ! Second fine block
-                     j_c = j_c + half_bx(2)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f, j_f:j_f+1, ivar, kq) = fine([2, 4])
+                     i_c = 1 + half_n_gc
+                     i_f = bx(1) + n_gc
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                     f4%uu(i_f, j_f:j_f+1, ivar, iq) = fine([1, 3])
                   end if
                end do
             end do
 
          case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-
-               do j = 1, half_n_gc
-                  j_c = j
-                  j_f = bx(2) + 2*j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-
-                     ! First fine block
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = reshape(fine, [2, 2])
-
-                     ! Second fine block
-                     i_c = i_c + half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, kq) = reshape(fine, [2, 2])
-                  end do
-               end do
-
-               if (odd_n_gc) then
-                  j_c = 1 + half_n_gc
-                  j_f = bx(2) + n_gc
-
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-
-                     ! First fine block
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f, ivar, jq) = fine([1, 2])
-
-                     ! Second fine block
-                     i_c = i_c + half_bx(2)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f, ivar, kq) = fine([1, 2])
-                  end do
-               end if
-            end do
-
-         case (3)
             do iv = 1, n_vars
                ivar = i_vars(iv)
 
@@ -1633,91 +1335,69 @@ contains
                   j_f = -(2 * half_n_gc) + 2*j - 1
                   do i = 1, half_bx(1)
                      i_f = 2 * i - 1
-
-                     ! First fine block
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = reshape(fine, [2, 2])
-
-                     ! Second fine block
-                     i_c = i_c + half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, kq) = reshape(fine, [2, 2])
+                     i_c = i + offset * half_bx(1)
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
                   end do
                end do
 
                if (odd_n_gc) then
                   j_c = bx(2) - half_n_gc
                   j_f = -n_gc + 1
-
                   do i = 1, half_bx(1)
                      i_f = 2 * i - 1
-
-                     ! First fine block
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f, ivar, jq) = fine([3, 4])
-
-                     ! Second fine block
-                     i_c = i_c + half_bx(2)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%uu(i_f:i_f+1, j_f, ivar, kq) = fine([3, 4])
+                     i_c = i + offset * half_bx(1)
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                     f4%uu(i_f:i_f+1, j_f, ivar, iq) = fine([3, 4])
                   end do
                end if
             end do
+
+         case (3)
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+
+               do j = 1, half_n_gc
+                  j_c = j
+                  j_f = bx(2) + 2*j - 1
+                  do i = 1, half_bx(1)
+                     i_f = 2 * i - 1
+                     i_c = i + offset * half_bx(1)
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
+                  end do
+               end do
+
+               if (odd_n_gc) then
+                  j_c = 1 + half_n_gc
+                  j_f = bx(2) + n_gc
+                  do i = 1, half_bx(1)
+                     i_f = 2 * i - 1
+                     i_c = i + offset * half_bx(1)
+                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                     f4%uu(i_f:i_f+1, j_f, ivar, iq) = fine([1, 2])
+                  end do
+               end if
+            end do
+
          end select
       end do
 
       ! Nonlocal coarse-to-fine boundaries, fill fine side
       do n = 1, size(face_gc%f2c_from_buf, 2)
          iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
-         jq    = face_gc%f2c_from_buf(2, n) + 1 ! Fine block
-         i_buf = face_gc%f2c_from_buf(3, n) * n_vars
-         face  = face_gc%f2c_from_buf(4, n)
+         i_buf = face_gc%f2c_from_buf(2, n) * n_vars
+         face  = face_gc%f2c_from_buf(3, n)
 
          select case (face)
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, half_n_gc
-                     i_f = bx(1) + 2*i - 1
-                     ! First fine block
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
-
-                     ! Second fine block
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
-                  end do
-
-                  if (odd_n_gc) then
-                     i_f = bx(1) + n_gc
-
-                     ! First fine block
-                     f4%uu(i_f, j_f:j_f+1, ivar, iq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-
-                     ! Second fine block
-                     f4%uu(i_f, j_f:j_f+1, ivar, jq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-                  end if
-               end do
-            end do
-
          case (0)
             do iv = 1, n_vars
                ivar = i_vars(iv)
@@ -1725,70 +1405,39 @@ contains
                   j_f = 2 * j - 1
                   do i = 1, half_n_gc
                      i_f = -(2 * half_n_gc) + 2*i - 1
-
-                     ! First fine block
                      f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
-
-                     ! Second fine block
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = &
                           reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
                      i_buf = i_buf + 4
                   end do
 
                   if (odd_n_gc) then
                      i_f = -n_gc + 1
-
-                     ! First fine block
                      f4%uu(i_f, j_f:j_f+1, ivar, iq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-
-                     ! Second fine block
-                     f4%uu(i_f, j_f:j_f+1, ivar, jq) = &
                           f4%recv_buffer(i_buf+1:i_buf+2)
                      i_buf = i_buf + 2
                   end if
                end do
             end do
 
-         case (3)
+         case (1)
             do iv = 1, n_vars
                ivar = i_vars(iv)
-               do j = 1, half_n_gc
-                  j_f = bx(2) + 2*j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-
-                     ! First fine block
+               do j = 1, half_bx(2)
+                  j_f = 2 * j - 1
+                  do i = 1, half_n_gc
+                     i_f = bx(1) + 2*i - 1
                      f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
                           reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
                      i_buf = i_buf + 4
-
-                     ! Second fine block
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
                   end do
+
+                  if (odd_n_gc) then
+                     i_f = bx(1) + n_gc
+                     f4%uu(i_f, j_f:j_f+1, ivar, iq) = &
+                          f4%recv_buffer(i_buf+1:i_buf+2)
+                     i_buf = i_buf + 2
+                  end if
                end do
-
-               if (odd_n_gc) then
-                  j_f = bx(2) + n_gc
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-
-                     ! First fine block
-                     f4%uu(i_f:i_f+1, j_f, ivar, iq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-
-                     ! Second fine block
-                     f4%uu(i_f:i_f+1, j_f, ivar, jq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-                  end do
-               end if
             end do
 
          case (2)
@@ -1798,14 +1447,7 @@ contains
                   j_f = -(2 * half_n_gc) + 2*j - 1
                   do i = 1, half_bx(1)
                      i_f = 2 * i - 1
-
-                     ! First fine block
                      f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
-
-                     ! Second fine block
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, jq) = &
                           reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
                      i_buf = i_buf + 4
                   end do
@@ -1815,19 +1457,37 @@ contains
                   j_f = -n_gc + 1
                   do i = 1, half_bx(1)
                      i_f = 2 * i - 1
-
-                     ! First fine block
                      f4%uu(i_f:i_f+1, j_f, ivar, iq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-
-                     ! Second fine block
-                     f4%uu(i_f:i_f+1, j_f, ivar, jq) = &
                           f4%recv_buffer(i_buf+1:i_buf+2)
                      i_buf = i_buf + 2
                   end do
                end if
             end do
+
+         case (3)
+            do iv = 1, n_vars
+               ivar = i_vars(iv)
+               do j = 1, half_n_gc
+                  j_f = bx(2) + 2*j - 1
+                  do i = 1, half_bx(1)
+                     i_f = 2 * i - 1
+                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
+                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
+                     i_buf = i_buf + 4
+                  end do
+               end do
+
+               if (odd_n_gc) then
+                  j_f = bx(2) + n_gc
+                  do i = 1, half_bx(1)
+                     i_f = 2 * i - 1
+                     f4%uu(i_f:i_f+1, j_f, ivar, iq) = &
+                          f4%recv_buffer(i_buf+1:i_buf+2)
+                     i_buf = i_buf + 2
+                  end do
+               end if
+            end do
+
          end select
       end do
     end associate
@@ -1862,7 +1522,7 @@ contains
 
     k = n_blocks_new + 1
     n = 1
-    do
+    do while (n <= n_blocks_new)
        select case (f4%block_level(n) - f4%block_level(k))
        case (0)
           ! Same refinement level
@@ -1886,13 +1546,10 @@ contains
        case default
           error stop "Refinement: difference in levels > 1"
        end select
-
-       if (n == n_blocks_new + 1) then
-          if (k /= n_blocks_new + n_blocks_old + 1) &
-               error stop "Refinement: loops do not end simultaneously"
-          exit
-       end if
     end do
+
+    if (k /= n_blocks_new + n_blocks_old + 1) &
+         error stop "Refinement: loops did not end simultaneously"
 
     if (partition) call f4_partition(f4)
   end subroutine f4_adjust_refinement
@@ -2015,14 +1672,12 @@ contains
 
   subroutine f4_partition(f4)
     type(foap4_t), intent(inout), target :: f4
-    integer                      :: n_changed, n_blocks_old, n_blocks_new
+    integer                      :: n_changed, n_blocks_old
     integer(c_int64_t)           :: gfq_old(0:f4%mpisize)
     integer                      :: n, dsize
 
     n_blocks_old = f4%n_blocks
     call pw_partition(f4%pw, n_changed, gfq_old)
-
-    print *, f4%mpirank, n_changed
 
     ! Copy blocks to end of list. The backward order ensures old data is not
     ! overwritten before it is copied.

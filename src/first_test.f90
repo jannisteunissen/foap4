@@ -12,10 +12,10 @@ program first_test
 
   n = 0
   call test_refinement(f4, [1e-2_dp, 1e-2_dp], "test", n)
-  ! call test_refinement(f4, [0.99_dp, 1e-2_dp], "test", n)
-  ! call test_refinement(f4, [0.5_dp, 0.5_dp], "test", n)
-  ! call test_refinement(f4, [1e-2_dp, 0.99_dp], "test", n)
-  ! call test_refinement(f4, [0.99_dp, 0.99_dp], "test", n)
+  call test_refinement(f4, [0.99_dp, 1e-2_dp], "test", n)
+  call test_refinement(f4, [0.5_dp, 0.5_dp], "test", n)
+  call test_refinement(f4, [1e-2_dp, 0.99_dp], "test", n)
+  call test_refinement(f4, [0.99_dp, 0.99_dp], "test", n)
 
   call f4_finalize(f4)
 
@@ -28,7 +28,7 @@ contains
     integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
-    integer, parameter           :: bx(2)               = [16, 16]
+    integer, parameter           :: bx(2)               = [4, 4]
     integer, parameter           :: n_gc                = 1
     integer, parameter           :: n_vars              = 2
     character(len=20)            :: var_names(n_vars)   = ['rho', 'phi']
@@ -46,9 +46,10 @@ contains
     n_output = n_output + 1
     call f4_write_grid(f4, base_name, n_output)
 
-    do n_refine_steps = 1, 2
+    do n_refine_steps = 1, 5
        call set_refinement_flag(f4, refine_location)
        call f4_adjust_refinement(f4, .true.)
+       call f4_write_grid(f4, base_name, n_output)
        call f4_update_ghostcells(f4, 2, [1, 2])
        call local_average(f4)
        n_output = n_output + 1
@@ -124,7 +125,7 @@ contains
              sol = rho_init(rr(1), rr(2))
              err = tmp(i, j) - sol
              if (abs(err) > 1e-15_dp) then
-                print *, f4%mpirank, n, f4%block_origin(:, n), i, j, err
+                print *, f4%mpirank, n, f4%block_origin(:, n), f4%block_level(n), i, j, err
              end if
           end do
        end do

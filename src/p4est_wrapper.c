@@ -16,7 +16,7 @@ typedef struct bnd_face {
   int face;                     /* Direction of the face */
   int other_proc;               /* MPI rank that owns quadid[1] */
   int quadid[2];                /* quadid[0] is always local, [1] can be non-local */
-  int extra;                    /* To store the 'extra' hanging face */
+  int offset;                   /* Offset for a hanging face */
 } bnd_face_t;
 
 /* Stores p4est and related data required for this wrapper */
@@ -146,12 +146,11 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
   pw = (pw_state_t *) user_data;
   trees = (sc_array_t *) pw->p4est->trees;
   ghost_rank = (int *) pw->ghost_rank;
-
   sides = (p4est_iter_face_side_t *) (info->sides.array);
-  bf = &(pw->bnd_face)[pw->n_faces++];
 
   if (info->sides.elem_count == 1) {
     /* A physical boundary, so there is just one full (and local) face side */
+    bf = &(pw->bnd_face)[pw->n_faces++];
     bf->face_type = FACE_BOUNDARY;
     bf->face = sides[0].face;
 
@@ -159,7 +158,7 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
     bf->quadid[0] = sides[0].is.full.quadid + tree->quadrants_offset;
     bf->other_proc = pw->p4est->mpirank;
     bf->quadid[1] = -2;
-    bf->extra = -2;
+    bf->offset = -2;
   } else if (sides[0].is_hanging | sides[1].is_hanging) {
     /* A coarse-to-fine interface */
     p4est_iter_face_side_t *face_hanging, *face_full;
@@ -172,58 +171,56 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
       face_full = &sides[0];
     }
 
-    /* Store local side first */
-    if (face_full->is.full.is_ghost) {
-      /* The coarse side is a ghost */
-      bf->face_type = FACE_FINE_TO_COARSE;
-      bf->face = face_hanging->face;
+    /* Handle non-ghost hanging faces */
+    for (int i = 0; i<2; i++) {
+      if (!face_hanging->is.hanging.is_ghost[i]) {
+        /* Hanging face is not a ghost, coarse side can be a ghost */
+        bf = &(pw->bnd_face)[pw->n_faces++];
+        bf->face_type = FACE_FINE_TO_COARSE;
+        bf->face = face_hanging->face;
 
-      tree = p4est_tree_array_index (trees, face_hanging->treeid);
-      bf->quadid[0] = face_hanging->is.hanging.quadid[0] +
-        tree->quadrants_offset;
-      bf->extra = face_hanging->is.hanging.quadid[1]; /* same tree */
+        tree = p4est_tree_array_index (trees, face_hanging->treeid);
+        bf->quadid[0] = face_hanging->is.hanging.quadid[i] +
+          tree->quadrants_offset;
+        bf->offset = i;
 
-      /* Index in the ghost array has been stored */
-      ghost_ix = face_full->is.full.quadid;
-      quad = (p4est_quadrant_t *) (pw->ghost->ghosts.array +
-                                   ghost_ix * sizeof(p4est_quadrant_t));
-      bf->other_proc = ghost_rank[ghost_ix];
-      bf->quadid[1] = quad->p.piggy3.local_num;
-    } else if (face_hanging->is.hanging.is_ghost[0]) {
-      /* The fine sides are both ghosts */
-      bf->face_type = FACE_COARSE_TO_FINE;
-      bf->face = face_full->face;
+        if (face_full->is.full.is_ghost) {
+          ghost_ix = face_full->is.full.quadid;
+          quad = (p4est_quadrant_t *) (pw->ghost->ghosts.array +
+                                       ghost_ix * sizeof(p4est_quadrant_t));
+          bf->other_proc = ghost_rank[ghost_ix];
+          bf->quadid[1] = quad->p.piggy3.local_num;
+        } else {
+          bf->other_proc = pw->p4est->mpirank;
+          tree = p4est_tree_array_index (trees, face_full->treeid);
+          bf->quadid[1] = face_full->is.full.quadid + tree->quadrants_offset;
+        }
+      }
+    }
 
-      tree = p4est_tree_array_index (trees, face_full->treeid);
-      bf->quadid[0] = face_full->is.full.quadid + tree->quadrants_offset;
+    /* Handle 'ghost' hanging faces */
+    if (!face_full->is.full.is_ghost) {
+      for (int i = 0; i<2; i++) {
+        if (face_hanging->is.hanging.is_ghost[i]) {
+          bf = &(pw->bnd_face)[pw->n_faces++];
+          bf->face_type = FACE_COARSE_TO_FINE;
+          bf->face = face_full->face;
 
-      ghost_ix = face_hanging->is.hanging.quadid[0];
-      bf->other_proc = ghost_rank[ghost_ix];
-      quad = (p4est_quadrant_t *) (pw->ghost->ghosts.array +
-                                   ghost_ix * sizeof(p4est_quadrant_t));
-      bf->quadid[1] = quad->p.piggy3.local_num;
+          tree = p4est_tree_array_index (trees, face_full->treeid);
+          bf->quadid[0] = face_full->is.full.quadid + tree->quadrants_offset;
+          bf->offset = i;
 
-      ghost_ix = face_hanging->is.hanging.quadid[1];
-      quad = (p4est_quadrant_t *) (pw->ghost->ghosts.array +
-                                   ghost_ix * sizeof(p4est_quadrant_t));
-      bf->extra = quad->p.piggy3.local_num;
-    } else {
-      /* Coarse and fine side are local */
-      bf->face_type = FACE_COARSE_TO_FINE;
-      bf->face = face_full->face;
-
-      tree = p4est_tree_array_index (trees, face_full->treeid);
-      bf->quadid[0] = face_full->is.full.quadid + tree->quadrants_offset;
-
-      bf->other_proc = pw->p4est->mpirank;
-      tree = p4est_tree_array_index (trees, face_hanging->treeid);
-      bf->quadid[1] = face_hanging->is.hanging.quadid[0] +
-        tree->quadrants_offset;
-      bf->extra = face_hanging->is.hanging.quadid[1] +
-        tree->quadrants_offset; /* same tree */
+          ghost_ix = face_hanging->is.hanging.quadid[i];
+          quad = (p4est_quadrant_t *) (pw->ghost->ghosts.array +
+                                       ghost_ix * sizeof(p4est_quadrant_t));
+          bf->other_proc = ghost_rank[ghost_ix];
+          bf->quadid[1] = quad->p.piggy3.local_num;
+        }
+      }
     }
   } else {
     /* Boundary at the same refinement level */
+    bf = &(pw->bnd_face)[pw->n_faces++];
 
     /* Store local side first */
     i = sides[0].is.full.is_ghost; /* 1 or 0 */
@@ -249,7 +246,7 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
       tree = p4est_tree_array_index (trees, sides[j].treeid);
       bf->quadid[1] = sides[j].is.full.quadid + tree->quadrants_offset;
     }
-    bf->extra = -2;
+    bf->offset = -2;
   }
 }
 

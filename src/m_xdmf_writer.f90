@@ -166,6 +166,8 @@ contains
        write(my_unit, "(a)") '</Domain>'
        write(my_unit, "(a)") '</Xdmf>'
        close(my_unit)
+
+       print *, "Wrote ", trim(filename) // '.xdmf'
     end if
 
   end subroutine xdmf_write_blocks_2DCoRect
