@@ -28,12 +28,12 @@ contains
     integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
-    integer, parameter           :: bx(2)               = [4, 4]
+    integer, parameter           :: bx(2)               = [16, 16]
     integer, parameter           :: n_gc                = 1
     integer, parameter           :: n_vars              = 2
     character(len=20)            :: var_names(n_vars)   = ['rho', 'phi']
     logical, parameter           :: periodic(2)         = [.false., .false.]
-    integer, parameter           :: min_level           = 1
+    integer, parameter           :: min_level           = 3
     integer, parameter           :: max_blocks          = 1000
     integer                      :: n_refine_steps
 
@@ -46,7 +46,7 @@ contains
     n_output = n_output + 1
     call f4_write_grid(f4, base_name, n_output)
 
-    do n_refine_steps = 1, 5
+    do n_refine_steps = 1, 7
        call set_refinement_flag(f4, refine_location)
        call f4_adjust_refinement(f4, .true.)
        call f4_write_grid(f4, base_name, n_output)

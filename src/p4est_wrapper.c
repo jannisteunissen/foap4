@@ -11,12 +11,15 @@ const int FACE_SAME_LEVEL = 1;
 const int FACE_COARSE_TO_FINE = 2;
 const int FACE_FINE_TO_COARSE = 3;
 
+/* Struct to store information about a quadrant face */
 typedef struct bnd_face {
   int face_type;                /* What kind of face (same level, ...) */
   int face;                     /* Direction of the face */
   int other_proc;               /* MPI rank that owns quadid[1] */
   int quadid[2];                /* quadid[0] is always local, [1] can be non-local */
   int offset;                   /* Offset for a hanging face */
+  int ibuf_recv;                /* Index in receive buffer (not filled here) */
+  int ibuf_send;                /* Index in send buffer (not filled here) */
 } bnd_face_t;
 
 /* Stores p4est and related data required for this wrapper */
@@ -27,6 +30,7 @@ typedef struct pw_state {
   int                  *ghost_rank;
   sc_MPI_Comm           mpicomm;
   int                   n_faces;
+  int                   max_n_faces;
   bnd_face_t           *bnd_face;
 } pw_state_t;
 
@@ -88,7 +92,8 @@ void pw_set_connectivity_brick(pw_state_t *pw, const int mi, const int ni,
                          0, NULL, NULL);
 
   /* Allocate storage for face boundaries */
-  pw->bnd_face = malloc(max_blocks * 4 * sizeof(bnd_face_t));
+  pw->max_n_faces = max_blocks * 4 + 10;
+  pw->bnd_face = malloc(pw->max_n_faces * sizeof(bnd_face_t));
 }
 
 int pw_get_num_local_quadrants(pw_state_t *pw) {
@@ -147,6 +152,10 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
   trees = (sc_array_t *) pw->p4est->trees;
   ghost_rank = (int *) pw->ghost_rank;
   sides = (p4est_iter_face_side_t *) (info->sides.array);
+
+  if (pw->n_faces > pw->max_n_faces - 10) {
+    SC_ABORT("Too many faces in callback_get_faces()");
+  }
 
   if (info->sides.elem_count == 1) {
     /* A physical boundary, so there is just one full (and local) face side */

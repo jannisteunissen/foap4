@@ -30,6 +30,8 @@ module m_foap4
      integer(c_int) :: other_proc
      integer(c_int) :: quadid(2)
      integer(c_int) :: offset
+     integer(c_int) :: ibuf_recv
+     integer(c_int) :: ibuf_send
   end type bnd_face_t
 
   type face_gc_t
@@ -40,14 +42,23 @@ module m_foap4
      integer, allocatable :: send_offset(:)
      integer, allocatable :: send_offset_c2f(:)
      integer, allocatable :: same_local(:, :)
+     integer              :: same_local_iface(0:4)
      integer, allocatable :: same_from_buf(:, :)
+     integer              :: same_from_buf_iface(0:4)
      integer, allocatable :: same_to_buf(:, :)
+     integer              :: same_to_buf_iface(0:4)
      integer, allocatable :: f2c_local(:, :)
+     integer              :: f2c_local_iface(0:4)
      integer, allocatable :: c2f_from_buf(:, :)
+     integer              :: c2f_from_buf_iface(0:4)
      integer, allocatable :: c2f_to_buf(:, :)
+     integer              :: c2f_to_buf_iface(0:4)
      integer, allocatable :: f2c_from_buf(:, :)
+     integer              :: f2c_from_buf_iface(0:4)
      integer, allocatable :: f2c_to_buf(:, :)
-     integer, allocatable :: phys(:, :)
+     integer              :: f2c_to_buf_iface(0:4)
+     integer, allocatable :: phys(:)
+     integer              :: phys_iface(0:4)
   end type face_gc_t
 
   type, public :: foap4_t
@@ -379,7 +390,15 @@ contains
     type(int_array_t) :: same_ix(0:mpisize-1)
     type(int_array_t) :: c2f_ix(0:mpisize-1)
     type(int_array_t) :: f2c_ix(0:mpisize-1)
+    type(int_array_t) :: phys_ix
     type(int_array_t) :: ix_send
+
+    type(int_array_t) :: all_same_from_buf
+    type(int_array_t) :: all_same_to_buf
+    type(int_array_t) :: all_f2c_from_buf
+    type(int_array_t) :: all_f2c_to_buf
+    type(int_array_t) :: all_c2f_from_buf
+    type(int_array_t) :: all_c2f_to_buf
 
     logical, parameter :: recv = .true., send = .false.
 
@@ -457,21 +476,20 @@ contains
     end if
 
     ! Local ghost cell exchange at the same level
-    allocate(face_gc%same_local(3, i_same(mpirank)))
+    allocate(face_gc%same_local(2, i_same(mpirank)))
 
     ! Local ghost cell exchange at refinement boundaries
-    allocate(face_gc%f2c_local(4, i_f2c(mpirank)))
+    allocate(face_gc%f2c_local(3, i_f2c(mpirank)))
 
     ! Physical boundaries
-    allocate(face_gc%phys(2, i_phys))
+    allocate(face_gc%phys(i_phys))
+    allocate(phys_ix%i(i_phys))
 
-    ! To store indices for faces requiring communication
+    ! To store indices for different types of face boundaries
     do rank = 0, mpisize - 1
-       if (rank /= mpirank) then
-          allocate(same_ix(rank)%i(i_same(rank)))
-          allocate(c2f_ix(rank)%i(i_c2f(rank)))
-          allocate(f2c_ix(rank)%i(i_f2c(rank)))
-       end if
+       allocate(same_ix(rank)%i(i_same(rank)))
+       allocate(c2f_ix(rank)%i(i_c2f(rank)))
+       allocate(f2c_ix(rank)%i(i_f2c(rank)))
     end do
 
     i_same = 0
@@ -479,55 +497,68 @@ contains
     i_c2f  = 0
     i_f2c  = 0
 
-    ! Store information needed for ghost cell exchange
+    ! Store indices of different face types
     do n = 1, n_faces
        rank = bnd_face(n)%other_proc
 
        if (bnd_face(n)%face_type == FACE_SAME_LEVEL) then
           i_same(rank) = i_same(rank) + 1
-
-          if (rank == mpirank) then
-             face_gc%same_local(:, i_same(rank)) = [bnd_face(n)%quadid(1), &
-                  bnd_face(n)%quadid(2), bnd_face(n)%face]
-          else
-             same_ix(rank)%i(i_same(rank)) = n
-          end if
+          same_ix(rank)%i(i_same(rank)) = n
        else if (bnd_face(n)%face_type == FACE_BOUNDARY) then
           i_phys = i_phys + 1
-          face_gc%phys(:, i_phys) = [bnd_face(n)%quadid(1), bnd_face(n)%face]
+          phys_ix%i(i_phys) = n
        else if (bnd_face(n)%face_type == FACE_COARSE_TO_FINE) then
           i_c2f(rank) = i_c2f(rank) + 1
-
-          ! Always non-local
           c2f_ix(rank)%i(i_c2f(rank)) = n
        else if (bnd_face(n)%face_type == FACE_FINE_TO_COARSE) then
           i_f2c(rank) = i_f2c(rank) + 1
-
-          if (rank == mpirank) then
-             face_gc%f2c_local(:, i_f2c(rank)) = [bnd_face(n)%quadid(1), &
-                  bnd_face(n)%quadid(2), bnd_face(n)%offset, bnd_face(n)%face]
-          else
-             f2c_ix(rank)%i(i_f2c(rank)) = n
-          end if
+          f2c_ix(rank)%i(i_f2c(rank)) = n
        else
           error stop "Unknown face type"
        end if
     end do
 
+    ! Sort local faces by face direction
+    call sort_by_face(phys_ix, n_faces, bnd_face, face_gc%phys_iface)
+    call sort_by_face(same_ix(mpirank), n_faces, bnd_face, face_gc%same_local_iface)
+    call sort_by_face(f2c_ix(mpirank), n_faces, bnd_face, face_gc%f2c_local_iface)
+
+    do n = 1, i_phys
+       i = phys_ix%i(n)
+       face_gc%phys(n) = bnd_face(i)%quadid(1)
+    end do
+
+    do n = 1, i_same(mpirank)
+       i = same_ix(mpirank)%i(n)
+       face_gc%same_local(:, n) = bnd_face(i)%quadid(1:2)
+    end do
+
+    do n = 1, i_f2c(mpirank)
+       i = f2c_ix(mpirank)%i(n)
+       face_gc%f2c_local(:, n) = [bnd_face(i)%quadid(1), &
+            bnd_face(i)%quadid(2), bnd_face(i)%offset]
+    end do
+
     ! Non-local ghost cell exchange at the same level
     n = sum(i_same) - i_same(mpirank)
-    allocate(face_gc%same_from_buf(3, n))
-    allocate(face_gc%same_to_buf(3, n))
+    allocate(face_gc%same_from_buf(2, n))
+    allocate(face_gc%same_to_buf(2, n))
+    allocate(all_same_from_buf%i(n))
+    allocate(all_same_to_buf%i(n))
 
     ! Non-local ghost cell exchange from fine to coarse
     n = sum(i_f2c) - i_f2c(mpirank)
-    allocate(face_gc%f2c_from_buf(3, n))
-    allocate(face_gc%f2c_to_buf(3, n))
+    allocate(face_gc%f2c_from_buf(2, n))
+    allocate(face_gc%f2c_to_buf(2, n))
+    allocate(all_f2c_from_buf%i(n))
+    allocate(all_f2c_to_buf%i(n))
 
     ! Non-local ghost cell exchange from coarse to fine
     n = sum(i_c2f) - i_c2f(mpirank)
-    allocate(face_gc%c2f_from_buf(4, n))
-    allocate(face_gc%c2f_to_buf(4, n))
+    allocate(face_gc%c2f_from_buf(3, n))
+    allocate(face_gc%c2f_to_buf(3, n))
+    allocate(all_c2f_from_buf%i(n))
+    allocate(all_c2f_to_buf%i(n))
 
     i_same_nonlocal = 0
     i_f2c_to_buf = 0
@@ -535,6 +566,9 @@ contains
     i_c2f_to_buf = 0
     i_c2f_from_buf = 0
 
+    ! Determine buffer locations for each send and receive with another rank.
+    ! For each type of face, sort the data exchanged with another rank by
+    ! block, face and offset (in case of hanging faces).
     do rank = 0, mpisize - 1
        if (rank == mpirank) cycle
 
@@ -550,14 +584,12 @@ contains
        do n = 1, size(same_ix(rank)%i)
           i = same_ix(rank)%i(n) ! Index in bnd_face array
           j = ix_send%i(n)       ! Index in bnd_face array
-
           i_same_nonlocal = i_same_nonlocal + 1
+          all_same_from_buf%i(i_same_nonlocal) = i
+          all_same_to_buf%i(i_same_nonlocal) = j
 
-          face_gc%same_from_buf(:, i_same_nonlocal) = &
-               [bnd_face(i)%quadid(1), i_buf_recv(rank), bnd_face(i)%face]
-          face_gc%same_to_buf(:, i_same_nonlocal) = &
-               [bnd_face(j)%quadid(1), i_buf_send(rank), bnd_face(j)%face]
-
+          bnd_face(i)%ibuf_recv = i_buf_recv(rank)
+          bnd_face(j)%ibuf_send = i_buf_send(rank)
           i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size
           i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size
        end do
@@ -568,9 +600,9 @@ contains
        do n = 1, size(f2c_ix(rank)%i)
           i = f2c_ix(rank)%i(n) ! Index in bnd_face array
           i_f2c_to_buf = i_f2c_to_buf + 1
+          all_f2c_to_buf%i(i_f2c_to_buf) = i
 
-          face_gc%f2c_to_buf(:, i_f2c_to_buf) = [bnd_face(i)%quadid(1), &
-               i_buf_send(rank), bnd_face(i)%face]
+          bnd_face(i)%ibuf_send = i_buf_send(rank)
           i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size / 2
        end do
 
@@ -580,9 +612,9 @@ contains
        do n = 1, size(c2f_ix(rank)%i)
           i = c2f_ix(rank)%i(n) ! Index in bnd_face array
           i_c2f_from_buf = i_c2f_from_buf + 1
+          all_c2f_from_buf%i(i_c2f_from_buf) = i
 
-          face_gc%c2f_from_buf(:, i_c2f_from_buf) = [bnd_face(i)%quadid(1), &
-               bnd_face(i)%offset, i_buf_recv(rank), bnd_face(i)%face]
+          bnd_face(i)%ibuf_recv = i_buf_recv(rank)
           i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size / 2
        end do
 
@@ -598,9 +630,9 @@ contains
        do n = 1, size(c2f_ix(rank)%i)
           i = c2f_ix(rank)%i(n) ! Index in bnd_face array
           i_c2f_to_buf = i_c2f_to_buf + 1
+          all_c2f_to_buf%i(i_c2f_to_buf) = i
 
-          face_gc%c2f_to_buf(:, i_c2f_to_buf) = [bnd_face(i)%quadid(1), &
-               bnd_face(i)%offset, i_buf_send(rank), bnd_face(i)%face]
+          bnd_face(i)%ibuf_send = i_buf_send(rank)
           i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size
        end do
 
@@ -610,15 +642,105 @@ contains
        do n = 1, size(f2c_ix(rank)%i)
           i = f2c_ix(rank)%i(n) ! Index in bnd_face array
           i_f2c_from_buf = i_f2c_from_buf + 1
+          all_f2c_from_buf%i(i_f2c_from_buf) = i
 
-          face_gc%f2c_from_buf(:, i_f2c_from_buf) = [bnd_face(i)%quadid(1), &
-               i_buf_recv(rank), bnd_face(i)%face]
+          bnd_face(i)%ibuf_recv = i_buf_recv(rank)
           i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size
        end do
 
     end do
 
+    ! The buffer locations have been determined, sort over *all* ranks by face
+    call sort_by_face(all_same_from_buf, n_faces, bnd_face, face_gc%same_from_buf_iface)
+    call sort_by_face(all_same_to_buf, n_faces, bnd_face, face_gc%same_to_buf_iface)
+    call sort_by_face(all_f2c_from_buf, n_faces, bnd_face, face_gc%f2c_from_buf_iface)
+    call sort_by_face(all_f2c_to_buf, n_faces, bnd_face, face_gc%f2c_to_buf_iface)
+    call sort_by_face(all_c2f_from_buf, n_faces, bnd_face, face_gc%c2f_from_buf_iface)
+    call sort_by_face(all_c2f_to_buf, n_faces, bnd_face, face_gc%c2f_to_buf_iface)
+
+    ! Extract ghost cell patterns
+    do n = 1, i_same_nonlocal
+       i = all_same_from_buf%i(n)
+       j = all_same_to_buf%i(n)
+       face_gc%same_from_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_recv]
+       face_gc%same_to_buf(:, n) = [bnd_face(j)%quadid(1), bnd_face(j)%ibuf_send]
+    end do
+
+    do n = 1, i_f2c_to_buf
+       i = all_f2c_to_buf%i(n)
+       face_gc%f2c_to_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_send]
+    end do
+
+    do n = 1, i_f2c_from_buf
+       i = all_f2c_from_buf%i(n)
+       face_gc%f2c_from_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_recv]
+    end do
+
+    do n = 1, i_c2f_from_buf
+       i = all_c2f_from_buf%i(n)
+       face_gc%c2f_from_buf(:, n) = [bnd_face(i)%quadid(1), &
+            bnd_face(i)%offset, bnd_face(i)%ibuf_recv]
+    end do
+
+    do n = 1, i_c2f_to_buf
+       i = all_c2f_to_buf%i(n)
+       face_gc%c2f_to_buf(:, n) = [bnd_face(i)%quadid(1), &
+            bnd_face(i)%offset, bnd_face(i)%ibuf_send]
+    end do
+
   end subroutine f4_get_ghost_cell_pattern
+
+  ! Sort local face boundaries by face direction
+  subroutine sort_by_face(ix, n_bnd_face, bnd_face, iface)
+    type(int_array_t), intent(inout) :: ix ! Index array
+    integer, intent(in)              :: n_bnd_face
+    type(bnd_face_t), intent(in)     :: bnd_face(n_bnd_face)
+    ! Start index for each face direction
+    integer, intent(out)             :: iface(0:4)
+    integer                          :: face_count(0:3)
+    integer                          :: face_offset(0:3)
+    type(int_array_t)                :: ix_sorted
+
+    integer :: n, face
+
+    allocate(ix_sorted%i(size(ix%i)))
+
+    ! Count number of each face type
+    face_count(:) = 0
+    do n = 1, size(ix%i)
+       face = bnd_face(ix%i(n))%face
+       face_count(face) = face_count(face) + 1
+    end do
+
+    ! Determine initial offset in index array
+    face_offset(0) = 0
+    do n = 1, 3
+       face_offset(n) = face_offset(n-1) + face_count(n-1)
+    end do
+
+    do n = 1, size(ix%i)
+       face = bnd_face(ix%i(n))%face
+       face_offset(face) = face_offset(face) + 1
+       ix_sorted%i(face_offset(face)) = ix%i(n)
+    end do
+
+    ix%i(:) = ix_sorted%i
+    call face_count_to_iface(face_count, iface)
+
+  end subroutine sort_by_face
+
+  ! Determine start index for each face
+  subroutine face_count_to_iface(face_count, iface)
+    integer, intent(in)  :: face_count(0:3)
+    integer, intent(out) :: iface(0:4)
+    integer              :: n
+
+    iface(0) = 1
+
+    do n = 1, 4
+       iface(n) = iface(n-1) + face_count(n-1)
+    end do
+  end subroutine face_count_to_iface
 
   ! Sort face boundaries for receiving or sending
   subroutine sort_for_recv_or_send(ix, n_bnd_face, bnd_face, recv)
@@ -698,116 +820,139 @@ contains
     half_bx = f4%bx/2
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
-      do n = 1, size(face_gc%same_to_buf, 2)
-         ! +1 to account for index offset between C and Fortran
+
+      face = 0
+      do n = face_gc%same_to_buf_iface(face), face_gc%same_to_buf_iface(face+1)-1
          iq = face_gc%same_to_buf(1, n) + 1
          i_buf = face_gc%same_to_buf(2, n) * n_vars
-         face = face_gc%same_to_buf(3, n)
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, bx(2)
+               do i = 1, n_gc
+                  i_buf = i_buf + 1
+                  f4%send_buffer(i_buf) = uu(i, j, ivar, iq)
+               end do
+            end do
+         end do
+      end do
 
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, bx(2)
-                  do i = 1, n_gc
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = uu(i, j, ivar, iq)
-                  end do
+      face = 1
+      do n = face_gc%same_to_buf_iface(face), face_gc%same_to_buf_iface(face+1)-1
+         iq = face_gc%same_to_buf(1, n) + 1
+         i_buf = face_gc%same_to_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, bx(2)
+               do i = 1, n_gc
+                  i_buf = i_buf + 1
+                  f4%send_buffer(i_buf) = uu(bx(1)-n_gc+i, j, ivar, iq)
                end do
             end do
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, bx(2)
-                  do i = 1, n_gc
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = uu(bx(1)-n_gc+i, j, ivar, iq)
-                  end do
+         end do
+      end do
+
+      face = 2
+      do n = face_gc%same_to_buf_iface(face), face_gc%same_to_buf_iface(face+1)-1
+         iq = face_gc%same_to_buf(1, n) + 1
+         i_buf = face_gc%same_to_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, bx(1)
+                  i_buf = i_buf + 1
+                  f4%send_buffer(i_buf) = uu(i, j, ivar, iq)
                end do
             end do
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, bx(1)
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = uu(i, j, ivar, iq)
-                  end do
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%same_to_buf_iface(face), face_gc%same_to_buf_iface(face+1)-1
+         iq = face_gc%same_to_buf(1, n) + 1
+         i_buf = face_gc%same_to_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, bx(1)
+                  i_buf = i_buf + 1
+                  f4%send_buffer(i_buf) = uu(i, bx(2)-n_gc+j, ivar, iq)
                end do
             end do
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, bx(1)
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = uu(i, bx(2)-n_gc+j, ivar, iq)
-                  end do
-               end do
-            end do
-         end select
+         end do
       end do
 
       ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
-      do n = 1, size(face_gc%f2c_to_buf, 2)
+
+      face = 0
+      do n = face_gc%f2c_to_buf_iface(face), face_gc%f2c_to_buf_iface(face+1)-1
          iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
          i_buf = face_gc%f2c_to_buf(2, n) * n_vars
-         face = face_gc%f2c_to_buf(3, n)
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               j_f = 2 * j - 1
+               do i = 1, n_gc
+                  i_f = 2 * i - 1
+                  i_buf = i_buf + 1
+                  f4%send_buffer(i_buf) = 0.25_dp * &
+                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
+               end do
+            end do
+         end do
+      end do
 
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, n_gc
-                     i_f = 2 * i - 1
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
+      face = 1
+      do n = face_gc%f2c_to_buf_iface(face), face_gc%f2c_to_buf_iface(face+1)-1
+         iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
+         i_buf = face_gc%f2c_to_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               j_f = 2 * j - 1
+               do i = 1, n_gc
+                  i_f = bx(1) - 2 * n_gc + 2 * i - 1
+                  i_buf = i_buf + 1
+                  f4%send_buffer(i_buf) = 0.25_dp * &
+                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                end do
             end do
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, n_gc
-                     i_f = bx(1) - 2 * n_gc + 2 * i - 1
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
+         end do
+      end do
+
+      face = 2
+      do n = face_gc%f2c_to_buf_iface(face), face_gc%f2c_to_buf_iface(face+1)-1
+         iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
+         i_buf = face_gc%f2c_to_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               j_f = 2 * j - 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  i_buf = i_buf + 1
+                  f4%send_buffer(i_buf) = 0.25_dp * &
+                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                end do
             end do
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  j_f = 2 * j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%f2c_to_buf_iface(face), face_gc%f2c_to_buf_iface(face+1)-1
+         iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
+         i_buf = face_gc%f2c_to_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               j_f = bx(2) - 2 * n_gc + 2 * j - 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  i_buf = i_buf + 1
+                  f4%send_buffer(i_buf) = 0.25_dp * &
+                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                end do
             end do
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  j_f = bx(2) - 2 * n_gc + 2 * j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     i_buf = i_buf + 1
-                     f4%send_buffer(i_buf) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
-               end do
-            end do
-         end select
+         end do
       end do
 
       f4%recv_offset = face_gc%recv_offset * n_vars
@@ -836,122 +981,137 @@ contains
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
 
-      do n = 1, size(face_gc%c2f_to_buf, 2)
+      face = 0
+      do n = face_gc%c2f_to_buf_iface(face), face_gc%c2f_to_buf_iface(face+1)-1
          iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
          offset = face_gc%c2f_to_buf(2, n)
          i_buf = face_gc%c2f_to_buf(3, n) * n_vars
-         face = face_gc%c2f_to_buf(4, n)
 
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  j_c = j + offset * half_bx(2)
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               j_c = j + offset * half_bx(2)
 
-                  do i = 1, half_n_gc
-                     i_c = i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+4) = fine
-                     i_buf = i_buf + 4
-                  end do
-
-                  if (odd_n_gc) then
-                     i_c = 1 + half_n_gc
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+2) = fine([1, 3])
-                     i_buf = i_buf + 2
-                  end if
-               end do
-            end do
-
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-
-               do j = 1, half_bx(2)
-                  j_c = j + offset * half_bx(2)
-                  do i = 1, half_n_gc
-                     i_c = bx(1) - half_n_gc + i
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+4) = fine
-                     i_buf = i_buf + 4
-                  end do
-
-                  if (odd_n_gc) then
-                     i_c = bx(1) - half_n_gc
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+2) = fine([2, 4])
-                     i_buf = i_buf + 2
-                  end if
-               end do
-            end do
-
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-
-               do j = 1, half_n_gc
-                  j_c = j
-                  do i = 1, half_bx(1)
-                     i_c = i + offset * half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+4) = fine
-                     i_buf = i_buf + 4
-                  end do
+               do i = 1, half_n_gc
+                  i_c = i
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                  f4%send_buffer(i_buf+1:i_buf+4) = fine
+                  i_buf = i_buf + 4
                end do
 
                if (odd_n_gc) then
-                  j_c = 1 + half_n_gc
-                  do i = 1, half_bx(1)
-                     i_c = i + offset * half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+2) = fine([1, 2])
-                     i_buf = i_buf + 2
-                  end do
+                  i_c = 1 + half_n_gc
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                  f4%send_buffer(i_buf+1:i_buf+2) = fine([1, 3])
+                  i_buf = i_buf + 2
                end if
             end do
+         end do
+      end do
 
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_n_gc
-                  j_c = bx(2) - half_n_gc + j
-                  do i = 1, half_bx(1)
-                     i_c = i + offset * half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+4) = fine
-                     i_buf = i_buf + 4
-                  end do
+      face = 1
+      do n = face_gc%c2f_to_buf_iface(face), face_gc%c2f_to_buf_iface(face+1)-1
+         iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
+         offset = face_gc%c2f_to_buf(2, n)
+         i_buf = face_gc%c2f_to_buf(3, n) * n_vars
+
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+
+            do j = 1, half_bx(2)
+               j_c = j + offset * half_bx(2)
+               do i = 1, half_n_gc
+                  i_c = bx(1) - half_n_gc + i
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                  f4%send_buffer(i_buf+1:i_buf+4) = fine
+                  i_buf = i_buf + 4
                end do
 
                if (odd_n_gc) then
-                  j_c = bx(2) - half_n_gc
-                  do i = 1, half_bx(1)
-                     i_c = i + offset * half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                          [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                          [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
-                     f4%send_buffer(i_buf+1:i_buf+2) = fine([3, 4])
-                     i_buf = i_buf + 2
-                  end do
+                  i_c = bx(1) - half_n_gc
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                  f4%send_buffer(i_buf+1:i_buf+2) = fine([2, 4])
+                  i_buf = i_buf + 2
                end if
             end do
-         end select
+         end do
+      end do
+
+      face = 2
+      do n = face_gc%c2f_to_buf_iface(face), face_gc%c2f_to_buf_iface(face+1)-1
+         iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
+         offset = face_gc%c2f_to_buf(2, n)
+         i_buf = face_gc%c2f_to_buf(3, n) * n_vars
+
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+
+            do j = 1, half_n_gc
+               j_c = j
+               do i = 1, half_bx(1)
+                  i_c = i + offset * half_bx(1)
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                  f4%send_buffer(i_buf+1:i_buf+4) = fine
+                  i_buf = i_buf + 4
+               end do
+            end do
+
+            if (odd_n_gc) then
+               j_c = 1 + half_n_gc
+               do i = 1, half_bx(1)
+                  i_c = i + offset * half_bx(1)
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                  f4%send_buffer(i_buf+1:i_buf+2) = fine([1, 2])
+                  i_buf = i_buf + 2
+               end do
+            end if
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%c2f_to_buf_iface(face), face_gc%c2f_to_buf_iface(face+1)-1
+         iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
+         offset = face_gc%c2f_to_buf(2, n)
+         i_buf = face_gc%c2f_to_buf(3, n) * n_vars
+
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_n_gc
+               j_c = bx(2) - half_n_gc + j
+               do i = 1, half_bx(1)
+                  i_c = i + offset * half_bx(1)
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                  f4%send_buffer(i_buf+1:i_buf+4) = fine
+                  i_buf = i_buf + 4
+               end do
+            end do
+
+            if (odd_n_gc) then
+               j_c = bx(2) - half_n_gc
+               do i = 1, half_bx(1)
+                  i_c = i + offset * half_bx(1)
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
+                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
+                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                  f4%send_buffer(i_buf+1:i_buf+2) = fine([3, 4])
+                  i_buf = i_buf + 2
+               end do
+            end if
+         end do
       end do
 
       f4%recv_offset = face_gc%recv_offset_c2f * n_vars
@@ -1017,248 +1177,301 @@ contains
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
-      do n = 1, size(face_gc%same_from_buf, 2)
-         ! +1 to account for index offset between C and Fortran
+
+      face = 0
+      do n = face_gc%same_from_buf_iface(face), face_gc%same_from_buf_iface(face+1)-1
          iq = face_gc%same_from_buf(1, n) + 1
          i_buf = face_gc%same_from_buf(2, n) * n_vars
-         face = face_gc%same_from_buf(3, n)
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, bx(2)
+               do i = 1, n_gc
+                  i_buf = i_buf + 1
+                  uu(-n_gc+1, j, ivar, iq) = f4%recv_buffer(i_buf)
+               end do
+            end do
+         end do
+      end do
 
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, bx(2)
-                  do i = 1, n_gc
-                     i_buf = i_buf + 1
-                     uu(-n_gc+1, j, ivar, iq) = f4%recv_buffer(i_buf)
-                  end do
+      face = 1
+      do n = face_gc%same_from_buf_iface(face), face_gc%same_from_buf_iface(face+1)-1
+         iq = face_gc%same_from_buf(1, n) + 1
+         i_buf = face_gc%same_from_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, bx(2)
+               do i = 1, n_gc
+                  i_buf = i_buf + 1
+                  uu(bx(1)+i, j, ivar, iq) = f4%recv_buffer(i_buf)
                end do
             end do
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, bx(2)
-                  do i = 1, n_gc
-                     i_buf = i_buf + 1
-                     uu(bx(1)+i, j, ivar, iq) = f4%recv_buffer(i_buf)
-                  end do
+         end do
+      end do
+
+      face = 2
+      do n = face_gc%same_from_buf_iface(face), face_gc%same_from_buf_iface(face+1)-1
+         iq = face_gc%same_from_buf(1, n) + 1
+         i_buf = face_gc%same_from_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, bx(1)
+                  i_buf = i_buf + 1
+                  uu(i, -n_gc+j, ivar, iq) = f4%recv_buffer(i_buf)
                end do
             end do
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, bx(1)
-                     i_buf = i_buf + 1
-                     uu(i, -n_gc+j, ivar, iq) = f4%recv_buffer(i_buf)
-                  end do
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%same_from_buf_iface(face), face_gc%same_from_buf_iface(face+1)-1
+         iq = face_gc%same_from_buf(1, n) + 1
+         i_buf = face_gc%same_from_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, bx(1)
+                  i_buf = i_buf + 1
+                  uu(i, bx(2)+j, ivar, iq) = f4%recv_buffer(i_buf)
                end do
             end do
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, bx(1)
-                     i_buf = i_buf + 1
-                     uu(i, bx(2)+j, ivar, iq) = f4%recv_buffer(i_buf)
-                  end do
-               end do
-            end do
-         end select
+         end do
       end do
 
       ! Local fine-to-coarse refinement boundaries, fill coarse side
-      do n = 1, size(face_gc%f2c_local, 2)
+      face = 0
+      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
          iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
          jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
          offset = face_gc%f2c_local(3, n)     ! offset
-         face   = face_gc%f2c_local(4, n)
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               j_f = 2 * j - 1
+               do i = 1, n_gc
+                  i_f = 2 * i - 1
+                  uu(bx(1)+i, offset*half_bx(2)+j, ivar, jq) = 0.25_dp * &
+                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
+               end do
+            end do
+         end do
+      end do
 
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, n_gc
-                     i_f = 2 * i - 1
-                     uu(bx(1)+i, offset*half_bx(2)+j, ivar, jq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
+      face = 1
+      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
+         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
+         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
+         offset = face_gc%f2c_local(3, n)     ! offset
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               j_f = 2 * j - 1
+               do i = 1, n_gc
+                  i_f = bx(1) - 2 * n_gc + 2 * i - 1
+                  uu(-n_gc+i, offset*half_bx(2)+j, ivar, jq) = 0.25_dp * &
+                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                end do
             end do
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, n_gc
-                     i_f = bx(1) - 2 * n_gc + 2 * i - 1
-                     uu(-n_gc+i, offset*half_bx(2)+j, ivar, jq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
+         end do
+      end do
+
+      face = 2
+      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
+         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
+         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
+         offset = face_gc%f2c_local(3, n)     ! offset
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               j_f = 2 * j - 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  uu(offset*half_bx(1)+i, bx(2)+j, ivar, jq) = 0.25_dp * &
+                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                end do
             end do
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  j_f = 2 * j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     uu(offset*half_bx(1)+i, bx(2)+j, ivar, jq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
+         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
+         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
+         offset = face_gc%f2c_local(3, n)     ! offset
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               j_f = bx(2) - 2 * n_gc + 2 * j - 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  uu(offset*half_bx(1)+i, -n_gc+j, ivar, jq) = 0.25_dp * &
+                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                end do
             end do
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  j_f = bx(2) - 2 * n_gc + 2 * j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     uu(offset*half_bx(1)+i, -n_gc+j, ivar, jq) = 0.25_dp * &
-                          sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-                  end do
-               end do
-            end do
-         end select
+         end do
       end do
 
       ! Coarse-to-fine, update coarse side from buffers
-      do n = 1, size(face_gc%c2f_from_buf, 2)
+      face = 0
+      do n = face_gc%c2f_from_buf_iface(face), face_gc%c2f_from_buf_iface(face+1)-1
          iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
          offset = face_gc%c2f_from_buf(2, n)     ! Offset
          i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
-         face   = face_gc%c2f_from_buf(4, n)
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               do i = 1, n_gc
+                  i_buf = i_buf + 1
+                  uu(-n_gc+i, offset*half_bx(2)+j, ivar, iq) = &
+                       f4%recv_buffer(i_buf)
+               end do
+            end do
+         end do
+      end do
 
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  do i = 1, n_gc
-                     i_buf = i_buf + 1
-                     uu(-n_gc+i, offset*half_bx(2)+j, ivar, iq) = &
-                          f4%recv_buffer(i_buf)
-                  end do
+      face = 1
+      do n = face_gc%c2f_from_buf_iface(face), face_gc%c2f_from_buf_iface(face+1)-1
+         iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
+         offset = face_gc%c2f_from_buf(2, n)     ! Offset
+         i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               do i = 1, n_gc
+                  i_buf = i_buf + 1
+                  uu(bx(1)+i, offset*half_bx(2)+j, ivar, iq) = &
+                       f4%recv_buffer(i_buf)
                end do
             end do
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  do i = 1, n_gc
-                     i_buf = i_buf + 1
-                     uu(bx(1)+i, offset*half_bx(2)+j, ivar, iq) = &
-                          f4%recv_buffer(i_buf)
-                  end do
+         end do
+      end do
+
+      face = 2
+      do n = face_gc%c2f_from_buf_iface(face), face_gc%c2f_from_buf_iface(face+1)-1
+         iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
+         offset = face_gc%c2f_from_buf(2, n)     ! Offset
+         i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, half_bx(1)
+                  i_buf = i_buf + 1
+                  uu(offset*half_bx(1)+i, -n_gc+j, ivar, iq) = &
+                       f4%recv_buffer(i_buf)
                end do
             end do
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, half_bx(1)
-                     i_buf = i_buf + 1
-                     uu(offset*half_bx(1)+i, -n_gc+j, ivar, iq) = &
-                          f4%recv_buffer(i_buf)
-                  end do
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%c2f_from_buf_iface(face), face_gc%c2f_from_buf_iface(face+1)-1
+         iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
+         offset = face_gc%c2f_from_buf(2, n)     ! Offset
+         i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, half_bx(1)
+                  i_buf = i_buf + 1
+                  uu(offset*half_bx(1)+i, bx(2)+j, ivar, iq) = &
+                       f4%recv_buffer(i_buf)
                end do
             end do
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, half_bx(1)
-                     i_buf = i_buf + 1
-                     uu(offset*half_bx(1)+i, bx(2)+j, ivar, iq) = &
-                          f4%recv_buffer(i_buf)
-                  end do
-               end do
-            end do
-         end select
+         end do
       end do
 
       ! Local boundaries at the same refinement level
-      do n = 1, size(face_gc%same_local, 2)
+      if (face_gc%same_local_iface(1) > face_gc%same_local_iface(0)) &
+           error stop "Local face 0 at same level not expected"
+      if (face_gc%same_local_iface(3) > face_gc%same_local_iface(2)) &
+           error stop "Local face 2 at same level not expected"
+
+      face = 1
+      do n = face_gc%same_local_iface(face), face_gc%same_local_iface(face+1)-1
          iq   = face_gc%same_local(1, n) + 1
          jq   = face_gc%same_local(2, n) + 1
-         face = face_gc%same_local(3, n)
 
-         if (face == 1) then
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, bx(2)
-                  do i = 1, n_gc
-                     uu(bx(1)+i, j, ivar, iq) = uu(i, j, ivar, jq)
-                     uu(-n_gc+i, j, ivar, jq) = uu(bx(1)-n_gc+i, j, ivar, iq)
-                  end do
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, bx(2)
+               do i = 1, n_gc
+                  uu(bx(1)+i, j, ivar, iq) = uu(i, j, ivar, jq)
+                  uu(-n_gc+i, j, ivar, jq) = uu(bx(1)-n_gc+i, j, ivar, iq)
                end do
             end do
-         else if (face == 3) then
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, bx(1)
-                     uu(i, bx(2)+j, ivar, iq) = uu(i, j, ivar, jq)
-                     uu(i, -n_gc+j, ivar, jq) = uu(i, bx(2)-n_gc+j, ivar, iq)
-                  end do
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%same_local_iface(face), face_gc%same_local_iface(face+1)-1
+         iq   = face_gc%same_local(1, n) + 1
+         jq   = face_gc%same_local(2, n) + 1
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, bx(1)
+                  uu(i, bx(2)+j, ivar, iq) = uu(i, j, ivar, jq)
+                  uu(i, -n_gc+j, ivar, jq) = uu(i, bx(2)-n_gc+j, ivar, iq)
                end do
             end do
-         else
-            error stop "face not implemented"
-         end if
+         end do
       end do
 
       ! Physical boundaries
-      do n = 1, size(face_gc%phys, 2)
-         iq = face_gc%phys(1, n) + 1
-         face = face_gc%phys(2, n)
+      face = 0
+      do n = face_gc%phys_iface(face), face_gc%phys_iface(face+1)-1
+         iq = face_gc%phys(n) + 1
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, bx(2)
+               slope = uu(2, j, ivar, iq) - uu(1, j, ivar, iq)
+               do i = 1, n_gc
+                  uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * slope
+               end do
+            end do
+         end do
+      end do
 
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, bx(2)
-                  slope = uu(2, j, ivar, iq) - uu(1, j, ivar, iq)
-                  do i = 1, n_gc
-                     uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * slope
-                  end do
+      face = 1
+      do n = face_gc%phys_iface(face), face_gc%phys_iface(face+1)-1
+         iq = face_gc%phys(n) + 1
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, bx(2)
+               slope = uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq)
+               do i = 1, n_gc
+                  uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * slope
                end do
             end do
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, bx(2)
-                  slope = uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq)
-                  do i = 1, n_gc
-                     uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * slope
-                  end do
+         end do
+      end do
+
+      face = 2
+      do n = face_gc%phys_iface(face), face_gc%phys_iface(face+1)-1
+         iq = face_gc%phys(n) + 1
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, bx(1)
+                  slope = uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq)
+                  uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * slope
                end do
             end do
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, bx(1)
-                     slope = uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq)
-                     uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * slope
-                  end do
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%phys_iface(face), face_gc%phys_iface(face+1)-1
+         iq = face_gc%phys(n) + 1
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, bx(1)
+                  slope = uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq)
+                  uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * slope
                end do
             end do
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, n_gc
-                  do i = 1, bx(1)
-                     slope = uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq)
-                     uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * slope
-                  end do
-               end do
-            end do
-         end select
+         end do
       end do
 
       ! Do coarse-to-fine refinement boundaries last, so that ghost cells
@@ -1267,230 +1480,253 @@ contains
       call f4_exchange_buffers(f4)
 
       ! Local coarse-to-fine boundaries, fill fine side
-      do n = 1, size(face_gc%f2c_local, 2)
+      face = 0
+      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
          iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
          jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
          offset = face_gc%f2c_local(3, n)     ! Offset
-         face   = face_gc%f2c_local(4, n)
 
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
 
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  j_c = j + offset * half_bx(2)
-                  do i = 1, half_n_gc
-                     i_c = bx(1) - half_n_gc + i
-                     i_f = -(2 * half_n_gc) + 2*i - 1
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
-                  end do
-
-                  if (odd_n_gc) then
-                     i_c = bx(1) - half_n_gc
-                     i_f = -n_gc + 1
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                     f4%uu(i_f, j_f:j_f+1, ivar, iq) = fine([2, 4])
-                  end if
-               end do
-            end do
-
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  j_c = j + offset * half_bx(2)
-                  do i = 1, half_n_gc
-                     i_c = i
-                     i_f = bx(1) + 2*i - 1
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
-                  end do
-
-                  if (odd_n_gc) then
-                     i_c = 1 + half_n_gc
-                     i_f = bx(1) + n_gc
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                     f4%uu(i_f, j_f:j_f+1, ivar, iq) = fine([1, 3])
-                  end if
-               end do
-            end do
-
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-
-               do j = 1, half_n_gc
-                  j_c = bx(2) - half_n_gc + j
-                  j_f = -(2 * half_n_gc) + 2*j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     i_c = i + offset * half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
-                  end do
+            do j = 1, half_bx(2)
+               j_f = 2 * j - 1
+               j_c = j + offset * half_bx(2)
+               do i = 1, half_n_gc
+                  i_c = bx(1) - half_n_gc + i
+                  i_f = -(2 * half_n_gc) + 2*i - 1
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
                end do
 
                if (odd_n_gc) then
-                  j_c = bx(2) - half_n_gc
-                  j_f = -n_gc + 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     i_c = i + offset * half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                     f4%uu(i_f:i_f+1, j_f, ivar, iq) = fine([3, 4])
-                  end do
+                  i_c = bx(1) - half_n_gc
+                  i_f = -n_gc + 1
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                  f4%uu(i_f, j_f:j_f+1, ivar, iq) = fine([2, 4])
                end if
             end do
+         end do
+      end do
 
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
+      face = 1
+      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
+         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
+         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
+         offset = face_gc%f2c_local(3, n)     ! Offset
 
-               do j = 1, half_n_gc
-                  j_c = j
-                  j_f = bx(2) + 2*j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     i_c = i + offset * half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
-                  end do
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+
+            do j = 1, half_bx(2)
+               j_f = 2 * j - 1
+               j_c = j + offset * half_bx(2)
+               do i = 1, half_n_gc
+                  i_c = i
+                  i_f = bx(1) + 2*i - 1
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
                end do
 
                if (odd_n_gc) then
-                  j_c = 1 + half_n_gc
-                  j_f = bx(2) + n_gc
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     i_c = i + offset * half_bx(1)
-                     call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                          [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                          [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                     f4%uu(i_f:i_f+1, j_f, ivar, iq) = fine([1, 2])
-                  end do
+                  i_c = 1 + half_n_gc
+                  i_f = bx(1) + n_gc
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                  f4%uu(i_f, j_f:j_f+1, ivar, iq) = fine([1, 3])
                end if
             end do
+         end do
+      end do
 
-         end select
+      face = 2
+      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
+         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
+         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
+         offset = face_gc%f2c_local(3, n)     ! Offset
+
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+
+            do j = 1, half_n_gc
+               j_c = bx(2) - half_n_gc + j
+               j_f = -(2 * half_n_gc) + 2*j - 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  i_c = i + offset * half_bx(1)
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
+               end do
+            end do
+
+            if (odd_n_gc) then
+               j_c = bx(2) - half_n_gc
+               j_f = -n_gc + 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  i_c = i + offset * half_bx(1)
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                  f4%uu(i_f:i_f+1, j_f, ivar, iq) = fine([3, 4])
+               end do
+            end if
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
+         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
+         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
+         offset = face_gc%f2c_local(3, n)     ! Offset
+
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+
+            do j = 1, half_n_gc
+               j_c = j
+               j_f = bx(2) + 2*j - 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  i_c = i + offset * half_bx(1)
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
+               end do
+            end do
+
+            if (odd_n_gc) then
+               j_c = 1 + half_n_gc
+               j_f = bx(2) + n_gc
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  i_c = i + offset * half_bx(1)
+                  call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
+                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
+                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                  f4%uu(i_f:i_f+1, j_f, ivar, iq) = fine([1, 2])
+               end do
+            end if
+         end do
+
       end do
 
       ! Nonlocal coarse-to-fine boundaries, fill fine side
-      do n = 1, size(face_gc%f2c_from_buf, 2)
+
+      face = 0
+      do n = face_gc%f2c_from_buf_iface(face), face_gc%f2c_from_buf_iface(face+1)-1
          iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
          i_buf = face_gc%f2c_from_buf(2, n) * n_vars
-         face  = face_gc%f2c_from_buf(3, n)
-
-         select case (face)
-         case (0)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, half_n_gc
-                     i_f = -(2 * half_n_gc) + 2*i - 1
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
-                  end do
-
-                  if (odd_n_gc) then
-                     i_f = -n_gc + 1
-                     f4%uu(i_f, j_f:j_f+1, ivar, iq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-                  end if
-               end do
-            end do
-
-         case (1)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_bx(2)
-                  j_f = 2 * j - 1
-                  do i = 1, half_n_gc
-                     i_f = bx(1) + 2*i - 1
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
-                  end do
-
-                  if (odd_n_gc) then
-                     i_f = bx(1) + n_gc
-                     f4%uu(i_f, j_f:j_f+1, ivar, iq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-                  end if
-               end do
-            end do
-
-         case (2)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_n_gc
-                  j_f = -(2 * half_n_gc) + 2*j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
-                  end do
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               j_f = 2 * j - 1
+               do i = 1, half_n_gc
+                  i_f = -(2 * half_n_gc) + 2*i - 1
+                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
+                       reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
+                  i_buf = i_buf + 4
                end do
 
                if (odd_n_gc) then
-                  j_f = -n_gc + 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     f4%uu(i_f:i_f+1, j_f, ivar, iq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-                  end do
+                  i_f = -n_gc + 1
+                  f4%uu(i_f, j_f:j_f+1, ivar, iq) = &
+                       f4%recv_buffer(i_buf+1:i_buf+2)
+                  i_buf = i_buf + 2
                end if
             end do
+         end do
+      end do
 
-         case (3)
-            do iv = 1, n_vars
-               ivar = i_vars(iv)
-               do j = 1, half_n_gc
-                  j_f = bx(2) + 2*j - 1
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
-                          reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
-                     i_buf = i_buf + 4
-                  end do
+      face = 1
+      do n = face_gc%f2c_from_buf_iface(face), face_gc%f2c_from_buf_iface(face+1)-1
+         iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
+         i_buf = face_gc%f2c_from_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_bx(2)
+               j_f = 2 * j - 1
+               do i = 1, half_n_gc
+                  i_f = bx(1) + 2*i - 1
+                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
+                       reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
+                  i_buf = i_buf + 4
                end do
 
                if (odd_n_gc) then
-                  j_f = bx(2) + n_gc
-                  do i = 1, half_bx(1)
-                     i_f = 2 * i - 1
-                     f4%uu(i_f:i_f+1, j_f, ivar, iq) = &
-                          f4%recv_buffer(i_buf+1:i_buf+2)
-                     i_buf = i_buf + 2
-                  end do
+                  i_f = bx(1) + n_gc
+                  f4%uu(i_f, j_f:j_f+1, ivar, iq) = &
+                       f4%recv_buffer(i_buf+1:i_buf+2)
+                  i_buf = i_buf + 2
                end if
             end do
+         end do
+      end do
 
-         end select
+      face = 2
+      do n = face_gc%f2c_from_buf_iface(face), face_gc%f2c_from_buf_iface(face+1)-1
+         iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
+         i_buf = face_gc%f2c_from_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_n_gc
+               j_f = -(2 * half_n_gc) + 2*j - 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
+                       reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
+                  i_buf = i_buf + 4
+               end do
+            end do
+
+            if (odd_n_gc) then
+               j_f = -n_gc + 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  f4%uu(i_f:i_f+1, j_f, ivar, iq) = &
+                       f4%recv_buffer(i_buf+1:i_buf+2)
+                  i_buf = i_buf + 2
+               end do
+            end if
+         end do
+      end do
+
+      face = 3
+      do n = face_gc%f2c_from_buf_iface(face), face_gc%f2c_from_buf_iface(face+1)-1
+         iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
+         i_buf = face_gc%f2c_from_buf(2, n) * n_vars
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, half_n_gc
+               j_f = bx(2) + 2*j - 1
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = &
+                       reshape(f4%recv_buffer(i_buf+1:i_buf+4), [2, 2])
+                  i_buf = i_buf + 4
+               end do
+            end do
+
+            if (odd_n_gc) then
+               j_f = bx(2) + n_gc
+               do i = 1, half_bx(1)
+                  i_f = 2 * i - 1
+                  f4%uu(i_f:i_f+1, j_f, ivar, iq) = &
+                       f4%recv_buffer(i_buf+1:i_buf+2)
+                  i_buf = i_buf + 2
+               end do
+            end if
+         end do
       end do
     end associate
 
@@ -1512,7 +1748,7 @@ contains
     n_blocks_new = pw_get_num_local_quadrants(f4%pw)
 
     if (n_blocks_new + f4%n_blocks > f4%max_blocks) &
-         error stop "Not enough memory for tree copy during refinement"
+         error stop "Not enough block memory during refinement"
 
     ! Copy blocks to end of list. The backward order ensures old data is not
     ! overwritten before it is copied.
@@ -1674,17 +1910,21 @@ contains
 
   subroutine f4_partition(f4)
     type(foap4_t), intent(inout), target :: f4
-    integer                      :: n_changed, n_blocks_old
+    integer                      :: n_changed, n_blocks_old, n_blocks_new
     integer(c_int64_t)           :: gfq_old(0:f4%mpisize)
     integer                      :: n, dsize
 
     n_blocks_old = f4%n_blocks
     call pw_partition(f4%pw, n_changed, gfq_old)
+    n_blocks_new = pw_get_num_local_quadrants(f4%pw)
+
+    if (n_blocks_new + n_blocks_old > f4%max_blocks) &
+         error stop "Not enough block memory during partitioning"
 
     ! Copy blocks to end of list. The backward order ensures old data is not
     ! overwritten before it is copied.
     do n = n_blocks_old, 1, -1
-       call copy_block(f4, n, f4%n_blocks+n)
+       call copy_block(f4, n, n_blocks_new+n)
     end do
 
     ! Size of a block
@@ -1692,7 +1932,7 @@ contains
 
     ! Call p4est routine to transfer the block data
     call pw_partition_transfer(f4%pw, gfq_old, &
-         c_loc(f4%uu(:, :, :, f4%n_blocks+1)), c_loc(f4%uu), dsize)
+         c_loc(f4%uu(:, :, :, n_blocks_new+1)), c_loc(f4%uu), dsize)
 
     call f4_get_quadrants(f4)
   end subroutine f4_partition
