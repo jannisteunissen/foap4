@@ -5,3 +5,5 @@
 *.visit
 *.o
 *.mod
+/benchmark_ghostcell
+/test_refinement

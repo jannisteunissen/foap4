@@ -95,10 +95,11 @@ module m_foap4
   end type foap4_t
 
   interface
-     subroutine pw_initialize(pw, mpicomm) bind(c)
+     subroutine pw_initialize(pw, mpicomm, log_level) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(out)          :: pw
        integer(c_int), intent(out)       :: mpicomm
+       integer(c_int), intent(in), value :: log_level
      end subroutine pw_initialize
 
      subroutine pw_destroy(pw) bind(c)
@@ -129,6 +130,12 @@ module m_foap4
        type(c_ptr), intent(in), value :: pw
        integer(c_int)                 :: n
      end function pw_get_num_local_quadrants
+
+     pure function pw_get_num_global_quadrants(pw) result(n) bind(c)
+       import c_int, c_ptr
+       type(c_ptr), intent(in), value :: pw
+       integer(c_int)                 :: n
+     end function pw_get_num_global_quadrants
 
      pure function pw_get_mesh_revision(pw) result(n) bind(c)
        import c_int, c_ptr
@@ -190,6 +197,7 @@ module m_foap4
   public :: f4_set_grid
   public :: f4_write_grid
   public :: f4_get_num_local_blocks
+  public :: f4_get_num_global_blocks
   public :: f4_cell_coord
   public :: f4_exchange_buffers
   public :: f4_update_ghostcells
@@ -198,9 +206,38 @@ module m_foap4
 
 contains
 
-  subroutine f4_initialize(f4)
+  subroutine f4_initialize(f4, log_type)
     type(foap4_t), intent(inout) :: f4
-    call pw_initialize(f4%pw, mpicomm%MPI_VAL)
+    character(len=*), intent(in) :: log_type
+    integer                      :: log_level
+
+    ! Different log levels defined in sc.h
+    select case (log_type)
+       case ("default")
+       log_level = (-1)     ! Selects the SC default threshold.
+       case ("always")
+          log_level = 0 ! Log absolutely everything.
+       case ("trace")
+          log_level = 1 ! Prefix file and line number.
+       case ("debug")
+          log_level = 2 ! Any information on the internal state.
+       case ("verbose")
+          log_level = 3 ! Information on conditions, decisions.
+       case ("info")
+          log_level = 4 ! Most relevant things a function is doing.
+       case ("statistics")
+          log_level = 5 ! Important for consistency/performance.
+       case ("production")
+          log_level = 6 ! A few lines at most for a major api function.
+       case ("essential")
+          log_level = 7 ! Log a few lines max (version info) per program.
+       case ("error")
+          log_level = 8 ! Log errors only.  This is suggested over \ref SC_LP_SILENT.
+       case default
+          error stop "Unknow value for log_type (try default, error, ...)"
+    end select
+
+    call pw_initialize(f4%pw, mpicomm%MPI_VAL, log_level)
   end subroutine f4_initialize
 
   subroutine f4_destroy(f4)
@@ -295,6 +332,11 @@ contains
     type(foap4_t), intent(in) :: f4
     f4_get_num_local_blocks = pw_get_num_local_quadrants(f4%pw)
   end function f4_get_num_local_blocks
+
+  pure integer function f4_get_num_global_blocks(f4)
+    type(foap4_t), intent(in) :: f4
+    f4_get_num_global_blocks = pw_get_num_global_quadrants(f4%pw)
+  end function f4_get_num_global_blocks
 
   subroutine f4_get_quadrants(f4)
     type(foap4_t), intent(inout) :: f4

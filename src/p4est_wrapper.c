@@ -35,7 +35,8 @@ typedef struct pw_state {
 } pw_state_t;
 
 /* Initialize MPI and p4est */
-void pw_initialize(pw_state_t **pw_ptr, MPI_Fint *comm_fortran) {
+void pw_initialize(pw_state_t **pw_ptr, MPI_Fint *comm_fortran,
+                   int log_level) {
 
   int         argc = 0;
   int         mpiret;
@@ -47,8 +48,8 @@ void pw_initialize(pw_state_t **pw_ptr, MPI_Fint *comm_fortran) {
   mpiret = sc_MPI_Init (&argc, NULL);
   SC_CHECK_MPI (mpiret);
 
-  sc_init (pw->mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
-  p4est_init (NULL, SC_LP_DEFAULT);
+  sc_init (pw->mpicomm, 1, 1, NULL, log_level);
+  p4est_init (NULL, log_level);
 
   *comm_fortran = MPI_Comm_c2f(pw->mpicomm);
 
@@ -98,6 +99,10 @@ void pw_set_connectivity_brick(pw_state_t *pw, const int mi, const int ni,
 
 int pw_get_num_local_quadrants(pw_state_t *pw) {
   return pw->p4est->local_num_quadrants;
+}
+
+int pw_get_num_global_quadrants(pw_state_t *pw) {
+  return pw->p4est->global_num_quadrants;
 }
 
 /* Get information about local quadrants */
