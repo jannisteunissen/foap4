@@ -955,8 +955,8 @@ contains
          end do
       end do
 
-      f4%recv_offset = face_gc%recv_offset * n_vars
-      f4%send_offset = face_gc%send_offset * n_vars
+      f4%recv_offset(:) = face_gc%recv_offset * n_vars
+      f4%send_offset(:) = face_gc%send_offset * n_vars
     end associate
 
   end subroutine f4_fill_ghostcell_buffers
@@ -1114,8 +1114,8 @@ contains
          end do
       end do
 
-      f4%recv_offset = face_gc%recv_offset_c2f * n_vars
-      f4%send_offset = face_gc%send_offset_c2f * n_vars
+      f4%recv_offset(:) = face_gc%recv_offset_c2f * n_vars
+      f4%send_offset(:) = face_gc%send_offset_c2f * n_vars
     end associate
 
   end subroutine f4_fill_ghostcell_buffers_c2f

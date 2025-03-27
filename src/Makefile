@@ -2,11 +2,10 @@
 
 FC := mpif90
 CC := mpicc
-INCDIRS := $(HOME)/opt/include
-LIBDIRS := $(HOME)/opt/lib
+INCDIRS := ../p4est/build/local/include
+LIBDIRS := ../p4est/build/local/lib
 LIBS := p4est sc z m
 CFLAGS := -Wall -O0 -g
-# FFLAGS := -Wall -O0 -g -fcheck=all
 TARGET := first_test
 
 # Determine compiler brand
@@ -14,7 +13,7 @@ compiler_version = $(shell $(FC) --version)
 compiler_brand = $(word 1, $(compiler_version))
 
 ifeq ($(compiler_brand), GNU)
-	FFLAGS ?= -Wall -O0 -g -fcheck=all
+	FFLAGS ?= -Wall -Wextra -Wrealloc-lhs -O0 -g -fcheck=all
 else ifeq ($(compiler_brand), nvfortran)
 	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g
 endif
