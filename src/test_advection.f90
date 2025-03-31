@@ -8,7 +8,7 @@ program test_adv
   integer, parameter  :: n_vars            = 2
   integer, parameter  :: i_rho             = 1
   character(len=20)   :: var_names(n_vars) = ['rho', 'tmp']
-  real(dp), parameter :: velocity(2)       = [1.0_dp, 0.0_dp]
+  real(dp), parameter :: velocity(2)       = [1.0_dp, 1.0_dp]
 
   type(foap4_t), target :: f4
   integer :: n_out
@@ -28,13 +28,13 @@ contains
     integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
-    integer, parameter           :: bx(2)               = [4, 4]
-    integer, parameter           :: n_gc                = 1
+    integer, parameter           :: bx(2)               = [16, 16]
+    integer, parameter           :: n_gc                = 2
     logical, parameter           :: periodic(2)         = [.false., .false.]
-    integer, parameter           :: min_level           = 0
+    integer, parameter           :: min_level           = 3
     integer, parameter           :: max_blocks          = 1000
     real(dp), parameter          :: cfl_number          = 0.5_dp
-    integer                      :: n
+    integer                      :: n, prev_mesh_revision
     real(dp)                     :: dt
 
     call f4_set_grid(f4, n_blocks_per_dim, block_length, bx, n_gc, &
@@ -42,17 +42,30 @@ contains
 
     call set_init_cond(f4)
 
+    do n = 1, 10
+       prev_mesh_revision = f4_get_mesh_revision(f4)
+       call f4_update_ghostcells(f4, 1, [i_rho])
+       call set_refinement_flag(f4)
+       call f4_adjust_refinement(f4, .true.)
+
+       if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
+    end do
+
     n_output = n_output + 1
     call f4_write_grid(f4, base_name, n_output)
 
-    ! do n = 1, 10
-    !    dt = cfl_number / (sum(abs(velocity)/f4%min_dr) + epsilon(1.0_dp))
+    do n = 1, 40
+       dt = cfl_number / (sum(abs(velocity)/f4%min_dr) + epsilon(1.0_dp))
 
-    !    call advance_heuns_method(f4, dt)
+       call advance_heuns_method(f4, dt)
 
-    !    n_output = n_output + 1
-    !    call f4_write_grid(f4, base_name, n_output)
-    ! end do
+       n_output = n_output + 1
+       call f4_write_grid(f4, base_name, n_output)
+
+       call f4_update_ghostcells(f4, 1, [i_rho])
+       call set_refinement_flag(f4)
+       call f4_adjust_refinement(f4, .true.)
+    end do
 
     ! do n_refine_steps = 1, 7
     !    call set_refinement_flag(f4)
@@ -104,12 +117,13 @@ contains
 
   subroutine set_refinement_flag(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n, i, j, ref_flag
+    integer                      :: n, i, j, ref_flag, level
     real(dp)                     :: dr(2), diff
 
     do n = 1, f4%n_blocks
-       dr = f4%dr_level(:, n)
-       ref_flag = -1
+       level = f4%block_level(n)
+       dr = f4%dr_level(:, level)
+       ref_flag = 0
 
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
@@ -119,12 +133,9 @@ contains
                   dr(2) * (f4%uu(i, j+1, i_rho, n) + &
                   f4%uu(i, j-1, i_rho, n) - 2 * f4%uu(i, j, i_rho, n)))
 
-             if (f4%block_level(n) < 2 .or. diff > 2.0e-3_dp &
-                  .and. f4%block_level(n) < 5) then
+             if (diff > 1.0e-8_dp .and. f4%block_level(n) < 5) then
                 ref_flag = 1
                 exit
-             else if (diff > 0.1_dp * 2.0e-3_dp) then
-                ref_flag = 0
              end if
           end do
        end do

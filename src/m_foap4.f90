@@ -195,6 +195,7 @@ module m_foap4
   public :: f4_finalize
   public :: f4_set_grid
   public :: f4_write_grid
+  public :: f4_get_mesh_revision
   public :: f4_get_num_local_blocks
   public :: f4_get_num_global_blocks
   public :: f4_cell_coord
@@ -328,6 +329,11 @@ contains
     call f4_get_quadrants(f4)
 
   end subroutine f4_set_grid
+
+  pure integer function f4_get_mesh_revision(f4)
+    type(foap4_t), intent(in) :: f4
+    f4_get_mesh_revision = pw_get_mesh_revision(f4%pw)
+  end function f4_get_mesh_revision
 
   pure integer function f4_get_num_local_blocks(f4)
     type(foap4_t), intent(in) :: f4
