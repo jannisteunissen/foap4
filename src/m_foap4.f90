@@ -356,8 +356,12 @@ contains
        f4%block_origin(:, n) = f4%block_origin(:, n) * f4%tree_length
     end do
 
-    max_level = maxval(f4%block_level(1:f4%n_blocks))
-    f4%min_dr = f4%dr_level(:, max_level)
+    if (f4%n_blocks > 0) then
+       max_level = maxval(f4%block_level(1:f4%n_blocks))
+       f4%min_dr = f4%dr_level(:, max_level)
+    else
+       f4%min_dr = f4%dr_level(:, 0)
+    end if
   end subroutine f4_get_quadrants
 
   subroutine f4_write_grid(f4, fname, n_output, time, viewer)
