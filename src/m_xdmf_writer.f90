@@ -40,7 +40,7 @@ contains
     integer                              :: rank, n_prev_blocks, coord_ix(2)
     integer, allocatable                 :: blocks_per_rank(:)
     real(dp), allocatable                :: cc_block(:, :, :)
-    character(len=len_trim(filename)+10) :: binary_fname
+    character(len=len_trim(filename)+10) :: binary_fname, binary_basename
     character(len=20)                    :: suffix, for_viewer
 
     for_viewer = "visit"; if (present(viewer)) for_viewer = viewer
@@ -66,6 +66,8 @@ contains
 
     ! Write binary file
     binary_fname = trim(filename) // trim(suffix) // '.bin'
+    call get_basename(binary_fname, binary_basename)
+
     open(newunit=my_unit, file=trim(binary_fname), form='unformatted', &
          access='stream', status='replace')
 
@@ -143,7 +145,7 @@ contains
                 write(my_unit, "(a, 4(I0,' '),a,a,a)") &
                      '        <DataItem Dimensions="', n_blocks, n_cc, nx(2), nx(1), &
                      '" Format="Binary" NumberType="Float" Precision="8">'
-                write(my_unit, "(a)") trim(binary_fname)
+                write(my_unit, "(a)") trim(binary_basename)
                 write(my_unit, "(a)") '        </DataItem>'
                 write(my_unit, "(a)") '      </DataItem>'
                 write(my_unit, "(a)") '    </Attribute>'
@@ -171,5 +173,31 @@ contains
     end if
 
   end subroutine xdmf_write_blocks_2DCoRect
+
+  subroutine get_basename(fullpath, out_basename)
+    implicit none
+    character(len=*), intent(in) :: fullpath
+    character(len=*), intent(out) :: out_basename
+    integer :: i, last_slash, len_path
+
+    len_path = len_trim(fullpath)
+    last_slash = 0
+
+    ! Find the position of the last slash '/'
+    do i = len_path, 1, -1
+       if (fullpath(i:i) == '/') then
+          last_slash = i
+          exit
+       end if
+    end do
+
+    if (last_slash == 0) then
+       ! No slash found, entire string is the basename
+       out_basename = fullpath(1:len_path)
+    else
+       ! Extract substring after the last '/'
+       out_basename = fullpath(last_slash+1:len_path)
+    end if
+  end subroutine get_basename
 
 end module m_xdmf_writer
