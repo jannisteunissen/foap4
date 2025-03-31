@@ -34,33 +34,6 @@ module m_foap4
      integer(c_int) :: ibuf_send
   end type bnd_face_t
 
-  type face_gc_t
-     integer              :: mesh_revision = -1
-     integer              :: data_size
-     integer, allocatable :: recv_offset(:)
-     integer, allocatable :: recv_offset_c2f(:)
-     integer, allocatable :: send_offset(:)
-     integer, allocatable :: send_offset_c2f(:)
-     integer, allocatable :: same_local(:, :)
-     integer              :: same_local_iface(0:4)
-     integer, allocatable :: same_from_buf(:, :)
-     integer              :: same_from_buf_iface(0:4)
-     integer, allocatable :: same_to_buf(:, :)
-     integer              :: same_to_buf_iface(0:4)
-     integer, allocatable :: f2c_local(:, :)
-     integer              :: f2c_local_iface(0:4)
-     integer, allocatable :: c2f_from_buf(:, :)
-     integer              :: c2f_from_buf_iface(0:4)
-     integer, allocatable :: c2f_to_buf(:, :)
-     integer              :: c2f_to_buf_iface(0:4)
-     integer, allocatable :: f2c_from_buf(:, :)
-     integer              :: f2c_from_buf_iface(0:4)
-     integer, allocatable :: f2c_to_buf(:, :)
-     integer              :: f2c_to_buf_iface(0:4)
-     integer, allocatable :: phys(:)
-     integer              :: phys_iface(0:4)
-  end type face_gc_t
-
   type, public :: foap4_t
      integer   :: bx(2)                         ! Block size (cells)
      integer   :: n_gc                          ! Number of ghost cells
@@ -68,7 +41,10 @@ module m_foap4
      integer   :: max_blocks                    ! Maximum number of blocks used
      integer   :: n_vars                        ! Number of variables
      real(dp)  :: tree_length(2)                ! Length of tree
+     integer   :: ilo(2)                        ! Minimum index in a block
+     integer   :: ihi(2)                        ! Maximum index in a block
      real(dp)  :: dr_level(2, 0:p4est_maxlevel-1) ! Grid spacing per level
+     real(dp)  :: min_dr(2)                       ! Minimum grid spacing
      character(len=32), allocatable :: var_names(:) ! Names of the variables
 
      ! The data per block
@@ -83,15 +59,38 @@ module m_foap4
      real(dp), allocatable :: recv_buffer(:)
      real(dp), allocatable :: send_buffer(:)
 
-     ! Information about ghost cells on faces
-     type(face_gc_t) :: face_gc
-
      ! p4est state
      type(c_ptr) :: pw
 
      ! MPI state
      integer :: mpirank
      integer :: mpisize
+
+     ! For handling ghost cells on faces
+     integer              :: gc_mesh_revision = -1
+     integer              :: gc_data_size
+     integer, allocatable :: gc_recv_offset(:)
+     integer, allocatable :: gc_recv_offset_c2f(:)
+     integer, allocatable :: gc_send_offset(:)
+     integer, allocatable :: gc_send_offset_c2f(:)
+     integer, allocatable :: gc_same_local(:, :)
+     integer              :: gc_same_local_iface(0:4)
+     integer, allocatable :: gc_same_from_buf(:, :)
+     integer              :: gc_same_from_buf_iface(0:4)
+     integer, allocatable :: gc_same_to_buf(:, :)
+     integer              :: gc_same_to_buf_iface(0:4)
+     integer, allocatable :: gc_f2c_local(:, :)
+     integer              :: gc_f2c_local_iface(0:4)
+     integer, allocatable :: gc_c2f_from_buf(:, :)
+     integer              :: gc_c2f_from_buf_iface(0:4)
+     integer, allocatable :: gc_c2f_to_buf(:, :)
+     integer              :: gc_c2f_to_buf_iface(0:4)
+     integer, allocatable :: gc_f2c_from_buf(:, :)
+     integer              :: gc_f2c_from_buf_iface(0:4)
+     integer, allocatable :: gc_f2c_to_buf(:, :)
+     integer              :: gc_f2c_to_buf_iface(0:4)
+     integer, allocatable :: gc_phys(:)
+     integer              :: gc_phys_iface(0:4)
   end type foap4_t
 
   interface
@@ -213,28 +212,28 @@ contains
 
     ! Different log levels defined in sc.h
     select case (log_type)
-       case ("default")
-       log_level = (-1)     ! Selects the SC default threshold.
-       case ("always")
-          log_level = 0 ! Log absolutely everything.
-       case ("trace")
-          log_level = 1 ! Prefix file and line number.
-       case ("debug")
-          log_level = 2 ! Any information on the internal state.
-       case ("verbose")
-          log_level = 3 ! Information on conditions, decisions.
-       case ("info")
-          log_level = 4 ! Most relevant things a function is doing.
-       case ("statistics")
-          log_level = 5 ! Important for consistency/performance.
-       case ("production")
-          log_level = 6 ! A few lines at most for a major api function.
-       case ("essential")
-          log_level = 7 ! Log a few lines max (version info) per program.
-       case ("error")
-          log_level = 8 ! Log errors only.  This is suggested over \ref SC_LP_SILENT.
-       case default
-          error stop "Unknow value for log_type (try default, error, ...)"
+    case ("default")
+       log_level = (-1) ! Selects the SC default threshold.
+    case ("always")
+       log_level = 0 ! Log absolutely everything.
+    case ("trace")
+       log_level = 1 ! Prefix file and line number.
+    case ("debug")
+       log_level = 2 ! Any information on the internal state.
+    case ("verbose")
+       log_level = 3 ! Information on conditions, decisions.
+    case ("info")
+       log_level = 4 ! Most relevant things a function is doing.
+    case ("statistics")
+       log_level = 5 ! Important for consistency/performance.
+    case ("production")
+       log_level = 6 ! A few lines at most for a major api function.
+    case ("essential")
+       log_level = 7 ! Log a few lines max (version info) per program.
+    case ("error")
+       log_level = 8 ! Log errors only.
+    case default
+       error stop "Unknow value for log_type (try default, error, ...)"
     end select
 
     call pw_initialize(f4%pw, mpicomm%MPI_VAL, log_level)
@@ -279,10 +278,12 @@ contains
     if (any(bx < 2 * n_gc)) error stop "Cannot have any(bx < 2 * n_gc)"
     if (any(iand(bx, 1) == 1)) error stop "All bx have to be even"
 
-    f4%bx         = bx
-    f4%n_gc       = n_gc
-    f4%n_vars     = n_vars
-    f4%max_blocks = max_blocks
+    f4%bx          = bx
+    f4%n_gc        = n_gc
+    f4%ilo         = 1 - n_gc
+    f4%ihi         = bx + n_gc
+    f4%n_vars      = n_vars
+    f4%max_blocks  = max_blocks
     f4%tree_length = tree_length
 
     where (periodic)
@@ -313,10 +314,10 @@ contains
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, n_vars, max_blocks))
     f4%uu(:, :, :, :) = 0.0_dp
 
-    f4%face_gc%data_size = f4%bx(1) * f4%n_gc
+    f4%gc_data_size = f4%bx(1) * f4%n_gc
 
     ! Maximum size of recv/send buffer
-    i = max_blocks * 4 * f4%face_gc%data_size
+    i = max_blocks * 4 * f4%gc_data_size
     allocate(f4%recv_buffer(i))
     allocate(f4%send_buffer(i))
     allocate(f4%recv_offset(0:f4%mpisize))
@@ -340,7 +341,7 @@ contains
 
   subroutine f4_get_quadrants(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n
+    integer                      :: n, max_level
 
     f4%n_blocks = f4_get_num_local_blocks(f4)
     if (.not. allocated(f4%block_origin)) error stop "block_origin not allocated"
@@ -354,6 +355,9 @@ contains
     do n = 1, f4%n_blocks
        f4%block_origin(:, n) = f4%block_origin(:, n) * f4%tree_length
     end do
+
+    max_level = maxval(f4%block_level(1:f4%n_blocks))
+    f4%min_dr = f4%dr_level(:, max_level)
   end subroutine f4_get_quadrants
 
   subroutine f4_write_grid(f4, fname, n_output, time, viewer)
@@ -400,19 +404,19 @@ contains
     integer                      :: n_faces
 
     mesh_revision = pw_get_mesh_revision(f4%pw)
-    if (mesh_revision == f4%face_gc%mesh_revision) return
+    if (mesh_revision == f4%gc_mesh_revision) return
 
     call pw_get_all_faces(f4%pw, n_faces, tmp)
 
     call c_f_pointer(tmp, bnd_face, shape=[n_faces])
 
-    call f4_get_ghost_cell_pattern(f4%face_gc, size(bnd_face), bnd_face, &
+    call f4_get_ghost_cell_pattern(f4, size(bnd_face), bnd_face, &
          f4%mpirank, f4%mpisize)
-    f4%face_gc%mesh_revision = mesh_revision
+    f4%gc_mesh_revision = mesh_revision
   end subroutine f4_update_ghostcell_pattern
 
-  subroutine f4_get_ghost_cell_pattern(face_gc, n_faces, bnd_face, mpirank, mpisize)
-    type(face_gc_t), intent(inout)  :: face_gc
+  subroutine f4_get_ghost_cell_pattern(f4, n_faces, bnd_face, mpirank, mpisize)
+    type(foap4_t), intent(inout)    :: f4
     integer, intent(in)             :: n_faces
     type(bnd_face_t), intent(inout) :: bnd_face(n_faces)
     integer, intent(in)             :: mpirank
@@ -467,64 +471,64 @@ contains
     end do
 
     ! Determine (cumulatively) how much to receive from and send to each rank
-    if (.not. allocated(face_gc%recv_offset)) then
-       allocate(face_gc%recv_offset(0:mpisize))
-       allocate(face_gc%send_offset(0:mpisize))
-       allocate(face_gc%recv_offset_c2f(0:mpisize))
-       allocate(face_gc%send_offset_c2f(0:mpisize))
+    if (.not. allocated(f4%gc_recv_offset)) then
+       allocate(f4%gc_recv_offset(0:mpisize))
+       allocate(f4%gc_send_offset(0:mpisize))
+       allocate(f4%gc_recv_offset_c2f(0:mpisize))
+       allocate(f4%gc_send_offset_c2f(0:mpisize))
     end if
 
-    face_gc%recv_offset(0) = 0
-    face_gc%send_offset(0) = 0
-    face_gc%recv_offset_c2f(0) = 0
-    face_gc%send_offset_c2f(0) = 0
+    f4%gc_recv_offset(0) = 0
+    f4%gc_send_offset(0) = 0
+    f4%gc_recv_offset_c2f(0) = 0
+    f4%gc_send_offset_c2f(0) = 0
 
     ! Determine offsets for sending and receiving with other ranks
     do rank = 1, mpisize
        if (rank-1 == mpirank) then
-          face_gc%recv_offset(rank) = face_gc%recv_offset(rank-1)
-          face_gc%send_offset(rank) = face_gc%send_offset(rank-1)
+          f4%gc_recv_offset(rank) = f4%gc_recv_offset(rank-1)
+          f4%gc_send_offset(rank) = f4%gc_send_offset(rank-1)
 
-          face_gc%recv_offset_c2f(rank) = face_gc%recv_offset_c2f(rank-1)
-          face_gc%send_offset_c2f(rank) = face_gc%send_offset_c2f(rank-1)
+          f4%gc_recv_offset_c2f(rank) = f4%gc_recv_offset_c2f(rank-1)
+          f4%gc_send_offset_c2f(rank) = f4%gc_send_offset_c2f(rank-1)
        else
-          face_gc%recv_offset(rank) = face_gc%recv_offset(rank-1) + &
-               face_gc%data_size * i_same(rank-1) + &
-               face_gc%data_size/2 * i_c2f(rank-1)
-          face_gc%send_offset(rank) = face_gc%send_offset(rank-1) + &
-               face_gc%data_size * i_same(rank-1) + &
-               face_gc%data_size/2 * i_f2c(rank-1)
+          f4%gc_recv_offset(rank) = f4%gc_recv_offset(rank-1) + &
+               f4%gc_data_size * i_same(rank-1) + &
+               f4%gc_data_size/2 * i_c2f(rank-1)
+          f4%gc_send_offset(rank) = f4%gc_send_offset(rank-1) + &
+               f4%gc_data_size * i_same(rank-1) + &
+               f4%gc_data_size/2 * i_f2c(rank-1)
 
           ! In a second round of communication, handle the fine side of
           ! refinement boundaries
-          face_gc%recv_offset_c2f(rank) = face_gc%recv_offset_c2f(rank-1) + &
-               face_gc%data_size * i_f2c(rank-1)
-          face_gc%send_offset_c2f(rank) = face_gc%send_offset_c2f(rank-1) + &
-               face_gc%data_size * i_c2f(rank-1)
+          f4%gc_recv_offset_c2f(rank) = f4%gc_recv_offset_c2f(rank-1) + &
+               f4%gc_data_size * i_f2c(rank-1)
+          f4%gc_send_offset_c2f(rank) = f4%gc_send_offset_c2f(rank-1) + &
+               f4%gc_data_size * i_c2f(rank-1)
        end if
     end do
 
-    if (allocated(face_gc%same_local)) then
+    if (allocated(f4%gc_same_local)) then
        ! Deallocate, since they probably changed size
-       deallocate(face_gc%same_local, &
-            face_gc%phys, &
-            face_gc%same_from_buf, &
-            face_gc%same_to_buf, &
-            face_gc%f2c_local, &
-            face_gc%c2f_from_buf, &
-            face_gc%c2f_to_buf, &
-            face_gc%f2c_from_buf, &
-            face_gc%f2c_to_buf)
+       deallocate(f4%gc_same_local, &
+            f4%gc_phys, &
+            f4%gc_same_from_buf, &
+            f4%gc_same_to_buf, &
+            f4%gc_f2c_local, &
+            f4%gc_c2f_from_buf, &
+            f4%gc_c2f_to_buf, &
+            f4%gc_f2c_from_buf, &
+            f4%gc_f2c_to_buf)
     end if
 
     ! Local ghost cell exchange at the same level
-    allocate(face_gc%same_local(2, i_same(mpirank)))
+    allocate(f4%gc_same_local(2, i_same(mpirank)))
 
     ! Local ghost cell exchange at refinement boundaries
-    allocate(face_gc%f2c_local(3, i_f2c(mpirank)))
+    allocate(f4%gc_f2c_local(3, i_f2c(mpirank)))
 
     ! Physical boundaries
-    allocate(face_gc%phys(i_phys))
+    allocate(f4%gc_phys(i_phys))
     allocate(phys_ix%i(i_phys))
 
     ! To store indices for different types of face boundaries
@@ -561,44 +565,44 @@ contains
     end do
 
     ! Sort local faces by face direction
-    call sort_by_face(phys_ix, n_faces, bnd_face, face_gc%phys_iface)
-    call sort_by_face(same_ix(mpirank), n_faces, bnd_face, face_gc%same_local_iface)
-    call sort_by_face(f2c_ix(mpirank), n_faces, bnd_face, face_gc%f2c_local_iface)
+    call sort_by_face(phys_ix, n_faces, bnd_face, f4%gc_phys_iface)
+    call sort_by_face(same_ix(mpirank), n_faces, bnd_face, f4%gc_same_local_iface)
+    call sort_by_face(f2c_ix(mpirank), n_faces, bnd_face, f4%gc_f2c_local_iface)
 
     do n = 1, i_phys
        i = phys_ix%i(n)
-       face_gc%phys(n) = bnd_face(i)%quadid(1)
+       f4%gc_phys(n) = bnd_face(i)%quadid(1)
     end do
 
     do n = 1, i_same(mpirank)
        i = same_ix(mpirank)%i(n)
-       face_gc%same_local(:, n) = bnd_face(i)%quadid(1:2)
+       f4%gc_same_local(:, n) = bnd_face(i)%quadid(1:2)
     end do
 
     do n = 1, i_f2c(mpirank)
        i = f2c_ix(mpirank)%i(n)
-       face_gc%f2c_local(:, n) = [bnd_face(i)%quadid(1), &
+       f4%gc_f2c_local(:, n) = [bnd_face(i)%quadid(1), &
             bnd_face(i)%quadid(2), bnd_face(i)%offset]
     end do
 
     ! Non-local ghost cell exchange at the same level
     n = sum(i_same) - i_same(mpirank)
-    allocate(face_gc%same_from_buf(2, n))
-    allocate(face_gc%same_to_buf(2, n))
+    allocate(f4%gc_same_from_buf(2, n))
+    allocate(f4%gc_same_to_buf(2, n))
     allocate(all_same_from_buf%i(n))
     allocate(all_same_to_buf%i(n))
 
     ! Non-local ghost cell exchange from fine to coarse
     n = sum(i_f2c) - i_f2c(mpirank)
-    allocate(face_gc%f2c_from_buf(2, n))
-    allocate(face_gc%f2c_to_buf(2, n))
+    allocate(f4%gc_f2c_from_buf(2, n))
+    allocate(f4%gc_f2c_to_buf(2, n))
     allocate(all_f2c_from_buf%i(n))
     allocate(all_f2c_to_buf%i(n))
 
     ! Non-local ghost cell exchange from coarse to fine
     n = sum(i_c2f) - i_c2f(mpirank)
-    allocate(face_gc%c2f_from_buf(3, n))
-    allocate(face_gc%c2f_to_buf(3, n))
+    allocate(f4%gc_c2f_from_buf(3, n))
+    allocate(f4%gc_c2f_to_buf(3, n))
     allocate(all_c2f_from_buf%i(n))
     allocate(all_c2f_to_buf%i(n))
 
@@ -615,8 +619,8 @@ contains
        if (rank == mpirank) cycle
 
        ! Incremental offsets for sending and receiving data
-       i_buf_recv(rank) = face_gc%recv_offset(rank)
-       i_buf_send(rank) = face_gc%send_offset(rank)
+       i_buf_recv(rank) = f4%gc_recv_offset(rank)
+       i_buf_send(rank) = f4%gc_send_offset(rank)
 
        ! Boundaries at the same level
        ix_send = same_ix(rank)
@@ -632,8 +636,8 @@ contains
 
           bnd_face(i)%ibuf_recv = i_buf_recv(rank)
           bnd_face(j)%ibuf_send = i_buf_send(rank)
-          i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size
-          i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size
+          i_buf_recv(rank) = i_buf_recv(rank) + f4%gc_data_size
+          i_buf_send(rank) = i_buf_send(rank) + f4%gc_data_size
        end do
 
        ! Sending from fine to coarse
@@ -645,7 +649,7 @@ contains
           all_f2c_to_buf%i(i_f2c_to_buf) = i
 
           bnd_face(i)%ibuf_send = i_buf_send(rank)
-          i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size / 2
+          i_buf_send(rank) = i_buf_send(rank) + f4%gc_data_size / 2
        end do
 
        ! Receiving coarse from fine
@@ -657,14 +661,14 @@ contains
           all_c2f_from_buf%i(i_c2f_from_buf) = i
 
           bnd_face(i)%ibuf_recv = i_buf_recv(rank)
-          i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size / 2
+          i_buf_recv(rank) = i_buf_recv(rank) + f4%gc_data_size / 2
        end do
 
        ! After the above ghost cells have been updated, we can handle the fine
        ! side of refinement boundaries. This involves a new round of
        ! communication, so reset buffer offsets.
-       i_buf_recv(rank) = face_gc%recv_offset_c2f(rank)
-       i_buf_send(rank) = face_gc%send_offset_c2f(rank)
+       i_buf_recv(rank) = f4%gc_recv_offset_c2f(rank)
+       i_buf_send(rank) = f4%gc_send_offset_c2f(rank)
 
        ! Sending from coarse to fine
        call sort_for_recv_or_send(c2f_ix(rank), n_faces, bnd_face, send)
@@ -675,7 +679,7 @@ contains
           all_c2f_to_buf%i(i_c2f_to_buf) = i
 
           bnd_face(i)%ibuf_send = i_buf_send(rank)
-          i_buf_send(rank) = i_buf_send(rank) + face_gc%data_size
+          i_buf_send(rank) = i_buf_send(rank) + f4%gc_data_size
        end do
 
        ! Receiving fine from coarse
@@ -687,46 +691,46 @@ contains
           all_f2c_from_buf%i(i_f2c_from_buf) = i
 
           bnd_face(i)%ibuf_recv = i_buf_recv(rank)
-          i_buf_recv(rank) = i_buf_recv(rank) + face_gc%data_size
+          i_buf_recv(rank) = i_buf_recv(rank) + f4%gc_data_size
        end do
 
     end do
 
     ! The buffer locations have been determined, sort over *all* ranks by face
-    call sort_by_face(all_same_from_buf, n_faces, bnd_face, face_gc%same_from_buf_iface)
-    call sort_by_face(all_same_to_buf, n_faces, bnd_face, face_gc%same_to_buf_iface)
-    call sort_by_face(all_f2c_from_buf, n_faces, bnd_face, face_gc%f2c_from_buf_iface)
-    call sort_by_face(all_f2c_to_buf, n_faces, bnd_face, face_gc%f2c_to_buf_iface)
-    call sort_by_face(all_c2f_from_buf, n_faces, bnd_face, face_gc%c2f_from_buf_iface)
-    call sort_by_face(all_c2f_to_buf, n_faces, bnd_face, face_gc%c2f_to_buf_iface)
+    call sort_by_face(all_same_from_buf, n_faces, bnd_face, f4%gc_same_from_buf_iface)
+    call sort_by_face(all_same_to_buf, n_faces, bnd_face, f4%gc_same_to_buf_iface)
+    call sort_by_face(all_f2c_from_buf, n_faces, bnd_face, f4%gc_f2c_from_buf_iface)
+    call sort_by_face(all_f2c_to_buf, n_faces, bnd_face, f4%gc_f2c_to_buf_iface)
+    call sort_by_face(all_c2f_from_buf, n_faces, bnd_face, f4%gc_c2f_from_buf_iface)
+    call sort_by_face(all_c2f_to_buf, n_faces, bnd_face, f4%gc_c2f_to_buf_iface)
 
     ! Extract ghost cell patterns
     do n = 1, i_same_nonlocal
        i = all_same_from_buf%i(n)
        j = all_same_to_buf%i(n)
-       face_gc%same_from_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_recv]
-       face_gc%same_to_buf(:, n) = [bnd_face(j)%quadid(1), bnd_face(j)%ibuf_send]
+       f4%gc_same_from_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_recv]
+       f4%gc_same_to_buf(:, n) = [bnd_face(j)%quadid(1), bnd_face(j)%ibuf_send]
     end do
 
     do n = 1, i_f2c_to_buf
        i = all_f2c_to_buf%i(n)
-       face_gc%f2c_to_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_send]
+       f4%gc_f2c_to_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_send]
     end do
 
     do n = 1, i_f2c_from_buf
        i = all_f2c_from_buf%i(n)
-       face_gc%f2c_from_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_recv]
+       f4%gc_f2c_from_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_recv]
     end do
 
     do n = 1, i_c2f_from_buf
        i = all_c2f_from_buf%i(n)
-       face_gc%c2f_from_buf(:, n) = [bnd_face(i)%quadid(1), &
+       f4%gc_c2f_from_buf(:, n) = [bnd_face(i)%quadid(1), &
             bnd_face(i)%offset, bnd_face(i)%ibuf_recv]
     end do
 
     do n = 1, i_c2f_to_buf
        i = all_c2f_to_buf%i(n)
-       face_gc%c2f_to_buf(:, n) = [bnd_face(i)%quadid(1), &
+       f4%gc_c2f_to_buf(:, n) = [bnd_face(i)%quadid(1), &
             bnd_face(i)%offset, bnd_face(i)%ibuf_send]
     end do
 
@@ -856,17 +860,17 @@ contains
     integer                      :: i_f, j_f, half_bx(2)
     integer                      :: iq, i_buf, face
 
-    if (maxval(f4%face_gc%send_offset) * n_vars > size(f4%send_buffer)) &
+    if (maxval(f4%gc_send_offset) * n_vars > size(f4%send_buffer)) &
          error stop "send buffer too small"
 
     half_bx = f4%bx/2
 
-    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      do n = face_gc%same_to_buf_iface(face), face_gc%same_to_buf_iface(face+1)-1
-         iq = face_gc%same_to_buf(1, n) + 1
-         i_buf = face_gc%same_to_buf(2, n) * n_vars
+      do n = f4%gc_same_to_buf_iface(face), f4%gc_same_to_buf_iface(face+1)-1
+         iq = f4%gc_same_to_buf(1, n) + 1
+         i_buf = f4%gc_same_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -879,9 +883,9 @@ contains
       end do
 
       face = 1
-      do n = face_gc%same_to_buf_iface(face), face_gc%same_to_buf_iface(face+1)-1
-         iq = face_gc%same_to_buf(1, n) + 1
-         i_buf = face_gc%same_to_buf(2, n) * n_vars
+      do n = f4%gc_same_to_buf_iface(face), f4%gc_same_to_buf_iface(face+1)-1
+         iq = f4%gc_same_to_buf(1, n) + 1
+         i_buf = f4%gc_same_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -894,9 +898,9 @@ contains
       end do
 
       face = 2
-      do n = face_gc%same_to_buf_iface(face), face_gc%same_to_buf_iface(face+1)-1
-         iq = face_gc%same_to_buf(1, n) + 1
-         i_buf = face_gc%same_to_buf(2, n) * n_vars
+      do n = f4%gc_same_to_buf_iface(face), f4%gc_same_to_buf_iface(face+1)-1
+         iq = f4%gc_same_to_buf(1, n) + 1
+         i_buf = f4%gc_same_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -909,9 +913,9 @@ contains
       end do
 
       face = 3
-      do n = face_gc%same_to_buf_iface(face), face_gc%same_to_buf_iface(face+1)-1
-         iq = face_gc%same_to_buf(1, n) + 1
-         i_buf = face_gc%same_to_buf(2, n) * n_vars
+      do n = f4%gc_same_to_buf_iface(face), f4%gc_same_to_buf_iface(face+1)-1
+         iq = f4%gc_same_to_buf(1, n) + 1
+         i_buf = f4%gc_same_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -926,9 +930,9 @@ contains
       ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
 
       face = 0
-      do n = face_gc%f2c_to_buf_iface(face), face_gc%f2c_to_buf_iface(face+1)-1
-         iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
-         i_buf = face_gc%f2c_to_buf(2, n) * n_vars
+      do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
+         iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
+         i_buf = f4%gc_f2c_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_bx(2)
@@ -944,9 +948,9 @@ contains
       end do
 
       face = 1
-      do n = face_gc%f2c_to_buf_iface(face), face_gc%f2c_to_buf_iface(face+1)-1
-         iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
-         i_buf = face_gc%f2c_to_buf(2, n) * n_vars
+      do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
+         iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
+         i_buf = f4%gc_f2c_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_bx(2)
@@ -962,9 +966,9 @@ contains
       end do
 
       face = 2
-      do n = face_gc%f2c_to_buf_iface(face), face_gc%f2c_to_buf_iface(face+1)-1
-         iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
-         i_buf = face_gc%f2c_to_buf(2, n) * n_vars
+      do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
+         iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
+         i_buf = f4%gc_f2c_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -980,9 +984,9 @@ contains
       end do
 
       face = 3
-      do n = face_gc%f2c_to_buf_iface(face), face_gc%f2c_to_buf_iface(face+1)-1
-         iq = face_gc%f2c_to_buf(1, n) + 1 ! fine block
-         i_buf = face_gc%f2c_to_buf(2, n) * n_vars
+      do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
+         iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
+         i_buf = f4%gc_f2c_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -997,8 +1001,8 @@ contains
          end do
       end do
 
-      f4%recv_offset(:) = face_gc%recv_offset * n_vars
-      f4%send_offset(:) = face_gc%send_offset * n_vars
+      f4%recv_offset(:) = f4%gc_recv_offset * n_vars
+      f4%send_offset(:) = f4%gc_send_offset * n_vars
     end associate
 
   end subroutine f4_fill_ghostcell_buffers
@@ -1014,20 +1018,20 @@ contains
     logical                      :: odd_n_gc
     real(dp)                     :: fine(4)
 
-    if (maxval(f4%face_gc%send_offset_c2f) * n_vars > size(f4%send_buffer)) &
+    if (maxval(f4%gc_send_offset_c2f) * n_vars > size(f4%send_buffer)) &
          error stop "send buffer too small"
 
     half_bx = f4%bx/2
     half_n_gc = f4%n_gc/2 ! Round down
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
-    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      do n = face_gc%c2f_to_buf_iface(face), face_gc%c2f_to_buf_iface(face+1)-1
-         iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
-         offset = face_gc%c2f_to_buf(2, n)
-         i_buf = face_gc%c2f_to_buf(3, n) * n_vars
+      do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
+         iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
+         offset = f4%gc_c2f_to_buf(2, n)
+         i_buf = f4%gc_c2f_to_buf(3, n) * n_vars
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1056,10 +1060,10 @@ contains
       end do
 
       face = 1
-      do n = face_gc%c2f_to_buf_iface(face), face_gc%c2f_to_buf_iface(face+1)-1
-         iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
-         offset = face_gc%c2f_to_buf(2, n)
-         i_buf = face_gc%c2f_to_buf(3, n) * n_vars
+      do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
+         iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
+         offset = f4%gc_c2f_to_buf(2, n)
+         i_buf = f4%gc_c2f_to_buf(3, n) * n_vars
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1088,10 +1092,10 @@ contains
       end do
 
       face = 2
-      do n = face_gc%c2f_to_buf_iface(face), face_gc%c2f_to_buf_iface(face+1)-1
-         iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
-         offset = face_gc%c2f_to_buf(2, n)
-         i_buf = face_gc%c2f_to_buf(3, n) * n_vars
+      do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
+         iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
+         offset = f4%gc_c2f_to_buf(2, n)
+         i_buf = f4%gc_c2f_to_buf(3, n) * n_vars
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1123,10 +1127,10 @@ contains
       end do
 
       face = 3
-      do n = face_gc%c2f_to_buf_iface(face), face_gc%c2f_to_buf_iface(face+1)-1
-         iq = face_gc%c2f_to_buf(1, n) + 1 ! coarse block
-         offset = face_gc%c2f_to_buf(2, n)
-         i_buf = face_gc%c2f_to_buf(3, n) * n_vars
+      do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
+         iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
+         offset = f4%gc_c2f_to_buf(2, n)
+         i_buf = f4%gc_c2f_to_buf(3, n) * n_vars
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1156,8 +1160,8 @@ contains
          end do
       end do
 
-      f4%recv_offset(:) = face_gc%recv_offset_c2f * n_vars
-      f4%send_offset(:) = face_gc%send_offset_c2f * n_vars
+      f4%recv_offset(:) = f4%gc_recv_offset_c2f * n_vars
+      f4%send_offset(:) = f4%gc_send_offset_c2f * n_vars
     end associate
 
   end subroutine f4_fill_ghostcell_buffers_c2f
@@ -1218,12 +1222,12 @@ contains
     half_n_gc = f4%n_gc/2 ! Round down
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
-    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu, face_gc => f4%face_gc)
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      do n = face_gc%same_from_buf_iface(face), face_gc%same_from_buf_iface(face+1)-1
-         iq = face_gc%same_from_buf(1, n) + 1
-         i_buf = face_gc%same_from_buf(2, n) * n_vars
+      do n = f4%gc_same_from_buf_iface(face), f4%gc_same_from_buf_iface(face+1)-1
+         iq = f4%gc_same_from_buf(1, n) + 1
+         i_buf = f4%gc_same_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -1236,9 +1240,9 @@ contains
       end do
 
       face = 1
-      do n = face_gc%same_from_buf_iface(face), face_gc%same_from_buf_iface(face+1)-1
-         iq = face_gc%same_from_buf(1, n) + 1
-         i_buf = face_gc%same_from_buf(2, n) * n_vars
+      do n = f4%gc_same_from_buf_iface(face), f4%gc_same_from_buf_iface(face+1)-1
+         iq = f4%gc_same_from_buf(1, n) + 1
+         i_buf = f4%gc_same_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -1251,9 +1255,9 @@ contains
       end do
 
       face = 2
-      do n = face_gc%same_from_buf_iface(face), face_gc%same_from_buf_iface(face+1)-1
-         iq = face_gc%same_from_buf(1, n) + 1
-         i_buf = face_gc%same_from_buf(2, n) * n_vars
+      do n = f4%gc_same_from_buf_iface(face), f4%gc_same_from_buf_iface(face+1)-1
+         iq = f4%gc_same_from_buf(1, n) + 1
+         i_buf = f4%gc_same_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1266,9 +1270,9 @@ contains
       end do
 
       face = 3
-      do n = face_gc%same_from_buf_iface(face), face_gc%same_from_buf_iface(face+1)-1
-         iq = face_gc%same_from_buf(1, n) + 1
-         i_buf = face_gc%same_from_buf(2, n) * n_vars
+      do n = f4%gc_same_from_buf_iface(face), f4%gc_same_from_buf_iface(face+1)-1
+         iq = f4%gc_same_from_buf(1, n) + 1
+         i_buf = f4%gc_same_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1282,10 +1286,10 @@ contains
 
       ! Local fine-to-coarse refinement boundaries, fill coarse side
       face = 0
-      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
-         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
-         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
-         offset = face_gc%f2c_local(3, n)     ! offset
+      do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+         iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+         jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+         offset = f4%gc_f2c_local(3, n)     ! offset
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_bx(2)
@@ -1300,10 +1304,10 @@ contains
       end do
 
       face = 1
-      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
-         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
-         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
-         offset = face_gc%f2c_local(3, n)     ! offset
+      do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+         iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+         jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+         offset = f4%gc_f2c_local(3, n)     ! offset
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_bx(2)
@@ -1318,10 +1322,10 @@ contains
       end do
 
       face = 2
-      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
-         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
-         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
-         offset = face_gc%f2c_local(3, n)     ! offset
+      do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+         iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+         jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+         offset = f4%gc_f2c_local(3, n)     ! offset
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1336,10 +1340,10 @@ contains
       end do
 
       face = 3
-      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
-         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
-         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
-         offset = face_gc%f2c_local(3, n)     ! offset
+      do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+         iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+         jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+         offset = f4%gc_f2c_local(3, n)     ! offset
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1355,10 +1359,10 @@ contains
 
       ! Coarse-to-fine, update coarse side from buffers
       face = 0
-      do n = face_gc%c2f_from_buf_iface(face), face_gc%c2f_from_buf_iface(face+1)-1
-         iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
-         offset = face_gc%c2f_from_buf(2, n)     ! Offset
-         i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
+      do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
+         iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
+         offset = f4%gc_c2f_from_buf(2, n)     ! Offset
+         i_buf  = f4%gc_c2f_from_buf(3, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_bx(2)
@@ -1372,10 +1376,10 @@ contains
       end do
 
       face = 1
-      do n = face_gc%c2f_from_buf_iface(face), face_gc%c2f_from_buf_iface(face+1)-1
-         iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
-         offset = face_gc%c2f_from_buf(2, n)     ! Offset
-         i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
+      do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
+         iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
+         offset = f4%gc_c2f_from_buf(2, n)     ! Offset
+         i_buf  = f4%gc_c2f_from_buf(3, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_bx(2)
@@ -1389,10 +1393,10 @@ contains
       end do
 
       face = 2
-      do n = face_gc%c2f_from_buf_iface(face), face_gc%c2f_from_buf_iface(face+1)-1
-         iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
-         offset = face_gc%c2f_from_buf(2, n)     ! Offset
-         i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
+      do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
+         iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
+         offset = f4%gc_c2f_from_buf(2, n)     ! Offset
+         i_buf  = f4%gc_c2f_from_buf(3, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1406,10 +1410,10 @@ contains
       end do
 
       face = 3
-      do n = face_gc%c2f_from_buf_iface(face), face_gc%c2f_from_buf_iface(face+1)-1
-         iq     = face_gc%c2f_from_buf(1, n) + 1 ! Coarse block
-         offset = face_gc%c2f_from_buf(2, n)     ! Offset
-         i_buf  = face_gc%c2f_from_buf(3, n) * n_vars
+      do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
+         iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
+         offset = f4%gc_c2f_from_buf(2, n)     ! Offset
+         i_buf  = f4%gc_c2f_from_buf(3, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1423,15 +1427,15 @@ contains
       end do
 
       ! Local boundaries at the same refinement level
-      if (face_gc%same_local_iface(1) > face_gc%same_local_iface(0)) &
+      if (f4%gc_same_local_iface(1) > f4%gc_same_local_iface(0)) &
            error stop "Local face 0 at same level not expected"
-      if (face_gc%same_local_iface(3) > face_gc%same_local_iface(2)) &
+      if (f4%gc_same_local_iface(3) > f4%gc_same_local_iface(2)) &
            error stop "Local face 2 at same level not expected"
 
       face = 1
-      do n = face_gc%same_local_iface(face), face_gc%same_local_iface(face+1)-1
-         iq   = face_gc%same_local(1, n) + 1
-         jq   = face_gc%same_local(2, n) + 1
+      do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
+         iq   = f4%gc_same_local(1, n) + 1
+         jq   = f4%gc_same_local(2, n) + 1
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1445,9 +1449,9 @@ contains
       end do
 
       face = 3
-      do n = face_gc%same_local_iface(face), face_gc%same_local_iface(face+1)-1
-         iq   = face_gc%same_local(1, n) + 1
-         jq   = face_gc%same_local(2, n) + 1
+      do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
+         iq   = f4%gc_same_local(1, n) + 1
+         jq   = f4%gc_same_local(2, n) + 1
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1461,8 +1465,8 @@ contains
 
       ! Physical boundaries
       face = 0
-      do n = face_gc%phys_iface(face), face_gc%phys_iface(face+1)-1
-         iq = face_gc%phys(n) + 1
+      do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
+         iq = f4%gc_phys(n) + 1
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -1475,8 +1479,8 @@ contains
       end do
 
       face = 1
-      do n = face_gc%phys_iface(face), face_gc%phys_iface(face+1)-1
-         iq = face_gc%phys(n) + 1
+      do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
+         iq = f4%gc_phys(n) + 1
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -1489,8 +1493,8 @@ contains
       end do
 
       face = 2
-      do n = face_gc%phys_iface(face), face_gc%phys_iface(face+1)-1
-         iq = face_gc%phys(n) + 1
+      do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
+         iq = f4%gc_phys(n) + 1
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1503,8 +1507,8 @@ contains
       end do
 
       face = 3
-      do n = face_gc%phys_iface(face), face_gc%phys_iface(face+1)-1
-         iq = face_gc%phys(n) + 1
+      do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
+         iq = f4%gc_phys(n) + 1
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1523,10 +1527,10 @@ contains
 
       ! Local coarse-to-fine boundaries, fill fine side
       face = 0
-      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
-         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
-         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
-         offset = face_gc%f2c_local(3, n)     ! Offset
+      do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+         iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+         jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+         offset = f4%gc_f2c_local(3, n)     ! Offset
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1556,10 +1560,10 @@ contains
       end do
 
       face = 1
-      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
-         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
-         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
-         offset = face_gc%f2c_local(3, n)     ! Offset
+      do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+         iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+         jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+         offset = f4%gc_f2c_local(3, n)     ! Offset
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1589,10 +1593,10 @@ contains
       end do
 
       face = 2
-      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
-         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
-         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
-         offset = face_gc%f2c_local(3, n)     ! Offset
+      do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+         iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+         jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+         offset = f4%gc_f2c_local(3, n)     ! Offset
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1626,10 +1630,10 @@ contains
       end do
 
       face = 3
-      do n = face_gc%f2c_local_iface(face), face_gc%f2c_local_iface(face+1)-1
-         iq     = face_gc%f2c_local(1, n) + 1 ! Fine block
-         jq     = face_gc%f2c_local(2, n) + 1 ! coarse block
-         offset = face_gc%f2c_local(3, n)     ! Offset
+      do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+         iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+         jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+         offset = f4%gc_f2c_local(3, n)     ! Offset
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1666,9 +1670,9 @@ contains
       ! Nonlocal coarse-to-fine boundaries, fill fine side
 
       face = 0
-      do n = face_gc%f2c_from_buf_iface(face), face_gc%f2c_from_buf_iface(face+1)-1
-         iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
-         i_buf = face_gc%f2c_from_buf(2, n) * n_vars
+      do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
+         iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
+         i_buf = f4%gc_f2c_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_bx(2)
@@ -1691,9 +1695,9 @@ contains
       end do
 
       face = 1
-      do n = face_gc%f2c_from_buf_iface(face), face_gc%f2c_from_buf_iface(face+1)-1
-         iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
-         i_buf = face_gc%f2c_from_buf(2, n) * n_vars
+      do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
+         iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
+         i_buf = f4%gc_f2c_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_bx(2)
@@ -1716,9 +1720,9 @@ contains
       end do
 
       face = 2
-      do n = face_gc%f2c_from_buf_iface(face), face_gc%f2c_from_buf_iface(face+1)-1
-         iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
-         i_buf = face_gc%f2c_from_buf(2, n) * n_vars
+      do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
+         iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
+         i_buf = f4%gc_f2c_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_n_gc
@@ -1744,9 +1748,9 @@ contains
       end do
 
       face = 3
-      do n = face_gc%f2c_from_buf_iface(face), face_gc%f2c_from_buf_iface(face+1)-1
-         iq    = face_gc%f2c_from_buf(1, n) + 1 ! Fine block
-         i_buf = face_gc%f2c_from_buf(2, n) * n_vars
+      do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
+         iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
+         i_buf = f4%gc_f2c_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, half_n_gc
@@ -1920,7 +1924,7 @@ contains
     f(0) = coarse_c          ! Identical to coarse_y(2)
     slopes_a = [coarse_c - coarse_x(1), coarse_c - coarse_y(1)]
     slopes_b = [coarse_x(2) - coarse_c, coarse_y(2) - coarse_c]
-    f(1:2) = 0.25_dp * af_limiter_minmod(slopes_a, slopes_b)
+    f(1:2) = 0.25_dp * limiter_minmod(slopes_a, slopes_b)
 
     fine(1) = f(0) - f(1) - f(2)
     fine(2) = f(0) + f(1) - f(2)
@@ -1931,7 +1935,7 @@ contains
   !> Generalized minmod limiter. The parameter theta controls how dissipative
   !> the limiter is, with 1 corresponding to the minmod limiter and 2 to the MC
   !> limiter.
-  elemental function af_limiter_gminmod(a, b, theta) result(phi)
+  elemental function limiter_gminmod(a, b, theta) result(phi)
     real(dp), intent(in) :: a, b, theta
     real(dp)             :: phi
 
@@ -1941,14 +1945,14 @@ contains
     else
        phi = 0.0_dp
     end if
-  end function af_limiter_gminmod
+  end function limiter_gminmod
 
-  elemental function af_limiter_minmod(a, b) result(phi)
+  elemental function limiter_minmod(a, b) result(phi)
     real(dp), intent(in) :: a
     real(dp), intent(in) :: b
     real(dp)             :: phi
-    phi = af_limiter_gminmod(a, b, 1.0_dp)
-  end function af_limiter_minmod
+    phi = limiter_gminmod(a, b, 1.0_dp)
+  end function limiter_minmod
 
   subroutine f4_partition(f4)
     type(foap4_t), intent(inout), target :: f4

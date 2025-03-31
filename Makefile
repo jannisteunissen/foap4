@@ -6,7 +6,7 @@ INCDIRS := p4est/build/local/include
 LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
 CFLAGS := -Wall -O2 -g
-TARGET := test_refinement benchmark_ghostcell
+TARGET := test_refinement test_advection benchmark_ghostcell
 
 .PHONY: all
 all: $(TARGET)
@@ -16,8 +16,8 @@ compiler_version = $(shell $(FC) --version)
 compiler_brand = $(word 1, $(compiler_version))
 
 ifeq ($(compiler_brand), GNU)
- # FFLAGS ?= -Wall -Wextra -Wrealloc-lhs -O0 -g -fcheck=all
-	FFLAGS ?= -Wall -O2 -g -Jsrc
+	FFLAGS ?= -Wall -Wextra -Wrealloc-lhs -O0 -g -fcheck=all
+	# FFLAGS ?= -Wall -O2 -g -Jsrc
 else ifeq ($(compiler_brand), nvfortran)
 	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g -module src
 endif
@@ -28,6 +28,7 @@ $(TARGET): src/m_foap4.o src/p4est_wrapper.o src/m_xdmf_writer.o
 src/m_foap4.o: src/m_xdmf_writer.mod
 src/test_refinement.o: src/m_foap4.mod
 src/benchmark_ghostcell.o: src/m_foap4.mod
+src/test_advection.o: src/m_foap4.mod
 
 .PHONY: clean
 clean:
