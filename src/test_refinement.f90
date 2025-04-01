@@ -6,30 +6,34 @@ program test_ref
   integer, parameter :: dp = kind(0.0d0)
 
   type(foap4_t), target :: f4
-  integer :: n
+  integer               :: n, n_gc
 
   call f4_initialize(f4, "error")
 
   n = 0
-  call test_refinement(f4, [1e-2_dp, 1e-2_dp], "output/test_ref", n)
-  call test_refinement(f4, [0.99_dp, 1e-2_dp], "output/test_ref", n)
-  call test_refinement(f4, [0.5_dp, 0.5_dp], "output/test_ref", n)
-  call test_refinement(f4, [1e-2_dp, 0.99_dp], "output/test_ref", n)
-  call test_refinement(f4, [0.99_dp, 0.99_dp], "output/test_ref", n)
+
+  do n_gc = 1, 3
+     if (f4%mpirank == 0) print *, "Testing with n_gc = ", n_gc
+     call test_refinement(f4, n_gc, [1e-2_dp, 1e-2_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, [0.99_dp, 1e-2_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, [0.5_dp, 0.5_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, [1e-2_dp, 0.99_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, [0.99_dp, 0.99_dp], "output/test_ref", n)
+  end do
 
   call f4_finalize(f4)
 
 contains
 
-  subroutine test_refinement(f4, refine_location, base_name, n_output)
+  subroutine test_refinement(f4, n_gc, refine_location, base_name, n_output)
     type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_gc
     real(dp), intent(in)         :: refine_location(2)
     character(len=*), intent(in) :: base_name
     integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
     integer, parameter           :: bx(2)               = [16, 16]
-    integer, parameter           :: n_gc                = 1
     integer, parameter           :: n_vars              = 2
     character(len=20)            :: var_names(n_vars)   = ['rho', 'phi']
     logical, parameter           :: periodic(2)         = [.false., .false.]

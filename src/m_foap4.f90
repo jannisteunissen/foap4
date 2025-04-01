@@ -1252,7 +1252,7 @@ contains
             do j = 1, bx(2)
                do i = 1, n_gc
                   i_buf = i_buf + 1
-                  uu(-n_gc+1, j, ivar, iq) = f4%recv_buffer(i_buf)
+                  uu(-n_gc+i, j, ivar, iq) = f4%recv_buffer(i_buf)
                end do
             end do
          end do
