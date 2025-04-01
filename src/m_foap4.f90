@@ -1437,10 +1437,22 @@ contains
       end do
 
       ! Local boundaries at the same refinement level
-      if (f4%gc_same_local_iface(1) > f4%gc_same_local_iface(0)) &
-           error stop "Local face 0 at same level not expected"
-      if (f4%gc_same_local_iface(3) > f4%gc_same_local_iface(2)) &
-           error stop "Local face 2 at same level not expected"
+
+      face = 0
+      do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
+         iq   = f4%gc_same_local(1, n) + 1
+         jq   = f4%gc_same_local(2, n) + 1
+
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, bx(2)
+               do i = 1, n_gc
+                  uu(-n_gc+i, j, ivar, iq) = uu(bx(1)-n_gc+i, j, ivar, jq)
+                  uu(bx(1)+i, j, ivar, jq) = uu(i, j, ivar, iq)
+               end do
+            end do
+         end do
+      end do
 
       face = 1
       do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
@@ -1453,6 +1465,21 @@ contains
                do i = 1, n_gc
                   uu(bx(1)+i, j, ivar, iq) = uu(i, j, ivar, jq)
                   uu(-n_gc+i, j, ivar, jq) = uu(bx(1)-n_gc+i, j, ivar, iq)
+               end do
+            end do
+         end do
+      end do
+
+      face = 2
+      do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
+         iq   = f4%gc_same_local(1, n) + 1
+         jq   = f4%gc_same_local(2, n) + 1
+         do iv = 1, n_vars
+            ivar = i_vars(iv)
+            do j = 1, n_gc
+               do i = 1, bx(1)
+                  uu(i, -n_gc+j, ivar, iq) = uu(i, bx(2)-n_gc+j, ivar, jq)
+                  uu(i, bx(2)+j, ivar, jq) = uu(i, j, ivar, iq)
                end do
             end do
          end do
