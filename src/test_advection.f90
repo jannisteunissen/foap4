@@ -28,7 +28,7 @@ contains
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
     integer, parameter           :: bx(2)               = [16, 16]
     integer, parameter           :: n_gc                = 2
-    logical, parameter           :: periodic(2)         = [.false., .false.]
+    logical, parameter           :: periodic(2)         = [.true., .true.]
     integer, parameter           :: max_blocks          = 1000
     real(dp), parameter          :: cfl_number          = 0.5_dp
     integer                      :: n, prev_mesh_revision, n_output
@@ -47,7 +47,7 @@ contains
 
     call set_init_cond(f4)
 
-    do_refinement = .false.
+    do_refinement = .true.
 
     if (do_refinement) then
        do n = 1, 10
@@ -78,8 +78,8 @@ contains
        time = time + dt
 
        if (write_output) then
-          n_output = n_output + 1
           call f4_write_grid(f4, base_name, n_output)
+          n_output = n_output + 1
        end if
 
        if (do_refinement) then
@@ -146,7 +146,7 @@ contains
        dr = f4%dr_level(:, level)
 
        if (f4%block_level(n) > min_level) then
-          ref_flag = 0
+          ref_flag = -1
        else
           ref_flag = 0
        end if
