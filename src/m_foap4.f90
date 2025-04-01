@@ -171,10 +171,10 @@ module m_foap4
        integer(c_int), intent(out)       :: has_changed
      end subroutine pw_adjust_refinement
 
-     subroutine pw_partition(pw, n_changed, gfq_old) bind(c)
+     subroutine pw_partition(pw, n_changed_global, gfq_old) bind(c)
        import c_int, c_int64_t, c_ptr
        type(c_ptr), intent(in), value    :: pw
-       integer(c_int), intent(out)       :: n_changed
+       integer(c_int), intent(out)       :: n_changed_global
        integer(c_int64_t), intent(out)   :: gfq_old(*)
      end subroutine pw_partition
 
@@ -1966,12 +1966,17 @@ contains
 
   subroutine f4_partition(f4)
     type(foap4_t), intent(inout), target :: f4
-    integer                      :: n_changed, n_blocks_old, n_blocks_new
-    integer(c_int64_t)           :: gfq_old(0:f4%mpisize)
-    integer                      :: n, dsize
+    integer                              :: n_changed_global
+    integer                              :: n_blocks_old, n_blocks_new
+    integer(c_int64_t)                   :: gfq_old(0:f4%mpisize)
+    integer                              :: n, dsize
 
     n_blocks_old = f4%n_blocks
-    call pw_partition(f4%pw, n_changed, gfq_old)
+    call pw_partition(f4%pw, n_changed_global, gfq_old)
+
+    ! No need to do anything if the global number of blocks shipped is zero
+    if (n_changed_global == 0) return
+
     n_blocks_new = pw_get_num_local_quadrants(f4%pw)
 
     if (n_blocks_new + n_blocks_old > f4%max_blocks) &
