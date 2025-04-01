@@ -65,12 +65,7 @@ contains
     end do
 
     call xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx+2*n_gc, n_cc, cc_names, n_gc, origin, dr, cc_data)
-
-    ! call xdmf_write_blocks_2DCoRect(mpicomm, trim(full_fname), &
-    !      f4%n_blocks, f4%bx+2*f4%n_gc, f4%n_vars, &
-    !      f4%var_names, f4%n_gc, f4%block_origin(:, 1:f4%n_blocks), dr, &
-    !      cc_data=f4%uu(:, :, :, 1:f4%n_blocks), time=time, viewer=viewer)
+         nx+2*n_gc, n_cc, cc_names, n_gc, origin, dr, cc_data, time=time)
 
   end subroutine multi_block_test
 

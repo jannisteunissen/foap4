@@ -44,7 +44,6 @@ module m_foap4
      integer   :: ilo(2)                        ! Minimum index in a block
      integer   :: ihi(2)                        ! Maximum index in a block
      real(dp)  :: dr_level(2, 0:p4est_maxlevel-1) ! Grid spacing per level
-     real(dp)  :: min_dr(2)                       ! Minimum grid spacing
      character(len=32), allocatable :: var_names(:) ! Names of the variables
 
      ! The data per block
@@ -54,6 +53,7 @@ module m_foap4
      integer, allocatable  :: refinement_flags(:) ! Refinement flags
 
      ! For communication
+     type(MPI_comm)  :: mpicomm
      integer, allocatable :: recv_offset(:) ! 0:mpisize offsets for receiving
      integer, allocatable :: send_offset(:) ! 0:mpisize offsets for sending
      real(dp), allocatable :: recv_buffer(:)
@@ -142,6 +142,12 @@ module m_foap4
        integer(c_int)                 :: n
      end function pw_get_mesh_revision
 
+     pure function pw_get_highest_local_level(pw) result(n) bind(c)
+       import c_int, c_ptr
+       type(c_ptr), intent(in), value :: pw
+       integer(c_int)                 :: n
+     end function pw_get_highest_local_level
+
      subroutine pw_get_quadrants(pw, n_quadrants, coord, level) bind(c)
        import c_int, c_ptr, c_double
        type(c_ptr), intent(in), value     :: pw
@@ -188,14 +194,13 @@ module m_foap4
      end subroutine pw_partition_transfer
   end interface
 
-  type(MPI_comm), protected  :: mpicomm
-
   public :: f4_initialize
   public :: f4_destroy
   public :: f4_finalize
   public :: f4_set_grid
   public :: f4_write_grid
   public :: f4_get_mesh_revision
+  public :: f4_get_global_highest_level
   public :: f4_get_num_local_blocks
   public :: f4_get_num_global_blocks
   public :: f4_cell_coord
@@ -237,7 +242,7 @@ contains
        error stop "Unknow value for log_type (try default, error, ...)"
     end select
 
-    call pw_initialize(f4%pw, mpicomm%MPI_VAL, log_level)
+    call pw_initialize(f4%pw, f4%mpicomm%MPI_VAL, log_level)
   end subroutine f4_initialize
 
   subroutine f4_destroy(f4)
@@ -302,8 +307,8 @@ contains
        f4%dr_level(:, i) = (tree_length/bx) * 0.5**i
     end do
 
-    call MPI_COMM_RANK(mpicomm, f4%mpirank, ierr)
-    call MPI_COMM_SIZE(mpicomm, f4%mpisize, ierr)
+    call MPI_COMM_RANK(f4%mpicomm, f4%mpirank, ierr)
+    call MPI_COMM_SIZE(f4%mpicomm, f4%mpisize, ierr)
 
     call pw_set_connectivity_brick(f4%pw, &
          n_blocks_per_dim(1), n_blocks_per_dim(2), &
@@ -326,7 +331,7 @@ contains
 
     f4%uu = 0.0_dp
 
-    call f4_get_quadrants(f4)
+    call f4_set_quadrants(f4)
 
   end subroutine f4_set_grid
 
@@ -345,9 +350,9 @@ contains
     f4_get_num_global_blocks = pw_get_num_global_quadrants(f4%pw)
   end function f4_get_num_global_blocks
 
-  subroutine f4_get_quadrants(f4)
+  subroutine f4_set_quadrants(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n, max_level
+    integer                      :: n
 
     f4%n_blocks = f4_get_num_local_blocks(f4)
     if (.not. allocated(f4%block_origin)) error stop "block_origin not allocated"
@@ -361,14 +366,18 @@ contains
     do n = 1, f4%n_blocks
        f4%block_origin(:, n) = f4%block_origin(:, n) * f4%tree_length
     end do
+  end subroutine f4_set_quadrants
 
-    if (f4%n_blocks > 0) then
-       max_level = maxval(f4%block_level(1:f4%n_blocks))
-       f4%min_dr = f4%dr_level(:, max_level)
-    else
-       f4%min_dr = f4%dr_level(:, 0)
-    end if
-  end subroutine f4_get_quadrants
+  subroutine f4_get_global_highest_level(f4, max_level)
+    type(foap4_t), intent(in) :: f4
+    integer, intent(out)      :: max_level
+    integer                   :: ierror
+
+    max_level = pw_get_highest_local_level(f4%pw)
+
+    call MPI_Allreduce(MPI_IN_PLACE, max_level, 1, MPI_INTEGER, &
+         MPI_MAX, f4%mpicomm, ierror)
+  end subroutine f4_get_global_highest_level
 
   subroutine f4_write_grid(f4, fname, n_output, time, viewer)
     use m_xdmf_writer
@@ -391,7 +400,7 @@ contains
        dr(:, n) = f4%dr_level(:, f4%block_level(n))
     end do
 
-    call xdmf_write_blocks_2DCoRect(mpicomm, trim(full_fname), &
+    call xdmf_write_blocks_2DCoRect(f4%mpicomm, trim(full_fname), &
          f4%n_blocks, f4%bx+2*f4%n_gc, f4%n_vars, &
          f4%var_names, f4%n_gc, f4%block_origin(:, 1:f4%n_blocks), dr, &
          cc_data=f4%uu(:, :, :, 1:f4%n_blocks), time=time, viewer=viewer)
@@ -1195,7 +1204,7 @@ contains
        if (ihi >= ilo) then
           n_send = n_send + 1
           call mpi_isend(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
-               MPI_DOUBLE_PRECISION, rank, tag, mpicomm, &
+               MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, &
                send_req(n_send), ierr)
        end if
 
@@ -1205,7 +1214,7 @@ contains
        if (ihi >= ilo) then
           n_recv = n_recv + 1
           call mpi_irecv(f4%recv_buffer(ilo:ihi), ihi-ilo+1, MPI_DOUBLE_PRECISION, &
-               rank, 0, mpicomm, recv_req(n_recv), ierr)
+               rank, 0, f4%mpicomm, recv_req(n_recv), ierr)
        end if
     end do
 
@@ -1839,7 +1848,7 @@ contains
        call copy_block(f4, n, n_blocks_new+n)
     end do
 
-    call f4_get_quadrants(f4)
+    call f4_set_quadrants(f4)
 
     k = n_blocks_new + 1
     n = 1
@@ -2022,7 +2031,7 @@ contains
     call pw_partition_transfer(f4%pw, gfq_old, &
          c_loc(f4%uu(:, :, :, n_blocks_new+1)), c_loc(f4%uu), dsize)
 
-    call f4_get_quadrants(f4)
+    call f4_set_quadrants(f4)
   end subroutine f4_partition
 
 end module m_foap4

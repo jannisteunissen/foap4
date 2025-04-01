@@ -11,71 +11,90 @@ program test_adv
   real(dp), parameter :: velocity(2)       = [1.0_dp, 1.0_dp]
 
   type(foap4_t), target :: f4
-  integer :: n_out
 
   call f4_initialize(f4, "error")
 
-  n_out = 0
-  call test_advection(f4, "output/test_adv", n_out)
+  call test_advection(f4, 2, "output/test_adv")
 
   call f4_finalize(f4)
 
 contains
 
-  subroutine test_advection(f4, base_name, n_output)
+  subroutine test_advection(f4, min_level, base_name)
     type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: min_level
     character(len=*), intent(in) :: base_name
-    integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
     integer, parameter           :: bx(2)               = [16, 16]
     integer, parameter           :: n_gc                = 2
     logical, parameter           :: periodic(2)         = [.false., .false.]
-    integer, parameter           :: min_level           = 3
     integer, parameter           :: max_blocks          = 1000
     real(dp), parameter          :: cfl_number          = 0.5_dp
-    integer                      :: n, prev_mesh_revision
-    real(dp)                     :: dt
+    integer                      :: n, prev_mesh_revision, n_output
+    integer                      :: highest_level
+    logical                      :: write_output, do_refinement
+    real(dp)                     :: dt, dt_output, min_dr(2)
+    real(dp)                     :: time, end_time
+
+    time = 0.0_dp
+    end_time = 1.0_dp
+    dt_output = end_time / 40
+    n_output = 0
 
     call f4_set_grid(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, periodic, min_level, max_blocks)
 
     call set_init_cond(f4)
 
-    do n = 1, 10
-       prev_mesh_revision = f4_get_mesh_revision(f4)
-       call f4_update_ghostcells(f4, 1, [i_rho])
-       call set_refinement_flag(f4)
-       call f4_adjust_refinement(f4, .true.)
+    do_refinement = .false.
 
-       if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
-    end do
+    if (do_refinement) then
+       do n = 1, 10
+          prev_mesh_revision = f4_get_mesh_revision(f4)
+          call f4_update_ghostcells(f4, 1, [i_rho])
+          call set_refinement_flag(f4)
+          call f4_adjust_refinement(f4, .true.)
+          call set_init_cond(f4)
 
+          if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
+       end do
+    end if
+
+    call f4_write_grid(f4, base_name, n_output, time)
     n_output = n_output + 1
-    call f4_write_grid(f4, base_name, n_output)
+    n = 0
 
-    do n = 1, 40
-       dt = cfl_number / (sum(abs(velocity)/f4%min_dr) + epsilon(1.0_dp))
+    call f4_get_global_highest_level(f4, highest_level)
+    min_dr = f4%dr_level(:, highest_level)
+
+    do while (time < end_time)
+       n = n + 1
+       dt = cfl_number / (sum(abs(velocity)/min_dr) + epsilon(1.0_dp))
+       write_output = (time + dt > n_output * dt_output)
+       if (write_output) dt = n_output * dt_output - time
 
        call advance_heuns_method(f4, dt)
+       time = time + dt
 
-       n_output = n_output + 1
-       call f4_write_grid(f4, base_name, n_output)
+       if (write_output) then
+          n_output = n_output + 1
+          call f4_write_grid(f4, base_name, n_output)
+       end if
 
-       call f4_update_ghostcells(f4, 1, [i_rho])
-       call set_refinement_flag(f4)
-       call f4_adjust_refinement(f4, .true.)
+       if (do_refinement) then
+          call f4_update_ghostcells(f4, 1, [i_rho])
+          call set_refinement_flag(f4)
+          call f4_adjust_refinement(f4, .true.)
+
+          call f4_get_global_highest_level(f4, highest_level)
+          min_dr = f4%dr_level(:, highest_level)
+       end if
     end do
 
-    ! do n_refine_steps = 1, 7
-    !    call set_refinement_flag(f4)
-    !    call f4_adjust_refinement(f4, .true.)
-    !    call f4_update_ghostcells(f4, 1, [i_rho])
-    !    call local_average(f4)
-
-    !    n_output = n_output + 1
-    !    call f4_write_grid(f4, base_name, n_output)
-    ! end do
+    if (f4%mpirank == 0) then
+       print *, "n_iterations: ", n
+    end if
 
     call f4_destroy(f4)
   end subroutine test_advection
@@ -119,11 +138,18 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, i, j, ref_flag, level
     real(dp)                     :: dr(2), diff
+    integer, parameter           :: max_level = 4
+    integer, parameter           :: min_level = 2
 
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        dr = f4%dr_level(:, level)
-       ref_flag = 0
+
+       if (f4%block_level(n) > min_level) then
+          ref_flag = 0
+       else
+          ref_flag = 0
+       end if
 
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
@@ -133,9 +159,13 @@ contains
                   dr(2) * (f4%uu(i, j+1, i_rho, n) + &
                   f4%uu(i, j-1, i_rho, n) - 2 * f4%uu(i, j, i_rho, n)))
 
-             if (diff > 1.0e-8_dp .and. f4%block_level(n) < 5) then
-                ref_flag = 1
-                exit
+             if (diff > 1.0e-10_dp) then
+                if (f4%block_level(n) < max_level) then
+                   ref_flag = 1
+                   exit
+                else
+                   ref_flag = 0
+                end if
              end if
           end do
        end do

@@ -1,5 +1,7 @@
 # Ideas to implement
 
+- Testing: "On snellius, ssh to gcn1 for the interactive GPU node. I think it’s an alias for the int3 login node. It contains 4 GPUs virtually split into 7 each, so you can test with a bunch of small tasks"
+
 ## Simplifications
 
 - Do not split quadrant families between ranks

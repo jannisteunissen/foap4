@@ -313,6 +313,21 @@ int pw_get_mesh_revision(pw_state_t *pw) {
   return pw->p4est->revision;
 }
 
+/* Get highest local level */
+int pw_get_highest_local_level(pw_state_t *pw) {
+  p4est_topidx_t  tt;
+  p4est_t        *p4est    = pw->p4est;
+  int             maxlevel = 0;
+
+  for (tt = p4est->first_local_tree; tt <= p4est->last_local_tree; ++tt) {
+    p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, tt);
+    if (tree->maxlevel > maxlevel) {
+      maxlevel = tree->maxlevel;
+    }
+  }
+  return maxlevel;
+}
+
 /* Update the refinement non-recursively based on refinement flags */
 void pw_adjust_refinement(pw_state_t *pw, const int n_quadrants,
                           const int  *flags, int *has_changed) {
