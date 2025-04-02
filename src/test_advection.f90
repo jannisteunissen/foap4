@@ -42,7 +42,7 @@ contains
     dt_output = end_time / 40
     n_output = 0
 
-    call f4_set_grid(f4, n_blocks_per_dim, block_length, bx, n_gc, &
+    call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, periodic, min_level, max_blocks)
 
     call set_init_cond(f4)

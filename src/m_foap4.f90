@@ -1,7 +1,9 @@
-! Foap4 stands for "Fortran OpenACC p4est". Together with p4est_wrapper.c,
-! this module implements the required data structures and methods.
-!
-! Author(s): Jannis Teunissen
+!> Foap4 stands for "Fortran OpenACC p4est", and implements MPI-parallel
+!> quadtree/octree adaptive mesh refinement with support for OpenACC. Together
+!> with p4est_wrapper.c, this module implements the required data structures and
+!> methods.
+!>
+!> Author(s): Jannis Teunissen
 module m_foap4
   use, intrinsic :: iso_c_binding
   use mpi_f08
@@ -11,89 +13,139 @@ module m_foap4
 
   integer, parameter, private :: dp = kind(0.0d0)
 
+  !> Maximum refinement level in p4est
   integer, parameter :: P4EST_MAXLEVEL = 30
+
+  !> The opposite of the faces 0-3
   integer, parameter :: face_swap(0:3) = [1, 0, 3, 2]
+
+  !> The offset of the children
   integer, parameter :: child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
 
+  !> Value indicating a physical boundary at a block face
   integer, parameter :: FACE_BOUNDARY = 0
+
+  !> Value indicating a neighbor at the same refinement level at a block face
   integer, parameter :: FACE_SAME_LEVEL = 1
+
+  !> Value indicating a neighbor at a higher refinement level at a block face
   integer, parameter :: FACE_COARSE_TO_FINE = 2
+
+  !> Value indicating a neighbor at a lower refinement level at a block face
   integer, parameter :: FACE_FINE_TO_COARSE = 3
 
+  !> Type to store an array of integers
   type int_array_t
      integer, allocatable :: i(:)
   end type int_array_t
 
+  !> Type to describe a face boundary. The same data structure is defined in
+  !> p4est_wrapper.c
   type, bind(c) :: bnd_face_t
-     integer(c_int) :: face_type
-     integer(c_int) :: face
-     integer(c_int) :: other_proc
-     integer(c_int) :: quadid(2)
-     integer(c_int) :: offset
-     integer(c_int) :: ibuf_recv
-     integer(c_int) :: ibuf_send
+     integer(c_int) :: face_type !< What kind of face (same level, ...)
+     integer(c_int) :: face      !< Direction of the face
+     integer(c_int) :: other_proc !< MPI rank that owns quadid[1]
+     integer(c_int) :: quadid(2)  !< quadid[0] is always local, [1] can be non-local
+     integer(c_int) :: offset     !< Offset for a hanging face
+     integer(c_int) :: ibuf_recv  !< Index in receive buffer (not filled here)
+     integer(c_int) :: ibuf_send  !< Index in send buffer (not filled here)
   end type bnd_face_t
 
+  !> Data structure that contains the whole AMR grid and required information
+  !> for ghost cell communication
   type, public :: foap4_t
-     integer   :: bx(2)                         ! Block size (cells)
-     integer   :: n_gc                          ! Number of ghost cells
-     integer   :: n_blocks                      ! Number of blocks used
-     integer   :: max_blocks                    ! Maximum number of blocks used
-     integer   :: n_vars                        ! Number of variables
-     real(dp)  :: tree_length(2)                ! Length of tree
-     integer   :: ilo(2)                        ! Minimum index in a block
-     integer   :: ihi(2)                        ! Maximum index in a block
-     real(dp)  :: dr_level(2, 0:p4est_maxlevel-1) ! Grid spacing per level
-     character(len=32), allocatable :: var_names(:) ! Names of the variables
+     integer   :: bx(2)                           !< Block size (cells)
+     integer   :: n_gc                            !< Number of ghost cells
+     integer   :: max_blocks                      !< Maximum number of blocks used
+     integer   :: n_vars                          !< Number of variables
+     real(dp)  :: tree_length(2)                  !< Length of tree
+     integer   :: ilo(2)                          !< Minimum index in a block
+     integer   :: ihi(2)                          !< Maximum index in a block
+     real(dp)  :: dr_level(2, 0:p4est_maxlevel-1) !< Grid spacing per level
+     character(len=32), allocatable :: var_names(:) !< Names of the variables
 
-     ! The data per block
-     integer, allocatable  :: block_level(:)      ! Level of each block
-     real(dp), allocatable :: block_origin(:, :)  ! Origin of each block
-     real(dp), allocatable :: uu(:, :, :, :)      ! Block storage
-     integer, allocatable  :: refinement_flags(:) ! Refinement flags
+     integer :: n_blocks              !< Number of blocks used
+     integer :: gc_mesh_revision = -1 !< Revision number (global) of the mesh
+
+     !> Level of each block
+     integer, allocatable  :: block_level(:)
+     !> Origin of each block
+     real(dp), allocatable :: block_origin(:, :)
+     !> Storage of block data uu(i, j, i_var, i_block)
+     real(dp), allocatable :: uu(:, :, :, :)
+     !> Refinement flag of each block. Negative means coarsen (if possible),
+     !> positive means refine, and zero means keep refinement.
+     integer, allocatable  :: refinement_flags(:)
 
      ! For communication
-     type(MPI_comm)  :: mpicomm
-     integer, allocatable :: recv_offset(:) ! 0:mpisize offsets for receiving
-     integer, allocatable :: send_offset(:) ! 0:mpisize offsets for sending
-     real(dp), allocatable :: recv_buffer(:)
-     real(dp), allocatable :: send_buffer(:)
+     type(MPI_comm)        :: mpicomm        !< MPI communicator
+     integer               :: mpirank        !< MPI rank of this task
+     integer               :: mpisize        !< Number of ranks in communicator
+     integer, allocatable  :: recv_offset(:) !< 0:mpisize offsets for receiving
+     integer, allocatable  :: send_offset(:) !< 0:mpisize offsets for sending
+     real(dp), allocatable :: recv_buffer(:) !< Buffer for receiving data
+     real(dp), allocatable :: send_buffer(:) !< Buffer for sending data
 
-     ! p4est state
+     !> Pointer to a structure pw_state_t defined in p4est_wrapper.c, which
+     !> contains all the p4est state required for the wrapper
      type(c_ptr) :: pw
 
-     ! MPI state
-     integer :: mpirank
-     integer :: mpisize
-
      ! For handling ghost cells on faces
-     integer              :: gc_mesh_revision = -1
+
+     !> It is required that bx(1) == bx(2). The ghost cell data size per face is
+     !> thus n_gc * bx(1)
      integer              :: gc_data_size
+
+     !> Receive offset (per MPI rank) in recv_buffer
      integer, allocatable :: gc_recv_offset(:)
+
+     !> Receive offset (per MPI rank) in recv_buffer for the coarse-to-fine step
      integer, allocatable :: gc_recv_offset_c2f(:)
+     !> Send offset (per MPI rank) in send_buffer
      integer, allocatable :: gc_send_offset(:)
+     !> Send offset (per MPI rank) in send_buffer for the coarse-to-fine step
      integer, allocatable :: gc_send_offset_c2f(:)
-     integer, allocatable :: gc_same_local(:, :)
-     integer              :: gc_same_local_iface(0:4)
-     integer, allocatable :: gc_same_from_buf(:, :)
-     integer              :: gc_same_from_buf_iface(0:4)
-     integer, allocatable :: gc_same_to_buf(:, :)
-     integer              :: gc_same_to_buf_iface(0:4)
+
+     ! All the arrays below are sorted by face direction
+
+     !> gc_srl_local(1:2, n) stores the quad indices of the nth local face at
+     !> the same refinement level
+     integer, allocatable :: gc_srl_local(:, :)
+     !> Quad index and buffer index for each srl face that is received
+     integer, allocatable :: gc_srl_from_buf(:, :)
+     !> Quad index and buffer index for each srl face that is sent
+     integer, allocatable :: gc_srl_to_buf(:, :)
+     !> gc_f2c_local(1:3, n) contains [qid fine, qid coarse, fine offset]
      integer, allocatable :: gc_f2c_local(:, :)
-     integer              :: gc_f2c_local_iface(0:4)
+     !> gc_c2f_from_buf(1:3, n) contains [qid coarse, fine offset, ibuf_recv]
      integer, allocatable :: gc_c2f_from_buf(:, :)
-     integer              :: gc_c2f_from_buf_iface(0:4)
+     !> Quad index, offset and send buffer index for c2f face
      integer, allocatable :: gc_c2f_to_buf(:, :)
-     integer              :: gc_c2f_to_buf_iface(0:4)
+     !> Quad index and recv buffer index per f2c face
      integer, allocatable :: gc_f2c_from_buf(:, :)
-     integer              :: gc_f2c_from_buf_iface(0:4)
+     !> Quad index and send buffer index per f2c face
      integer, allocatable :: gc_f2c_to_buf(:, :)
-     integer              :: gc_f2c_to_buf_iface(0:4)
+     !> List of quad indices with a physical boundary
      integer, allocatable :: gc_phys(:)
-     integer              :: gc_phys_iface(0:4)
+
+     ! Since the above arrays are sorted by face direction, we can loop over
+     ! them per face direction. The arrays below define the start index for each
+     ! direction (with the last value being the total number of elements).
+
+     integer :: gc_srl_local_iface(0:4)    !< Start index per face direction
+     integer :: gc_srl_from_buf_iface(0:4) !< Start index per face direction
+     integer :: gc_srl_to_buf_iface(0:4)   !< Start index per face direction
+     integer :: gc_f2c_local_iface(0:4)    !< Start index per face direction
+     integer :: gc_c2f_from_buf_iface(0:4) !< Start index per face direction
+     integer :: gc_c2f_to_buf_iface(0:4)   !< Start index per face direction
+     integer :: gc_f2c_from_buf_iface(0:4) !< Start index per face direction
+     integer :: gc_f2c_to_buf_iface(0:4)   !< Start index per face direction
+     integer :: gc_phys_iface(0:4)         !< Start index per face direction
+
   end type foap4_t
 
   interface
+     !> Initialize p4est and MPI
      subroutine pw_initialize(pw, mpicomm, log_level) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(out)          :: pw
@@ -101,16 +153,19 @@ module m_foap4
        integer(c_int), intent(in), value :: log_level
      end subroutine pw_initialize
 
+     !> Destroy p4est data
      subroutine pw_destroy(pw) bind(c)
        import c_ptr
        type(c_ptr), intent(in), value :: pw
      end subroutine pw_destroy
 
+     !> Finalize p4est and MPI
      subroutine pw_finalize(pw) bind(c)
        import c_ptr
        type(c_ptr), intent(in), value :: pw
      end subroutine pw_finalize
 
+     !> Create p4est brick
      subroutine pw_set_connectivity_brick(pw, mi, ni, periodic_a, periodic_b, &
           min_level, fill_uniform, max_blocks) bind(c)
        import c_int, c_ptr
@@ -124,30 +179,35 @@ module m_foap4
        integer(c_int), intent(in), value :: max_blocks
      end subroutine pw_set_connectivity_brick
 
+     !> Get number of quadrants of this MPI rank
      pure function pw_get_num_local_quadrants(pw) result(n) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(in), value :: pw
        integer(c_int)                 :: n
      end function pw_get_num_local_quadrants
 
+     !> Get number of quadrants of all MPI ranks together
      pure function pw_get_num_global_quadrants(pw) result(n) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(in), value :: pw
        integer(c_int)                 :: n
      end function pw_get_num_global_quadrants
 
+     !> Get the global revision number of the mesh
      pure function pw_get_mesh_revision(pw) result(n) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(in), value :: pw
        integer(c_int)                 :: n
      end function pw_get_mesh_revision
 
+     !> Get the highest refinement level of this MPI rank
      pure function pw_get_highest_local_level(pw) result(n) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(in), value :: pw
        integer(c_int)                 :: n
      end function pw_get_highest_local_level
 
+     !> Get the coordinates and level of the quadrants
      subroutine pw_get_quadrants(pw, n_quadrants, coord, level) bind(c)
        import c_int, c_ptr, c_double
        type(c_ptr), intent(in), value     :: pw
@@ -156,12 +216,14 @@ module m_foap4
        integer(c_int), intent(inout)      :: level(n_quadrants)
      end subroutine pw_get_quadrants
 
+     !> Write p4est vtk file with the MPI rank
      subroutine pw_vtk_write_file(pw, fname) bind(c)
        import c_char, c_ptr
        type(c_ptr), intent(in), value     :: pw
        character(kind=C_char), intent(in) :: fname(*)
      end subroutine pw_vtk_write_file
 
+     !> Get all the boundaries at quadrant faces
      subroutine pw_get_all_faces(pw, n_faces, bnd_face_ptr) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(in), value :: pw
@@ -169,6 +231,7 @@ module m_foap4
        type(c_ptr), intent(out)       :: bnd_face_ptr
      end subroutine pw_get_all_faces
 
+     !> Adjust the refinement according to the refinement flags
      subroutine pw_adjust_refinement(pw, n_quadrants, flags, has_changed) bind(c)
        import c_int, c_ptr
        type(c_ptr), intent(in), value    :: pw
@@ -177,6 +240,7 @@ module m_foap4
        integer(c_int), intent(out)       :: has_changed
      end subroutine pw_adjust_refinement
 
+     !> Partition the blocks over the MPI ranks
      subroutine pw_partition(pw, n_changed_global, gfq_old) bind(c)
        import c_int, c_int64_t, c_ptr
        type(c_ptr), intent(in), value    :: pw
@@ -184,6 +248,7 @@ module m_foap4
        integer(c_int64_t), intent(out)   :: gfq_old(*)
      end subroutine pw_partition
 
+     !> Transfer block data between MPI ranks
      subroutine pw_partition_transfer(pw, gfq_old, src_data, dest_data, data_size) bind(c)
        import c_int, c_int64_t, c_ptr
        type(c_ptr), intent(in), value    :: pw
@@ -197,7 +262,7 @@ module m_foap4
   public :: f4_initialize
   public :: f4_destroy
   public :: f4_finalize
-  public :: f4_set_grid
+  public :: f4_construct_brick
   public :: f4_write_grid
   public :: f4_get_mesh_revision
   public :: f4_get_global_highest_level
@@ -211,13 +276,14 @@ module m_foap4
 
 contains
 
-  subroutine f4_initialize(f4, log_type)
+  !> Initialize p4est and MPI
+  subroutine f4_initialize(f4, p4est_log_type)
     type(foap4_t), intent(inout) :: f4
-    character(len=*), intent(in) :: log_type
+    character(len=*), intent(in) :: p4est_log_type
     integer                      :: log_level
 
     ! Different log levels defined in sc.h
-    select case (log_type)
+    select case (p4est_log_type)
     case ("default")
        log_level = (-1) ! Selects the SC default threshold.
     case ("always")
@@ -239,14 +305,16 @@ contains
     case ("error")
        log_level = 8 ! Log errors only.
     case default
-       error stop "Unknow value for log_type (try default, error, ...)"
+       error stop "Unknow value for p4est_log_type (try default, error, ...)"
     end select
 
     call pw_initialize(f4%pw, f4%mpicomm%MPI_VAL, log_level)
   end subroutine f4_initialize
 
+  !> Destroy all data for the current mesh
   subroutine f4_destroy(f4)
     type(foap4_t), intent(inout) :: f4
+
     call pw_destroy(f4%pw)
 
     deallocate(f4%var_names)
@@ -260,23 +328,25 @@ contains
     deallocate(f4%send_offset)
   end subroutine f4_destroy
 
+  !> Finalize p4est and MPI
   subroutine f4_finalize(f4)
     type(foap4_t), intent(inout) :: f4
     call pw_finalize(f4%pw)
   end subroutine f4_finalize
 
-  subroutine f4_set_grid(f4, n_blocks_per_dim, tree_length, bx, n_gc, &
+  !> Construct a brick of blocks
+  subroutine f4_construct_brick(f4, trees_per_dim, tree_length, bx, n_gc, &
        n_vars, var_names, periodic, min_level, max_blocks)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: n_blocks_per_dim(2)
-    real(dp), intent(in)         :: tree_length(2)
-    integer, intent(in)          :: bx(2)
-    integer, intent(in)          :: n_gc
-    integer, intent(in)          :: n_vars
-    character(len=*), intent(in) :: var_names(n_vars)
-    logical, intent(in)          :: periodic(2)
-    integer, intent(in)          :: min_level
-    integer, intent(in)          :: max_blocks
+    integer, intent(in)          :: trees_per_dim(2) !< How many trees per dimension
+    real(dp), intent(in)         :: tree_length(2)   !< Length of each tree
+    integer, intent(in)          :: bx(2)            !< Number of cells in a block
+    integer, intent(in)          :: n_gc !< Number of ghost cells
+    integer, intent(in)          :: n_vars !< Number of variables
+    character(len=*), intent(in) :: var_names(n_vars) !< Variable names
+    logical, intent(in)          :: periodic(2) !< Periodic flag per dim
+    integer, intent(in)          :: min_level   !< Refine up to this level
+    integer, intent(in)          :: max_blocks  !< Maximum number of blocks
 
     integer :: i, ierr, periodic_as_int(2)
 
@@ -311,7 +381,7 @@ contains
     call MPI_COMM_SIZE(f4%mpicomm, f4%mpisize, ierr)
 
     call pw_set_connectivity_brick(f4%pw, &
-         n_blocks_per_dim(1), n_blocks_per_dim(2), &
+         trees_per_dim(1), trees_per_dim(2), &
          periodic_as_int(1), periodic_as_int(2), min_level, 1, max_blocks)
 
     allocate(f4%block_origin(2, max_blocks))
@@ -333,23 +403,27 @@ contains
 
     call f4_set_quadrants(f4)
 
-  end subroutine f4_set_grid
+  end subroutine f4_construct_brick
 
+  !> Return the mesh revision number
   pure integer function f4_get_mesh_revision(f4)
     type(foap4_t), intent(in) :: f4
     f4_get_mesh_revision = pw_get_mesh_revision(f4%pw)
   end function f4_get_mesh_revision
 
+  !> Return the number of blocks on this MPI rank
   pure integer function f4_get_num_local_blocks(f4)
     type(foap4_t), intent(in) :: f4
     f4_get_num_local_blocks = pw_get_num_local_quadrants(f4%pw)
   end function f4_get_num_local_blocks
 
+  !> Return the number of blocks on all MPI ranks together
   pure integer function f4_get_num_global_blocks(f4)
     type(foap4_t), intent(in) :: f4
     f4_get_num_global_blocks = pw_get_num_global_quadrants(f4%pw)
   end function f4_get_num_global_blocks
 
+  !> Set the number of blocks, their origins and their refinement levels
   subroutine f4_set_quadrants(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n
@@ -368,6 +442,7 @@ contains
     end do
   end subroutine f4_set_quadrants
 
+  !> Get the global highest refinement level (on all MPI ranks)
   subroutine f4_get_global_highest_level(f4, max_level)
     type(foap4_t), intent(in) :: f4
     integer, intent(out)      :: max_level
@@ -379,13 +454,14 @@ contains
          MPI_MAX, f4%mpicomm, ierror)
   end subroutine f4_get_global_highest_level
 
+  !> Write the AMR grid to a file
   subroutine f4_write_grid(f4, fname, n_output, time, viewer)
     use m_xdmf_writer
     type(foap4_t), intent(in)              :: f4
-    character(len=*), intent(in)           :: fname
-    integer, intent(in)                    :: n_output
-    real(dp), intent(in), optional         :: time
-    character(len=*), intent(in), optional :: viewer
+    character(len=*), intent(in)           :: fname !< Base file name
+    integer, intent(in)                    :: n_output !< Output index
+    real(dp), intent(in), optional         :: time !< Simulation time
+    character(len=*), intent(in), optional :: viewer !< Optimize for viewer
     character(len=len_trim(fname)+7)       :: full_fname
     integer                                :: n
     real(dp), allocatable                  :: dr(:, :)
@@ -406,6 +482,7 @@ contains
          cc_data=f4%uu(:, :, :, 1:f4%n_blocks), time=time, viewer=viewer)
   end subroutine f4_write_grid
 
+  !> Return the coordinates at the center of a grid cells
   pure function f4_cell_coord(f4, i_block, i, j) result(rr)
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_block, i, j
@@ -415,6 +492,7 @@ contains
     rr = f4%block_origin(:, i_block) + dr * [i-0.5_dp, j-0.5_dp]
   end function f4_cell_coord
 
+  !> Update the information required to update ghost cells
   subroutine f4_update_ghostcell_pattern(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: mesh_revision
@@ -429,12 +507,13 @@ contains
 
     call c_f_pointer(tmp, bnd_face, shape=[n_faces])
 
-    call f4_get_ghost_cell_pattern(f4, size(bnd_face), bnd_face, &
+    call set_ghost_cell_pattern(f4, size(bnd_face), bnd_face, &
          f4%mpirank, f4%mpisize)
     f4%gc_mesh_revision = mesh_revision
   end subroutine f4_update_ghostcell_pattern
 
-  subroutine f4_get_ghost_cell_pattern(f4, n_faces, bnd_face, mpirank, mpisize)
+  !> Store the information required to update ghost cells
+  subroutine set_ghost_cell_pattern(f4, n_faces, bnd_face, mpirank, mpisize)
     type(foap4_t), intent(inout)    :: f4
     integer, intent(in)             :: n_faces
     type(bnd_face_t), intent(inout) :: bnd_face(n_faces)
@@ -448,7 +527,7 @@ contains
     integer :: i_f2c(0:mpisize-1)
     integer :: i_buf_recv(0:mpisize-1)
     integer :: i_buf_send(0:mpisize-1)
-    integer :: i_same_nonlocal
+    integer :: i_srl_nonlocal
     integer :: i_f2c_to_buf, i_f2c_from_buf
     integer :: i_c2f_to_buf, i_c2f_from_buf
 
@@ -458,8 +537,8 @@ contains
     type(int_array_t) :: phys_ix
     type(int_array_t) :: ix_send
 
-    type(int_array_t) :: all_same_from_buf
-    type(int_array_t) :: all_same_to_buf
+    type(int_array_t) :: all_srl_from_buf
+    type(int_array_t) :: all_srl_to_buf
     type(int_array_t) :: all_f2c_from_buf
     type(int_array_t) :: all_f2c_to_buf
     type(int_array_t) :: all_c2f_from_buf
@@ -527,12 +606,12 @@ contains
        end if
     end do
 
-    if (allocated(f4%gc_same_local)) then
+    if (allocated(f4%gc_srl_local)) then
        ! Deallocate, since they probably changed size
-       deallocate(f4%gc_same_local, &
+       deallocate(f4%gc_srl_local, &
             f4%gc_phys, &
-            f4%gc_same_from_buf, &
-            f4%gc_same_to_buf, &
+            f4%gc_srl_from_buf, &
+            f4%gc_srl_to_buf, &
             f4%gc_f2c_local, &
             f4%gc_c2f_from_buf, &
             f4%gc_c2f_to_buf, &
@@ -541,7 +620,7 @@ contains
     end if
 
     ! Local ghost cell exchange at the same level
-    allocate(f4%gc_same_local(2, i_same(mpirank)))
+    allocate(f4%gc_srl_local(2, i_same(mpirank)))
 
     ! Local ghost cell exchange at refinement boundaries
     allocate(f4%gc_f2c_local(3, i_f2c(mpirank)))
@@ -585,7 +664,7 @@ contains
 
     ! Sort local faces by face direction
     call sort_by_face(phys_ix, n_faces, bnd_face, f4%gc_phys_iface)
-    call sort_by_face(same_ix(mpirank), n_faces, bnd_face, f4%gc_same_local_iface)
+    call sort_by_face(same_ix(mpirank), n_faces, bnd_face, f4%gc_srl_local_iface)
     call sort_by_face(f2c_ix(mpirank), n_faces, bnd_face, f4%gc_f2c_local_iface)
 
     do n = 1, i_phys
@@ -595,7 +674,7 @@ contains
 
     do n = 1, i_same(mpirank)
        i = same_ix(mpirank)%i(n)
-       f4%gc_same_local(:, n) = bnd_face(i)%quadid(1:2)
+       f4%gc_srl_local(:, n) = bnd_face(i)%quadid(1:2)
     end do
 
     do n = 1, i_f2c(mpirank)
@@ -606,10 +685,10 @@ contains
 
     ! Non-local ghost cell exchange at the same level
     n = sum(i_same) - i_same(mpirank)
-    allocate(f4%gc_same_from_buf(2, n))
-    allocate(f4%gc_same_to_buf(2, n))
-    allocate(all_same_from_buf%i(n))
-    allocate(all_same_to_buf%i(n))
+    allocate(f4%gc_srl_from_buf(2, n))
+    allocate(f4%gc_srl_to_buf(2, n))
+    allocate(all_srl_from_buf%i(n))
+    allocate(all_srl_to_buf%i(n))
 
     ! Non-local ghost cell exchange from fine to coarse
     n = sum(i_f2c) - i_f2c(mpirank)
@@ -625,7 +704,7 @@ contains
     allocate(all_c2f_from_buf%i(n))
     allocate(all_c2f_to_buf%i(n))
 
-    i_same_nonlocal = 0
+    i_srl_nonlocal = 0
     i_f2c_to_buf = 0
     i_f2c_from_buf = 0
     i_c2f_to_buf = 0
@@ -649,9 +728,9 @@ contains
        do n = 1, size(same_ix(rank)%i)
           i = same_ix(rank)%i(n) ! Index in bnd_face array
           j = ix_send%i(n)       ! Index in bnd_face array
-          i_same_nonlocal = i_same_nonlocal + 1
-          all_same_from_buf%i(i_same_nonlocal) = i
-          all_same_to_buf%i(i_same_nonlocal) = j
+          i_srl_nonlocal = i_srl_nonlocal + 1
+          all_srl_from_buf%i(i_srl_nonlocal) = i
+          all_srl_to_buf%i(i_srl_nonlocal) = j
 
           bnd_face(i)%ibuf_recv = i_buf_recv(rank)
           bnd_face(j)%ibuf_send = i_buf_send(rank)
@@ -716,19 +795,19 @@ contains
     end do
 
     ! The buffer locations have been determined, sort over *all* ranks by face
-    call sort_by_face(all_same_from_buf, n_faces, bnd_face, f4%gc_same_from_buf_iface)
-    call sort_by_face(all_same_to_buf, n_faces, bnd_face, f4%gc_same_to_buf_iface)
+    call sort_by_face(all_srl_from_buf, n_faces, bnd_face, f4%gc_srl_from_buf_iface)
+    call sort_by_face(all_srl_to_buf, n_faces, bnd_face, f4%gc_srl_to_buf_iface)
     call sort_by_face(all_f2c_from_buf, n_faces, bnd_face, f4%gc_f2c_from_buf_iface)
     call sort_by_face(all_f2c_to_buf, n_faces, bnd_face, f4%gc_f2c_to_buf_iface)
     call sort_by_face(all_c2f_from_buf, n_faces, bnd_face, f4%gc_c2f_from_buf_iface)
     call sort_by_face(all_c2f_to_buf, n_faces, bnd_face, f4%gc_c2f_to_buf_iface)
 
     ! Extract ghost cell patterns
-    do n = 1, i_same_nonlocal
-       i = all_same_from_buf%i(n)
-       j = all_same_to_buf%i(n)
-       f4%gc_same_from_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_recv]
-       f4%gc_same_to_buf(:, n) = [bnd_face(j)%quadid(1), bnd_face(j)%ibuf_send]
+    do n = 1, i_srl_nonlocal
+       i = all_srl_from_buf%i(n)
+       j = all_srl_to_buf%i(n)
+       f4%gc_srl_from_buf(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_recv]
+       f4%gc_srl_to_buf(:, n) = [bnd_face(j)%quadid(1), bnd_face(j)%ibuf_send]
     end do
 
     do n = 1, i_f2c_to_buf
@@ -753,20 +832,19 @@ contains
             bnd_face(i)%offset, bnd_face(i)%ibuf_send]
     end do
 
-  end subroutine f4_get_ghost_cell_pattern
+  end subroutine set_ghost_cell_pattern
 
-  ! Sort local face boundaries by face direction
+  !> Sort index array by face direction
   subroutine sort_by_face(ix, n_bnd_face, bnd_face, iface)
-    type(int_array_t), intent(inout) :: ix ! Index array
+    type(int_array_t), intent(inout) :: ix !< Index array
     integer, intent(in)              :: n_bnd_face
     type(bnd_face_t), intent(in)     :: bnd_face(n_bnd_face)
-    ! Start index for each face direction
+    !> Start index for each face direction
     integer, intent(out)             :: iface(0:4)
     integer                          :: face_count(0:3)
     integer                          :: face_offset(0:3)
     type(int_array_t)                :: ix_sorted
-
-    integer :: n, face
+    integer                          :: n, face
 
     allocate(ix_sorted%i(size(ix%i)))
 
@@ -794,20 +872,19 @@ contains
 
   end subroutine sort_by_face
 
-  ! Determine start index for each face
+  !> Determine start index for each face direction
   subroutine face_count_to_iface(face_count, iface)
     integer, intent(in)  :: face_count(0:3)
     integer, intent(out) :: iface(0:4)
     integer              :: n
 
     iface(0) = 1
-
     do n = 1, 4
        iface(n) = iface(n-1) + face_count(n-1)
     end do
   end subroutine face_count_to_iface
 
-  ! Sort face boundaries for receiving or sending
+  !> Sort face boundaries for receiving or sending
   subroutine sort_for_recv_or_send(ix, n_bnd_face, bnd_face, recv)
     type(int_array_t), intent(inout) :: ix
     integer, intent(in)              :: n_bnd_face
@@ -871,6 +948,7 @@ contains
 
   end subroutine sort_for_recv_or_send
 
+  !> Fill buffers for 'round 1' of the ghost cell exchange
   subroutine f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
@@ -887,9 +965,9 @@ contains
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      do n = f4%gc_same_to_buf_iface(face), f4%gc_same_to_buf_iface(face+1)-1
-         iq = f4%gc_same_to_buf(1, n) + 1
-         i_buf = f4%gc_same_to_buf(2, n) * n_vars
+      do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
+         iq = f4%gc_srl_to_buf(1, n) + 1
+         i_buf = f4%gc_srl_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -902,9 +980,9 @@ contains
       end do
 
       face = 1
-      do n = f4%gc_same_to_buf_iface(face), f4%gc_same_to_buf_iface(face+1)-1
-         iq = f4%gc_same_to_buf(1, n) + 1
-         i_buf = f4%gc_same_to_buf(2, n) * n_vars
+      do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
+         iq = f4%gc_srl_to_buf(1, n) + 1
+         i_buf = f4%gc_srl_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -917,9 +995,9 @@ contains
       end do
 
       face = 2
-      do n = f4%gc_same_to_buf_iface(face), f4%gc_same_to_buf_iface(face+1)-1
-         iq = f4%gc_same_to_buf(1, n) + 1
-         i_buf = f4%gc_same_to_buf(2, n) * n_vars
+      do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
+         iq = f4%gc_srl_to_buf(1, n) + 1
+         i_buf = f4%gc_srl_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -932,9 +1010,9 @@ contains
       end do
 
       face = 3
-      do n = f4%gc_same_to_buf_iface(face), f4%gc_same_to_buf_iface(face+1)-1
-         iq = f4%gc_same_to_buf(1, n) + 1
-         i_buf = f4%gc_same_to_buf(2, n) * n_vars
+      do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
+         iq = f4%gc_srl_to_buf(1, n) + 1
+         i_buf = f4%gc_srl_to_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1026,6 +1104,7 @@ contains
 
   end subroutine f4_fill_ghostcell_buffers
 
+  !> Fill buffers for 'round 2' of the ghost cell exchange
   subroutine f4_fill_ghostcell_buffers_c2f(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
@@ -1185,8 +1264,8 @@ contains
 
   end subroutine f4_fill_ghostcell_buffers_c2f
 
-  ! Exchange the receive and send buffers according to the specified offsets
-  ! per MPI rank
+  !> Exchange the receive and send buffers according to the specified offsets
+  !> per MPI rank
   subroutine f4_exchange_buffers(f4)
     type(foap4_t), intent(inout) :: f4
     type(MPI_Request)            :: send_req(0:f4%mpisize-1)
@@ -1223,6 +1302,7 @@ contains
 
   end subroutine f4_exchange_buffers
 
+  !> Update ghost cells for selected variables
   subroutine f4_update_ghostcells(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
@@ -1244,9 +1324,9 @@ contains
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      do n = f4%gc_same_from_buf_iface(face), f4%gc_same_from_buf_iface(face+1)-1
-         iq = f4%gc_same_from_buf(1, n) + 1
-         i_buf = f4%gc_same_from_buf(2, n) * n_vars
+      do n = f4%gc_srl_from_buf_iface(face), f4%gc_srl_from_buf_iface(face+1)-1
+         iq = f4%gc_srl_from_buf(1, n) + 1
+         i_buf = f4%gc_srl_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -1259,9 +1339,9 @@ contains
       end do
 
       face = 1
-      do n = f4%gc_same_from_buf_iface(face), f4%gc_same_from_buf_iface(face+1)-1
-         iq = f4%gc_same_from_buf(1, n) + 1
-         i_buf = f4%gc_same_from_buf(2, n) * n_vars
+      do n = f4%gc_srl_from_buf_iface(face), f4%gc_srl_from_buf_iface(face+1)-1
+         iq = f4%gc_srl_from_buf(1, n) + 1
+         i_buf = f4%gc_srl_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, bx(2)
@@ -1274,9 +1354,9 @@ contains
       end do
 
       face = 2
-      do n = f4%gc_same_from_buf_iface(face), f4%gc_same_from_buf_iface(face+1)-1
-         iq = f4%gc_same_from_buf(1, n) + 1
-         i_buf = f4%gc_same_from_buf(2, n) * n_vars
+      do n = f4%gc_srl_from_buf_iface(face), f4%gc_srl_from_buf_iface(face+1)-1
+         iq = f4%gc_srl_from_buf(1, n) + 1
+         i_buf = f4%gc_srl_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1289,9 +1369,9 @@ contains
       end do
 
       face = 3
-      do n = f4%gc_same_from_buf_iface(face), f4%gc_same_from_buf_iface(face+1)-1
-         iq = f4%gc_same_from_buf(1, n) + 1
-         i_buf = f4%gc_same_from_buf(2, n) * n_vars
+      do n = f4%gc_srl_from_buf_iface(face), f4%gc_srl_from_buf_iface(face+1)-1
+         iq = f4%gc_srl_from_buf(1, n) + 1
+         i_buf = f4%gc_srl_from_buf(2, n) * n_vars
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1448,9 +1528,9 @@ contains
       ! Local boundaries at the same refinement level
 
       face = 0
-      do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
-         iq   = f4%gc_same_local(1, n) + 1
-         jq   = f4%gc_same_local(2, n) + 1
+      do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
+         iq   = f4%gc_srl_local(1, n) + 1
+         jq   = f4%gc_srl_local(2, n) + 1
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1464,9 +1544,9 @@ contains
       end do
 
       face = 1
-      do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
-         iq   = f4%gc_same_local(1, n) + 1
-         jq   = f4%gc_same_local(2, n) + 1
+      do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
+         iq   = f4%gc_srl_local(1, n) + 1
+         jq   = f4%gc_srl_local(2, n) + 1
 
          do iv = 1, n_vars
             ivar = i_vars(iv)
@@ -1480,9 +1560,9 @@ contains
       end do
 
       face = 2
-      do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
-         iq   = f4%gc_same_local(1, n) + 1
-         jq   = f4%gc_same_local(2, n) + 1
+      do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
+         iq   = f4%gc_srl_local(1, n) + 1
+         jq   = f4%gc_srl_local(2, n) + 1
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1495,9 +1575,9 @@ contains
       end do
 
       face = 3
-      do n = f4%gc_same_local_iface(face), f4%gc_same_local_iface(face+1)-1
-         iq   = f4%gc_same_local(1, n) + 1
-         jq   = f4%gc_same_local(2, n) + 1
+      do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
+         iq   = f4%gc_srl_local(1, n) + 1
+         jq   = f4%gc_srl_local(2, n) + 1
          do iv = 1, n_vars
             ivar = i_vars(iv)
             do j = 1, n_gc
@@ -1824,7 +1904,7 @@ contains
 
   end subroutine f4_update_ghostcells
 
-  ! Refine the mesh according to f4%refinement_flags
+  !> Refine the mesh according to f4%refinement_flags
   subroutine f4_adjust_refinement(f4, partition)
     type(foap4_t), intent(inout) :: f4
     logical, intent(in)          :: partition
@@ -1884,7 +1964,7 @@ contains
     if (partition) call f4_partition(f4)
   end subroutine f4_adjust_refinement
 
-  ! Copy block data
+  !> Copy block data
   subroutine copy_block(f4, i_from, i_to)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: i_from, i_to
@@ -1893,7 +1973,7 @@ contains
     f4%uu(:, :, :, i_to)     = f4%uu(:, :, :, i_from)
   end subroutine copy_block
 
-  ! Coarsen a family of child blocks to their parent
+  !> Coarsen a family of child blocks to their parent
   subroutine coarsen_from_blocks(f4, i_from, i_to, iv)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: i_from
@@ -1924,7 +2004,7 @@ contains
     end do
   end subroutine coarsen_from_blocks
 
-  ! Prolong to family of child blocks
+  !> Prolong to family of child blocks
   subroutine prolong_to_blocks(f4, i_from, i_to, iv)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: i_from
@@ -1960,6 +2040,7 @@ contains
     end do
   end subroutine prolong_to_blocks
 
+  !> Method for prolongation (interpolation) of a coarse block to its children
   subroutine prolong_local_5point(coarse_c, coarse_x, coarse_y, fine)
     real(dp), intent(in)  :: coarse_c    ! Center value
     real(dp), intent(in)  :: coarse_x(2) ! x-neighbors (-1, +1)
@@ -1993,6 +2074,7 @@ contains
     end if
   end function limiter_gminmod
 
+  !> Minmod limiter
   elemental function limiter_minmod(a, b) result(phi)
     real(dp), intent(in) :: a
     real(dp), intent(in) :: b
@@ -2000,6 +2082,7 @@ contains
     phi = limiter_gminmod(a, b, 1.0_dp)
   end function limiter_minmod
 
+  !> Partition the blocks over the MPI ranks
   subroutine f4_partition(f4)
     type(foap4_t), intent(inout), target :: f4
     integer                              :: n_changed_global

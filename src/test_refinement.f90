@@ -41,7 +41,7 @@ contains
     integer, parameter           :: max_blocks          = 1000
     integer                      :: n_refine_steps
 
-    call f4_set_grid(f4, n_blocks_per_dim, block_length, bx, n_gc, &
+    call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, periodic, min_level, max_blocks)
 
     call set_init_cond(f4)
