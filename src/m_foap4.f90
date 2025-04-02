@@ -315,6 +315,15 @@ contains
   subroutine f4_destroy(f4)
     type(foap4_t), intent(inout) :: f4
 
+    ! Remove data from device
+    !$acc exit data delete(f4)
+    !$acc exit data delete(f4%block_level, f4%block_origin, f4%uu)
+    !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
+    !$acc exit data delete(&
+    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, &f4%gc_srl_to_buf_iface, &
+    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
+    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+
     call pw_destroy(f4%pw)
 
     deallocate(f4%var_names)
@@ -403,6 +412,15 @@ contains
 
     call f4_set_quadrants(f4)
 
+    ! Copy data structure and allocatable components to device
+    !$acc enter data copyin(f4)
+    !$acc enter data copyin(f4%block_level, f4%block_origin, f4%uu)
+    !$acc enter data create(f4%recv_buffer, f4%send_buffer)
+    !$acc enter data create(&
+    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, &f4%gc_srl_to_buf_iface, &
+    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
+    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+
   end subroutine f4_construct_brick
 
   !> Return the mesh revision number
@@ -440,6 +458,9 @@ contains
     do n = 1, f4%n_blocks
        f4%block_origin(:, n) = f4%block_origin(:, n) * f4%tree_length
     end do
+
+    !$acc update device(f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks), &
+    !$acc &f4%block_level(1:f4%n_blocks))
   end subroutine f4_set_quadrants
 
   !> Get the global highest refinement level (on all MPI ranks)
@@ -465,6 +486,9 @@ contains
     character(len=len_trim(fname)+7)       :: full_fname
     integer                                :: n
     real(dp), allocatable                  :: dr(:, :)
+
+    ! Get the block data from the device
+    !$acc update self(f4%uu)
 
     write(full_fname, "(A,A,I06.6)") trim(fname), "_", n_output
 
@@ -510,6 +534,7 @@ contains
     call set_ghost_cell_pattern(f4, size(bnd_face), bnd_face, &
          f4%mpirank, f4%mpisize)
     f4%gc_mesh_revision = mesh_revision
+
   end subroutine f4_update_ghostcell_pattern
 
   !> Store the information required to update ghost cells
@@ -607,16 +632,16 @@ contains
     end do
 
     if (allocated(f4%gc_srl_local)) then
-       ! Deallocate, since they probably changed size
-       deallocate(f4%gc_srl_local, &
-            f4%gc_phys, &
-            f4%gc_srl_from_buf, &
-            f4%gc_srl_to_buf, &
-            f4%gc_f2c_local, &
-            f4%gc_c2f_from_buf, &
-            f4%gc_c2f_to_buf, &
-            f4%gc_f2c_from_buf, &
-            f4%gc_f2c_to_buf)
+       ! Deallocate arrays, since they probably changed size
+
+       !$acc exit data delete(&
+       !$acc &f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
+       !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
+       !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+
+       deallocate(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
+            f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
+            f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
     end if
 
     ! Local ghost cell exchange at the same level
@@ -831,6 +856,18 @@ contains
        f4%gc_c2f_to_buf(:, n) = [bnd_face(i)%quadid(1), &
             bnd_face(i)%offset, bnd_face(i)%ibuf_send]
     end do
+
+    ! Copy/sync data to device
+
+    !$acc enter data copyin(&
+    !$acc &f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
+    !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
+    !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+
+    !$acc ugdate device(&
+    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, &f4%gc_srl_to_buf_iface, &
+    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
+    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
 
   end subroutine set_ghost_cell_pattern
 
@@ -1965,6 +2002,7 @@ contains
   end subroutine f4_adjust_refinement
 
   !> Copy block data
+  ! TODO: openacc
   subroutine copy_block(f4, i_from, i_to)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: i_from, i_to
@@ -1974,6 +2012,7 @@ contains
   end subroutine copy_block
 
   !> Coarsen a family of child blocks to their parent
+  ! TODO: openacc
   subroutine coarsen_from_blocks(f4, i_from, i_to, iv)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: i_from
@@ -2005,6 +2044,7 @@ contains
   end subroutine coarsen_from_blocks
 
   !> Prolong to family of child blocks
+  ! TODO: openacc
   subroutine prolong_to_blocks(f4, i_from, i_to, iv)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: i_from
