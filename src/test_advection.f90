@@ -194,7 +194,7 @@ contains
 
     call f4_update_ghostcells(f4, 1, [i_rho+s_deriv])
 
-    !$acc parallel loop private(fx, fy, tmp, u, uprim, dvar, m, iv)
+    !$acc parallel loop private(fx, fy, level, inv_dr, tmp, dvar)
     do n = 1, n_blocks
 
        level = f4%block_level(n)

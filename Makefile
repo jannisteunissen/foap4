@@ -16,10 +16,12 @@ compiler_version = $(shell $(FC) --version)
 compiler_brand = $(word 1, $(compiler_version))
 
 ifeq ($(compiler_brand), GNU)
-	FFLAGS ?= -Wall -Wextra -Wrealloc-lhs -O0 -g -fcheck=all -Jsrc
-	# FFLAGS ?= -Wall -O2 -g -Jsrc
+	FFLAGS ?= -Wall -Wextra -Wrealloc-lhs -O0 -g -fcheck=all -Jsrc	\
+	$(FFLAGS_USER)
+	# FFLAGS ?= -Wall -O2 -g -Jsrc $(FFLAGS_USER)
 else ifeq ($(compiler_brand), nvfortran)
-	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g -module src
+	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g -module	\
+	src $(FFLAGS_USER)
 endif
 
 $(TARGET): src/m_foap4.o src/p4est_wrapper.o src/m_xdmf_writer.o

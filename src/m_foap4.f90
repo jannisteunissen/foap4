@@ -320,7 +320,7 @@ contains
     !$acc exit data delete(f4%block_level, f4%block_origin, f4%uu)
     !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
     !$acc exit data delete(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, &f4%gc_srl_to_buf_iface, &
+    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
     !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
     !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
 
@@ -417,7 +417,7 @@ contains
     !$acc enter data copyin(f4%block_level, f4%block_origin, f4%uu)
     !$acc enter data create(f4%recv_buffer, f4%send_buffer)
     !$acc enter data create(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, &f4%gc_srl_to_buf_iface, &
+    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
     !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
     !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
 
@@ -864,8 +864,8 @@ contains
     !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
     !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
 
-    !$acc ugdate device(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, &f4%gc_srl_to_buf_iface, &
+    !$acc update device(&
+    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
     !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
     !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
 
@@ -1959,11 +1959,7 @@ contains
     if (n_blocks_new + f4%n_blocks > f4%max_blocks) &
          error stop "Not enough block memory during refinement"
 
-    ! Copy blocks to end of list. The backward order ensures old data is not
-    ! overwritten before it is copied.
-    do n = n_blocks_old, 1, -1
-       call copy_block(f4, n, n_blocks_new+n)
-    end do
+    call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new)
 
     call f4_set_quadrants(f4)
 
@@ -2001,7 +1997,6 @@ contains
     if (partition) call f4_partition(f4)
   end subroutine f4_adjust_refinement
 
-  !> Copy block data
   ! TODO: openacc
   subroutine copy_block(f4, i_from, i_to)
     type(foap4_t), intent(inout) :: f4
@@ -2010,6 +2005,19 @@ contains
     f4%block_level(i_to)     = f4%block_level(i_from)
     f4%uu(:, :, :, i_to)     = f4%uu(:, :, :, i_from)
   end subroutine copy_block
+
+  subroutine copy_blocks_to_end(f4, n_blocks_old, n_blocks_new)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_blocks_old
+    integer, intent(in)          :: n_blocks_new
+    integer                      :: n
+
+    ! Copy blocks to end of list. The backward order ensures old data is not
+    ! overwritten before it is copied.
+    do n = n_blocks_old, 1, -1
+       call copy_block(f4, n, n_blocks_new+n)
+    end do
+  end subroutine copy_blocks_to_end
 
   !> Coarsen a family of child blocks to their parent
   ! TODO: openacc
@@ -2128,7 +2136,7 @@ contains
     integer                              :: n_changed_global
     integer                              :: n_blocks_old, n_blocks_new
     integer(c_int64_t)                   :: gfq_old(0:f4%mpisize)
-    integer                              :: n, dsize
+    integer                              :: dsize
 
     n_blocks_old = f4%n_blocks
     call pw_partition(f4%pw, n_changed_global, gfq_old)
@@ -2141,11 +2149,7 @@ contains
     if (n_blocks_new + n_blocks_old > f4%max_blocks) &
          error stop "Not enough block memory during partitioning"
 
-    ! Copy blocks to end of list. The backward order ensures old data is not
-    ! overwritten before it is copied.
-    do n = n_blocks_old, 1, -1
-       call copy_block(f4, n, n_blocks_new+n)
-    end do
+    call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new)
 
     ! Size of a block
     dsize = product(f4%bx + 2 * f4%n_gc) * f4%n_vars * storage_size(1.0_dp)/8
