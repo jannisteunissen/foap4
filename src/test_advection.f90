@@ -14,7 +14,7 @@ program test_adv
 
   call f4_initialize(f4, "error")
 
-  call test_advection(f4, 2, "output/test_adv")
+  call test_advection(f4, 0, "output/test_adv")
 
   call f4_finalize(f4)
 
@@ -26,7 +26,7 @@ contains
     character(len=*), intent(in) :: base_name
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
-    integer, parameter           :: bx(2)               = [16, 16]
+    integer, parameter           :: bx(2)               = [32, 32]
     integer, parameter           :: n_gc                = 2
     logical, parameter           :: periodic(2)         = [.true., .true.]
     integer, parameter           :: max_blocks          = 1000
@@ -47,7 +47,7 @@ contains
 
     call set_init_cond(f4)
 
-    do_refinement = .true.
+    do_refinement = .false.
 
     if (do_refinement) then
        do n = 1, 10
@@ -114,7 +114,9 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
+    !$acc parallel loop
     do n = 1, f4%n_blocks
+       !$acc loop collapse(2) private(rr)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
@@ -125,6 +127,7 @@ contains
   end subroutine set_init_cond
 
   pure real(dp) function rho_init(x, y)
+    !$acc routine seq
     real(dp), intent(in) :: x, y
 
     if (sqrt((x-0.5_dp)**2 + (y-0.5_dp)**2) < 0.1_dp) then
@@ -194,13 +197,13 @@ contains
 
     call f4_update_ghostcells(f4, 1, [i_rho+s_deriv])
 
-    !$acc parallel loop private(fx, fy, level, inv_dr, tmp, dvar)
+    !$acc parallel loop private(level, inv_dr, dvar)
     do n = 1, n_blocks
 
        level = f4%block_level(n)
        inv_dr = 1/f4%dr_level(:, level)
 
-       !$acc loop collapse(2)
+       !$acc loop collapse(2) private(fx, fy, tmp)
        do j = 1, bx(2)
           do i = 1, bx(1)
              ! Compute x and y fluxes
@@ -218,7 +221,7 @@ contains
 
        ! Set output state after computations are done, since s_out can be
        ! equal to s_deriv and s_prev
-       !$acc loop collapse(3)
+       !$acc loop collapse(2)
        do j = 1, bx(2)
           do i = 1, bx(1)
              do m = 1, n_prev

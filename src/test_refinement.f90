@@ -64,11 +64,13 @@ contains
   end subroutine test_refinement
 
   pure real(dp) function rho_init(x, y)
+    !$acc routine seq
     real(dp), intent(in) :: x, y
     rho_init = x + y
   end function rho_init
 
   pure real(dp) function phi_init(x, y)
+    !$acc routine seq
     real(dp), intent(in) :: x, y
     phi_init = x - y
   end function phi_init
@@ -78,7 +80,9 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
+    !$acc parallel loop private(rr)
     do n = 1, f4%n_blocks
+       !$acc loop collapse(2)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
@@ -95,6 +99,7 @@ contains
     integer                      :: n, lvl
     real(dp)                     :: rmin(2), rmax(2)
 
+    !$acc parallel loop private (lvl, rmin, rmax)
     do n = 1, f4%n_blocks
        lvl = f4%block_level(n)
        rmin = f4%block_origin(:, n)
@@ -106,18 +111,24 @@ contains
           f4%refinement_flags(n) = 0
        end if
     end do
+
+    !$acc update host (f4%refinement_flags(1:f4%n_blocks))
   end subroutine set_refinement_flag
 
   subroutine local_average(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, i, j, iv
-    real(dp)                     :: rr(2), err, sol
+    real(dp)                     :: rr(2), err, max_err, sol
     real(dp), allocatable        :: tmp(:, :)
+    real(dp), parameter          :: max_difference = 1e-15_dp
 
     allocate(tmp(f4%bx(1), f4%bx(2)))
     iv = 1
+    max_err = 0.0_dp
 
+    !$acc parallel loop private(rr, tmp, sol, err) reduction(max:max_err)
     do n = 1, f4%n_blocks
+       !$acc loop collapse(2)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
@@ -128,14 +139,23 @@ contains
                   f4%uu(i, j+1, iv, n))
              sol = rho_init(rr(1), rr(2))
              err = tmp(i, j) - sol
-             if (abs(err) > 1e-15_dp) then
-                print *, f4%mpirank, n, f4%block_origin(:, n), f4%block_level(n), i, j, err
-             end if
+             max_err = max(err, abs(max_err))
           end do
        end do
 
-       f4%uu(1:f4%bx(1), 1:f4%bx(2), iv, n) = tmp
+       !$acc loop collapse(2)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
+             f4%uu(i, j, iv, n) = tmp(i, j)
+          end do
+       end do
     end do
+
+    if (max_err > max_difference) then
+       print *, f4%mpirank, max_err
+       error stop "Too large error"
+    end if
+
   end subroutine local_average
 
 end program test_ref
