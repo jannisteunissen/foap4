@@ -14,7 +14,7 @@ program test_adv
 
   call f4_initialize(f4, "error")
 
-  call test_advection(f4, 0, "output/test_adv")
+  call test_advection(f4, 1, "output/test_adv")
 
   call f4_finalize(f4)
 

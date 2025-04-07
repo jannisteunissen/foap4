@@ -21,6 +21,7 @@ module m_foap4
 
   !> The offset of the children
   integer, parameter :: child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
+  !$acc declare create(child_offset)
 
   !> Value indicating a physical boundary at a block face
   integer, parameter :: FACE_BOUNDARY = 0
@@ -309,6 +310,7 @@ contains
     end select
 
     call pw_initialize(f4%pw, f4%mpicomm%MPI_VAL, log_level)
+
   end subroutine f4_initialize
 
   !> Destroy all data for the current mesh
@@ -1382,7 +1384,7 @@ contains
     integer                      :: n, i, j, iq, jq, face
     integer                      :: i_buf, i_buf0, iv, ivar, i_f, j_f, i_c, j_c
     integer                      :: half_bx(2), half_n_gc, offset
-    real(dp)                     :: slope, fine(4)
+    real(dp)                     :: fine(4)
     logical                      :: odd_n_gc
 
     call f4_update_ghostcell_pattern(f4)
@@ -1457,15 +1459,18 @@ contains
 
       ! Local fine-to-coarse refinement boundaries, fill coarse side
       face = 0
+      !$acc parallel loop private(iq, jq, offset)
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
          offset = f4%gc_f2c_local(3, n)     ! offset
+
+         !$acc loop collapse(3) private(i_f, j_f, ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, half_bx(2)
-               j_f = 2 * j - 1
                do i = 1, n_gc
+                  ivar = i_vars(iv)
+                  j_f = 2 * j - 1
                   i_f = 2 * i - 1
                   uu(bx(1)+i, offset*half_bx(2)+j, ivar, jq) = 0.25_dp * &
                        sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
@@ -1475,15 +1480,18 @@ contains
       end do
 
       face = 1
+      !$acc parallel loop private(iq, jq, offset)
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
          offset = f4%gc_f2c_local(3, n)     ! offset
+
+         !$acc loop collapse(3) private(i_f, j_f, ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, half_bx(2)
-               j_f = 2 * j - 1
                do i = 1, n_gc
+                  ivar = i_vars(iv)
+                  j_f = 2 * j - 1
                   i_f = bx(1) - 2 * n_gc + 2 * i - 1
                   uu(-n_gc+i, offset*half_bx(2)+j, ivar, jq) = 0.25_dp * &
                        sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
@@ -1493,15 +1501,18 @@ contains
       end do
 
       face = 2
+      !$acc parallel loop private(iq, jq, offset)
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
          offset = f4%gc_f2c_local(3, n)     ! offset
+
+         !$acc loop collapse(3) private(i_f, j_f, ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, n_gc
-               j_f = 2 * j - 1
                do i = 1, half_bx(1)
+                  ivar = i_vars(iv)
+                  j_f = 2 * j - 1
                   i_f = 2 * i - 1
                   uu(offset*half_bx(1)+i, bx(2)+j, ivar, jq) = 0.25_dp * &
                        sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
@@ -1511,15 +1522,18 @@ contains
       end do
 
       face = 3
+      !$acc parallel loop private(iq, jq, offset)
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
          offset = f4%gc_f2c_local(3, n)     ! offset
+
+         !$acc loop collapse(3) private(i_f, j_f, ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, n_gc
-               j_f = bx(2) - 2 * n_gc + 2 * j - 1
                do i = 1, half_bx(1)
+                  ivar = i_vars(iv)
+                  j_f = bx(2) - 2 * n_gc + 2 * j - 1
                   i_f = 2 * i - 1
                   uu(offset*half_bx(1)+i, -n_gc+j, ivar, jq) = 0.25_dp * &
                        sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
@@ -1600,14 +1614,16 @@ contains
       ! Local boundaries at the same refinement level
 
       face = 0
+      !$acc parallel loop private(iq, jq)
       do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
          iq   = f4%gc_srl_local(1, n) + 1
          jq   = f4%gc_srl_local(2, n) + 1
 
+         !$acc loop collapse(3) private(ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, bx(2)
                do i = 1, n_gc
+                  ivar = i_vars(iv)
                   uu(-n_gc+i, j, ivar, iq) = uu(bx(1)-n_gc+i, j, ivar, jq)
                   uu(bx(1)+i, j, ivar, jq) = uu(i, j, ivar, iq)
                end do
@@ -1616,14 +1632,16 @@ contains
       end do
 
       face = 1
+      !$acc parallel loop private(iq, jq)
       do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
          iq   = f4%gc_srl_local(1, n) + 1
          jq   = f4%gc_srl_local(2, n) + 1
 
+         !$acc loop collapse(3) private(ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, bx(2)
                do i = 1, n_gc
+                  ivar = i_vars(iv)
                   uu(bx(1)+i, j, ivar, iq) = uu(i, j, ivar, jq)
                   uu(-n_gc+i, j, ivar, jq) = uu(bx(1)-n_gc+i, j, ivar, iq)
                end do
@@ -1632,13 +1650,16 @@ contains
       end do
 
       face = 2
+      !$acc parallel loop private(iq, jq)
       do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
          iq   = f4%gc_srl_local(1, n) + 1
          jq   = f4%gc_srl_local(2, n) + 1
+
+         !$acc loop collapse(3) private(ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, n_gc
                do i = 1, bx(1)
+                  ivar = i_vars(iv)
                   uu(i, -n_gc+j, ivar, iq) = uu(i, bx(2)-n_gc+j, ivar, jq)
                   uu(i, bx(2)+j, ivar, jq) = uu(i, j, ivar, iq)
                end do
@@ -1647,13 +1668,16 @@ contains
       end do
 
       face = 3
+      !$acc parallel loop private(iq, jq)
       do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
          iq   = f4%gc_srl_local(1, n) + 1
          jq   = f4%gc_srl_local(2, n) + 1
+
+         !$acc loop collapse(3) private(ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, n_gc
                do i = 1, bx(1)
+                  ivar = i_vars(iv)
                   uu(i, bx(2)+j, ivar, iq) = uu(i, j, ivar, jq)
                   uu(i, -n_gc+j, ivar, jq) = uu(i, bx(2)-n_gc+j, ivar, iq)
                end do
@@ -1663,56 +1687,68 @@ contains
 
       ! Physical boundaries
       face = 0
+      !$acc parallel loop private(iq)
       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
          iq = f4%gc_phys(n) + 1
+
+         !$acc loop collapse(3) private(ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, bx(2)
-               slope = uu(2, j, ivar, iq) - uu(1, j, ivar, iq)
                do i = 1, n_gc
-                  uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * slope
+                  ivar = i_vars(iv)
+                  uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * &
+                       (uu(2, j, ivar, iq) - uu(1, j, ivar, iq))
                end do
             end do
          end do
       end do
 
       face = 1
+      !$acc parallel loop private(iq)
       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
          iq = f4%gc_phys(n) + 1
+
+         !$acc loop collapse(3) private(ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, bx(2)
-               slope = uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq)
                do i = 1, n_gc
-                  uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * slope
+                  ivar = i_vars(iv)
+                  uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * &
+                       (uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq))
                end do
             end do
          end do
       end do
 
       face = 2
+      !$acc parallel loop private(iq)
       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
          iq = f4%gc_phys(n) + 1
+
+         !$acc loop collapse(3) private(ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, n_gc
                do i = 1, bx(1)
-                  slope = uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq)
-                  uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * slope
+                  ivar = i_vars(iv)
+                  uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * &
+                       (uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq))
                end do
             end do
          end do
       end do
 
       face = 3
+      !$acc parallel loop private(iq)
       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
          iq = f4%gc_phys(n) + 1
+
+         !$acc loop collapse(3) private(ivar)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
             do j = 1, n_gc
                do i = 1, bx(1)
-                  slope = uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq)
-                  uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * slope
+                  ivar = i_vars(iv)
+                  uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * &
+                       (uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq))
                end do
             end do
          end do
@@ -1725,144 +1761,192 @@ contains
 
       ! Local coarse-to-fine boundaries, fill fine side
       face = 0
+      !$acc parallel loop private(iq, jq, offset)
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
          offset = f4%gc_f2c_local(3, n)     ! Offset
 
+         !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
-
             do j = 1, half_bx(2)
-               j_f = 2 * j - 1
-               j_c = j + offset * half_bx(2)
                do i = 1, half_n_gc
+                  ivar = i_vars(iv)
+                  j_f = 2 * j - 1
+                  j_c = j + offset * half_bx(2)
                   i_c = bx(1) - half_n_gc + i
                   i_f = -(2 * half_n_gc) + 2*i - 1
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
                        [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
                        [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
+                  f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
+                  f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                  f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                  f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
                end do
+            end do
+         end do
 
-               if (odd_n_gc) then
-                  i_c = bx(1) - half_n_gc
-                  i_f = -n_gc + 1
+         if (odd_n_gc) then
+            i_c = bx(1) - half_n_gc
+            i_f = -n_gc + 1
+
+            !$acc loop collapse(2) private(ivar, j_f, j_c)
+            do iv = 1, n_vars
+               do j = 1, half_bx(2)
+                  ivar = i_vars(iv)
+                  j_f = 2 * j - 1
+                  j_c = j + offset * half_bx(2)
+
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
                        [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
                        [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                  f4%uu(i_f, j_f:j_f+1, ivar, iq) = fine([2, 4])
-               end if
+                  f4%uu(i_f, j_f, ivar, iq) = fine(2)
+                  f4%uu(i_f, j_f+1, ivar, iq) = fine(4)
+               end do
             end do
-         end do
+         end if
       end do
 
       face = 1
+      !$acc parallel loop private(iq, jq, offset)
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
          offset = f4%gc_f2c_local(3, n)     ! Offset
 
+         !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
-
             do j = 1, half_bx(2)
-               j_f = 2 * j - 1
-               j_c = j + offset * half_bx(2)
                do i = 1, half_n_gc
+                  ivar = i_vars(iv)
+                  j_f = 2 * j - 1
+                  j_c = j + offset * half_bx(2)
                   i_c = i
                   i_f = bx(1) + 2*i - 1
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
                        [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
                        [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
+                  f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
+                  f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                  f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                  f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
                end do
+            end do
+         end do
 
-               if (odd_n_gc) then
-                  i_c = 1 + half_n_gc
-                  i_f = bx(1) + n_gc
+         if (odd_n_gc) then
+            i_c = 1 + half_n_gc
+            i_f = bx(1) + n_gc
+
+            !$acc loop collapse(2) private(ivar, j_f, j_c)
+            do iv = 1, n_vars
+               do j = 1, half_bx(2)
+                  ivar = i_vars(iv)
+                  j_f = 2 * j - 1
+                  j_c = j + offset * half_bx(2)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
                        [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
                        [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                  f4%uu(i_f, j_f:j_f+1, ivar, iq) = fine([1, 3])
-               end if
+                  f4%uu(i_f, j_f, ivar, iq) = fine(1)
+                  f4%uu(i_f, j_f+1, ivar, iq) = fine(3)
+               end do
             end do
-         end do
+         end if
       end do
 
       face = 2
+      !$acc parallel loop private(iq, jq, offset)
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
          offset = f4%gc_f2c_local(3, n)     ! Offset
 
+         !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
-
             do j = 1, half_n_gc
-               j_c = bx(2) - half_n_gc + j
-               j_f = -(2 * half_n_gc) + 2*j - 1
                do i = 1, half_bx(1)
+                  ivar = i_vars(iv)
+                  j_c = bx(2) - half_n_gc + j
+                  j_f = -(2 * half_n_gc) + 2*j - 1
                   i_f = 2 * i - 1
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
                        [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
                        [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
+                  f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
+                  f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                  f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                  f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
                end do
             end do
+         end do
 
-            if (odd_n_gc) then
-               j_c = bx(2) - half_n_gc
-               j_f = -n_gc + 1
+         if (odd_n_gc) then
+            j_c = bx(2) - half_n_gc
+            j_f = -n_gc + 1
+
+            !$acc loop collapse(2) private(ivar, i_f, i_c)
+            do iv = 1, n_vars
                do i = 1, half_bx(1)
+                  ivar = i_vars(iv)
                   i_f = 2 * i - 1
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
                        [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
                        [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                  f4%uu(i_f:i_f+1, j_f, ivar, iq) = fine([3, 4])
+                  f4%uu(i_f, j_f, ivar, iq) = fine(3)
+                  f4%uu(i_f+1, j_f, ivar, iq) = fine(4)
                end do
-            end if
-         end do
+            end do
+         end if
       end do
 
       face = 3
+      !$acc parallel loop private(iq, jq, offset)
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
          offset = f4%gc_f2c_local(3, n)     ! Offset
 
+         !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
          do iv = 1, n_vars
-            ivar = i_vars(iv)
-
             do j = 1, half_n_gc
-               j_c = j
-               j_f = bx(2) + 2*j - 1
                do i = 1, half_bx(1)
+                  ivar = i_vars(iv)
+                  j_c = j
+                  j_f = bx(2) + 2*j - 1
                   i_f = 2 * i - 1
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
                        [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
                        [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                  f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq) = reshape(fine, [2, 2])
+                  f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
+                  f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                  f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                  f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
                end do
             end do
+         end do
 
-            if (odd_n_gc) then
-               j_c = 1 + half_n_gc
-               j_f = bx(2) + n_gc
+         if (odd_n_gc) then
+            j_c = 1 + half_n_gc
+            j_f = bx(2) + n_gc
+
+            !$acc loop collapse(2) private(ivar, i_f, i_c)
+            do iv = 1, n_vars
                do i = 1, half_bx(1)
+                  ivar = i_vars(iv)
                   i_f = 2 * i - 1
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
                        [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
                        [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
-                  f4%uu(i_f:i_f+1, j_f, ivar, iq) = fine([1, 2])
+                  f4%uu(i_f, j_f, ivar, iq) = fine(1)
+                  f4%uu(i_f+1, j_f, ivar, iq) = fine(2)
                end do
-            end if
-         end do
-
+            end do
+         end if
       end do
 
       ! Nonlocal coarse-to-fine boundaries, fill fine side
@@ -2017,8 +2101,14 @@ contains
   subroutine f4_adjust_refinement(f4, partition)
     type(foap4_t), intent(inout) :: f4
     logical, intent(in)          :: partition
-    integer                      :: n, n_blocks_new, n_blocks_old, k, iv
-    integer                      :: has_changed
+    integer                      :: n_blocks_new, n_blocks_old, k, iv
+    integer                      :: has_changed, i_srl, i_refine, i_coarsen
+    integer, allocatable         :: srl(:, :), refine(:, :), coarsen(:, :)
+    integer                      :: n, i, j, i_c, j_c, i_f, j_f
+    integer                      :: half_bx(2), ix_offset(2)
+    real(dp)                     :: fine(4)
+
+    half_bx = f4%bx / 2
 
     n_blocks_old = f4%n_blocks
     call pw_adjust_refinement(f4%pw, f4%n_blocks, &
@@ -2032,30 +2122,33 @@ contains
          error stop "Not enough block memory during refinement"
 
     call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new)
-
     call f4_set_quadrants(f4)
 
-    k = n_blocks_new + 1
-    n = 1
+    allocate(srl(2, n_blocks_new), refine(2, n_blocks_new), coarsen(2, n_blocks_new))
+
+    i_srl     = 0
+    i_refine  = 0
+    i_coarsen = 0
+    k         = n_blocks_new + 1
+    n         = 1
     do while (n <= n_blocks_new)
        select case (f4%block_level(n) - f4%block_level(k))
        case (0)
           ! Same refinement level
-          call copy_block(f4, k, n)
+          i_srl = i_srl + 1
+          srl(:, i_srl) = [k, n]
           n = n + 1
           k = k + 1
        case (1)
           ! Block has been refined
-          do iv = 1, f4%n_vars
-             call prolong_to_blocks(f4, k, n, iv)
-          end do
+          i_refine = i_refine + 1
+          refine(:, i_refine) = [k, n]
           n = n + 4
           k = k + 1
        case (-1)
           ! Block has been coarsened
-          do iv = 1, f4%n_vars
-             call coarsen_from_blocks(f4, k, n, iv)
-          end do
+          i_coarsen = i_coarsen + 1
+          coarsen(:, i_coarsen) = [k, n]
           n = n + 1
           k = k + 4
        case default
@@ -2066,17 +2159,58 @@ contains
     if (k /= n_blocks_new + n_blocks_old + 1) &
          error stop "Refinement: loops did not end simultaneously"
 
+    ! Copy on device
+
+    !$acc parallel loop copyin(i_srl, srl)
+    do n = 1, i_srl
+       ! f4%uu(:, :, :, srl(2, n)) = f4%uu(:, :, :, srl(1, n))
+       !$acc loop collapse(3)
+       do iv = 1, f4%n_vars
+          do j = f4%ilo(2), f4%ihi(2)
+             do i = f4%ilo(1), f4%ihi(2)
+                f4%uu(i, j, iv, srl(2, n)) = f4%uu(i, j, iv, srl(1, n))
+             end do
+          end do
+       end do
+    end do
+
+    !$acc parallel loop copyin(i_refine, refine)
+    do k = 1, i_refine
+       !$acc loop collapse(4) private(ix_offset, j_c, j_f, i_c, i_f, fine)
+       do n = 1, 4
+          do iv = 1, f4%n_vars
+             do j = 1, half_bx(2)
+                do i = 1, half_bx(1)
+                   ix_offset = child_offset(:, n) * half_bx
+                   j_c = j + ix_offset(2)
+                   j_f = 2 * j - 1
+                   i_c = i + ix_offset(1)
+                   i_f = 2 * i - 1
+
+                   call prolong_local_5point(f4%uu(i_c, j_c, iv, refine(1, k)), &
+                        [f4%uu(i_c-1, j_c, iv, refine(1, k)), f4%uu(i_c+1, j_c, iv, refine(1, k))], &
+                        [f4%uu(i_c, j_c-1, iv, refine(1, k)), f4%uu(i_c, j_c+1, iv, refine(1, k))], &
+                        fine)
+
+                   f4%uu(i_f,   j_f, iv, refine(2, k)+n-1)   = fine(1)
+                   f4%uu(i_f+1, j_f, iv, refine(2, k)+n-1)   = fine(2)
+                   f4%uu(i_f,   j_f+1, iv, refine(2, k)+n-1) = fine(3)
+                   f4%uu(i_f+1, j_f+1, iv, refine(2, k)+n-1) = fine(4)
+                end do
+             end do
+          end do
+       end do
+    end do
+
+    !$acc parallel loop collapse(2)
+    do i = 1, i_coarsen
+       do iv = 1, f4%n_vars
+          call coarsen_from_blocks(f4, coarsen(1, i), coarsen(2, i), iv)
+       end do
+    end do
+
     if (partition) call f4_partition(f4)
   end subroutine f4_adjust_refinement
-
-  ! TODO: openacc
-  subroutine copy_block(f4, i_from, i_to)
-    type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: i_from, i_to
-    f4%block_origin(:, i_to) = f4%block_origin(:, i_from)
-    f4%block_level(i_to)     = f4%block_level(i_from)
-    f4%uu(:, :, :, i_to)     = f4%uu(:, :, :, i_from)
-  end subroutine copy_block
 
   !> Copy blocks to the end of the block array
   subroutine copy_blocks_to_end(f4, n_blocks_old, n_blocks_new)
@@ -2087,14 +2221,23 @@ contains
 
     ! Copy blocks to end of list. The backward order ensures old data is not
     ! overwritten before it is copied.
+
+    ! Copy on host
     do n = n_blocks_old, 1, -1
-       call copy_block(f4, n, n_blocks_new+n)
+       f4%block_origin(:, n_blocks_new+n) = f4%block_origin(:, n)
+       f4%block_level(n_blocks_new+n)     = f4%block_level(n)
+    end do
+
+    ! Copy on device
+    !$acc parallel loop
+    do n = n_blocks_old, 1, -1
+       f4%uu(:, :, :, n_blocks_new+n) = f4%uu(:, :, :, n)
     end do
   end subroutine copy_blocks_to_end
 
   !> Coarsen a family of child blocks to their parent
-  ! TODO: openacc
   subroutine coarsen_from_blocks(f4, i_from, i_to, iv)
+    !$acc routine worker
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: i_from
     integer, intent(in)          :: i_to
@@ -2104,13 +2247,13 @@ contains
 
     half_bx = f4%bx / 2
 
+    !$acc loop collapse(3) private(ix_offset, j_c, j_f, i_c, i_f)
     do n = 1, 4
-       ix_offset = child_offset(:, n) * half_bx
-
        do j = 1, half_bx(2)
-          j_c = j + ix_offset(2)
-          j_f = 2 * j - 1
           do i = 1, half_bx(1)
+             ix_offset = child_offset(:, n) * half_bx
+             j_c = j + ix_offset(2)
+             j_f = 2 * j - 1
              i_c = i + ix_offset(1)
              i_f = 2 * i - 1
 
@@ -2125,8 +2268,8 @@ contains
   end subroutine coarsen_from_blocks
 
   !> Prolong to family of child blocks
-  ! TODO: openacc
   subroutine prolong_to_blocks(f4, i_from, i_to, iv)
+    !$acc routine seq
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: i_from
     integer, intent(in)          :: i_to
@@ -2137,13 +2280,14 @@ contains
 
     half_bx = f4%bx / 2
 
+    !$acc loop
     do n = 1, 4
-       ix_offset = child_offset(:, n) * half_bx
-
+       !$acc loop collapse(2) private(ix_offset, j_c, j_f, i_c, i_f, fine)
        do j = 1, half_bx(2)
-          j_c = j + ix_offset(2)
-          j_f = 2 * j - 1
           do i = 1, half_bx(1)
+             ix_offset = child_offset(:, n) * half_bx
+             j_c = j + ix_offset(2)
+             j_f = 2 * j - 1
              i_c = i + ix_offset(1)
              i_f = 2 * i - 1
 

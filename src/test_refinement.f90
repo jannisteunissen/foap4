@@ -80,9 +80,9 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
-    !$acc parallel loop private(rr)
+    !$acc parallel loop
     do n = 1, f4%n_blocks
-       !$acc loop collapse(2)
+       !$acc loop collapse(2) private(rr)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
@@ -118,7 +118,7 @@ contains
   subroutine local_average(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, i, j, iv
-    real(dp)                     :: rr(2), err, max_err, sol
+    real(dp)                     :: rr(2), err, max_err, tmp_err, sol
     real(dp), allocatable        :: tmp(:, :)
     real(dp), parameter          :: max_difference = 1e-15_dp
 
@@ -126,9 +126,10 @@ contains
     iv = 1
     max_err = 0.0_dp
 
-    !$acc parallel loop private(rr, tmp, sol, err) reduction(max:max_err)
+    !$acc parallel loop private(tmp) reduction(max:max_err)
     do n = 1, f4%n_blocks
-       !$acc loop collapse(2)
+       tmp_err = 0
+       !$acc loop collapse(2) private(rr, sol, err) reduction(max:tmp_err)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
@@ -139,9 +140,11 @@ contains
                   f4%uu(i, j+1, iv, n))
              sol = rho_init(rr(1), rr(2))
              err = tmp(i, j) - sol
-             max_err = max(err, abs(max_err))
+             tmp_err = max(abs(err), tmp_err)
           end do
        end do
+
+       max_err = max(max_err, tmp_err)
 
        !$acc loop collapse(2)
        do j = 1, f4%bx(2)
