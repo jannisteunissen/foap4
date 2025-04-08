@@ -11,21 +11,25 @@ program test_ref
   call f4_initialize(f4, "error")
 
   n = 0
-
-  do n_gc = 1, 3
+  do n_gc = 1, 4
      if (f4%mpirank == 0) print *, "Testing uniform grid with n_gc =", n_gc
-     call test_refinement(f4, n_gc, 4, 0, [1e-2_dp, 1e-2_dp], "output/test_unif", n)
+     call test_refinement(f4, n_gc, 4, 0, [1e-2_dp, 1e-2_dp], .true., &
+          "output/test_unif", n)
   end do
 
   n = 0
-
   do n_gc = 1, 4
      if (f4%mpirank == 0) print *, "Testing with n_gc = ", n_gc
-     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 1e-2_dp], "output/test_ref", n)
-     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 1e-2_dp], "output/test_ref", n)
-     call test_refinement(f4, n_gc, 3, 7, [0.5_dp, 0.5_dp], "output/test_ref", n)
-     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 0.99_dp], "output/test_ref", n)
-     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 0.99_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 1e-2_dp], .false., &
+          "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 1e-2_dp], .false., &
+          "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.5_dp, 0.5_dp], .false., &
+          "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 0.99_dp], .false., &
+          "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 0.99_dp], .false., &
+          "output/test_ref", n)
   end do
 
   call f4_finalize(f4)
@@ -33,13 +37,13 @@ program test_ref
 contains
 
   subroutine test_refinement(f4, n_gc, min_level, n_refine_steps, &
-       refine_location, base_name, n_output)
-    implicit none
+       refine_location, test_coarsening, base_name, n_output)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_gc
     integer, intent(in)          :: min_level
     integer, intent(in)          :: n_refine_steps
     real(dp), intent(in)         :: refine_location(2)
+    logical, intent(in)          :: test_coarsening
     character(len=*), intent(in) :: base_name
     integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
@@ -49,7 +53,8 @@ contains
     character(len=20)            :: var_names(n_vars)   = ['rho', 'phi']
     logical, parameter           :: periodic(2)         = [.false., .false.]
     integer, parameter           :: max_blocks          = 1000
-    integer                      :: n
+    logical, parameter           :: partition           = .false.
+    integer                      :: n, prev_mesh_revision
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, periodic, min_level, max_blocks)
@@ -63,13 +68,29 @@ contains
 
     do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location)
-       call f4_adjust_refinement(f4, .false.)
+       call f4_adjust_refinement(f4, partition)
        call f4_update_ghostcells(f4, 2, [1, 2])
        call local_average(f4)
 
        n_output = n_output + 1
        call f4_write_grid(f4, base_name, n_output)
     end do
+
+    if (test_coarsening) then
+       do n = 1, 10
+          prev_mesh_revision = f4_get_mesh_revision(f4)
+          call set_coarsening_flag(f4)
+          call f4_adjust_refinement(f4, partition)
+
+          call f4_update_ghostcells(f4, 2, [1, 2])
+          call local_average(f4)
+
+          n_output = n_output + 1
+          call f4_write_grid(f4, base_name, n_output)
+
+          if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
+       end do
+    end if
 
     call f4_destroy(f4)
   end subroutine test_refinement
@@ -110,7 +131,6 @@ contains
     integer                      :: n, lvl
     real(dp)                     :: rmin(2), rmax(2)
 
-    !$acc parallel loop private (lvl, rmin, rmax)
     do n = 1, f4%n_blocks
        lvl = f4%block_level(n)
        rmin = f4%block_origin(:, n)
@@ -123,8 +143,12 @@ contains
        end if
     end do
 
-    !$acc update host (f4%refinement_flags(1:f4%n_blocks))
   end subroutine set_refinement_flag
+
+  subroutine set_coarsening_flag(f4)
+    type(foap4_t), intent(inout) :: f4
+    f4%refinement_flags(1:f4%n_blocks) = -1
+  end subroutine set_coarsening_flag
 
   subroutine local_average(f4)
     type(foap4_t), intent(inout) :: f4

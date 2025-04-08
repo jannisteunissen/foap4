@@ -45,8 +45,8 @@ module m_foap4
   type, bind(c) :: bnd_face_t
      integer(c_int) :: face_type !< What kind of face (same level, ...)
      integer(c_int) :: face      !< Direction of the face
-     integer(c_int) :: other_proc !< MPI rank that owns quadid[1]
-     integer(c_int) :: quadid(2)  !< quadid[0] is always local, [1] can be non-local
+     integer(c_int) :: other_proc !< MPI rank that owns quadid(2)
+     integer(c_int) :: quadid(2)  !< quadid(1) is always local, (2) can be non-local
      integer(c_int) :: offset     !< Offset for a hanging face
      integer(c_int) :: ibuf_recv  !< Index in receive buffer (not filled here)
      integer(c_int) :: ibuf_send  !< Index in send buffer (not filled here)
@@ -496,7 +496,7 @@ contains
     real(dp), allocatable                  :: dr(:, :)
 
     ! OpenACC - get the block data from the device
-    !$acc update self(f4%uu)
+    !$acc update self(f4%uu(:, :, :, 1:f4%n_blocks))
 
     write(full_fname, "(A,A,I06.6)") trim(fname), "_", n_output
 
@@ -2191,7 +2191,8 @@ contains
     integer                      :: has_changed, i_srl, i_refine, i_coarsen
     integer, allocatable         :: srl(:, :), refine(:, :), coarsen(:, :)
     integer                      :: n, i, j, i_c, j_c, i_f, j_f
-    integer                      :: half_bx(2), ix_offset(2)
+    integer                      :: half_bx(2), offset_copy
+    integer                      :: i_from, i_to
     real(dp)                     :: fine(4)
 
     half_bx = f4%bx / 2
@@ -2207,7 +2208,7 @@ contains
     if (n_blocks_new + f4%n_blocks > f4%max_blocks) &
          error stop "Not enough block memory during refinement"
 
-    call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new)
+    call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
     call f4_set_quadrants(f4)
 
     allocate(srl(2, n_blocks_new), refine(2, n_blocks_new), coarsen(2, n_blocks_new))
@@ -2215,7 +2216,7 @@ contains
     i_srl     = 0
     i_refine  = 0
     i_coarsen = 0
-    k         = n_blocks_new + 1
+    k         = offset_copy + 1
     n         = 1
     do while (n <= n_blocks_new)
        select case (f4%block_level(n) - f4%block_level(k))
@@ -2242,156 +2243,126 @@ contains
        end select
     end do
 
-    if (k /= n_blocks_new + n_blocks_old + 1) &
+    if (k /= offset_copy + n_blocks_old + 1) &
          error stop "Refinement: loops did not end simultaneously"
+
+    !$acc enter data copyin(i_srl, srl, i_refine, refine, &
+    !$acc &i_coarsen, coarsen, half_bx)
 
     ! Copy on device
 
-    !$acc parallel loop copyin(i_srl, srl)
+    !$acc parallel loop private(i_from, i_to)
     do n = 1, i_srl
-       ! f4%uu(:, :, :, srl(2, n)) = f4%uu(:, :, :, srl(1, n))
+       i_from = srl(1, n)
+       i_to = srl(2, n)
+
        !$acc loop collapse(3)
        do iv = 1, f4%n_vars
           do j = f4%ilo(2), f4%ihi(2)
              do i = f4%ilo(1), f4%ihi(2)
-                f4%uu(i, j, iv, srl(2, n)) = f4%uu(i, j, iv, srl(1, n))
+                f4%uu(i, j, iv, i_to) = f4%uu(i, j, iv, i_from)
              end do
           end do
        end do
     end do
 
-    !$acc parallel loop copyin(i_refine, refine)
+    ! Refine on device
+
+    !$acc parallel loop private(i_from, i_to)
     do k = 1, i_refine
-       !$acc loop collapse(4) private(ix_offset, j_c, j_f, i_c, i_f, fine)
+       i_from = refine(1, k)
+       i_to = refine(2, k)
+
+       !$acc loop collapse(4) private(j_c, j_f, i_c, i_f, fine)
        do n = 1, 4
           do iv = 1, f4%n_vars
              do j = 1, half_bx(2)
                 do i = 1, half_bx(1)
-                   ix_offset = child_offset(:, n) * half_bx
-                   j_c = j + ix_offset(2)
+                   j_c = j + child_offset(2, n) * half_bx(2)
                    j_f = 2 * j - 1
-                   i_c = i + ix_offset(1)
+                   i_c = i + child_offset(1, n) * half_bx(1)
                    i_f = 2 * i - 1
 
-                   call prolong_local_5point(f4%uu(i_c, j_c, iv, refine(1, k)), &
-                        [f4%uu(i_c-1, j_c, iv, refine(1, k)), &
-                        f4%uu(i_c+1, j_c, iv, refine(1, k))], &
-                        [f4%uu(i_c, j_c-1, iv, refine(1, k)), &
-                        f4%uu(i_c, j_c+1, iv, refine(1, k))], &
+                   call prolong_local_5point(f4%uu(i_c, j_c, iv, i_from), &
+                        [f4%uu(i_c-1, j_c, iv, i_from), &
+                        f4%uu(i_c+1, j_c, iv, i_from)], &
+                        [f4%uu(i_c, j_c-1, iv, i_from), &
+                        f4%uu(i_c, j_c+1, iv, i_from)], &
                         fine)
 
-                   f4%uu(i_f,   j_f, iv, refine(2, k)+n-1)   = fine(1)
-                   f4%uu(i_f+1, j_f, iv, refine(2, k)+n-1)   = fine(2)
-                   f4%uu(i_f,   j_f+1, iv, refine(2, k)+n-1) = fine(3)
-                   f4%uu(i_f+1, j_f+1, iv, refine(2, k)+n-1) = fine(4)
+                   f4%uu(i_f,   j_f, iv, i_to+n-1)   = fine(1)
+                   f4%uu(i_f+1, j_f, iv, i_to+n-1)   = fine(2)
+                   f4%uu(i_f,   j_f+1, iv, i_to+n-1) = fine(3)
+                   f4%uu(i_f+1, j_f+1, iv, i_to+n-1) = fine(4)
                 end do
              end do
           end do
        end do
     end do
 
-    !$acc parallel loop collapse(2)
-    do i = 1, i_coarsen
-       do iv = 1, f4%n_vars
-          call coarsen_from_blocks(f4, coarsen(1, i), coarsen(2, i), iv)
+    ! Coarsen on device
+
+    !$acc parallel loop private(i_from, i_to)
+    do k = 1, i_coarsen
+       i_from = coarsen(1, k)
+       i_to = coarsen(2, k)
+
+       !$acc loop collapse(4) private(j_c, j_f, i_c, i_f)
+       do n = 1, 4
+          do iv = 1, f4%n_vars
+             do j = 1, half_bx(2)
+                do i = 1, half_bx(1)
+                   j_c = j + child_offset(2, n) * half_bx(2)
+                   j_f = 2 * j - 1
+                   i_c = i + child_offset(1, n) * half_bx(1)
+                   i_f = 2 * i - 1
+
+                   f4%uu(i_c, j_c, iv, i_to) = 0.25_dp * (&
+                        f4%uu(i_f,   j_f, iv, i_from+n-1) + &
+                        f4%uu(i_f+1, j_f, iv, i_from+n-1) + &
+                        f4%uu(i_f,   j_f+1, iv, i_from+n-1) + &
+                        f4%uu(i_f+1, j_f+1, iv, i_from+n-1))
+                end do
+             end do
+          end do
        end do
     end do
+
+    !$acc exit data delete(i_srl, srl, i_refine, refine, &
+    !$acc &i_coarsen, coarsen, half_bx)
 
     if (partition) call f4_partition(f4)
   end subroutine f4_adjust_refinement
 
-  !> Copy blocks to the end of the block array
-  subroutine copy_blocks_to_end(f4, n_blocks_old, n_blocks_new)
+  !> Temporarily copy blocks to the end of the block array
+  subroutine copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_blocks_old
     integer, intent(in)          :: n_blocks_new
-    integer                      :: n
+    integer, intent(out)         :: offset_copy
+    integer                      :: n, i, j, iv
 
-    ! Copy blocks to end of list. The backward order ensures old data is not
-    ! overwritten before it is copied.
+    offset_copy = max(n_blocks_old, n_blocks_new)
 
-    ! Copy on host
-    do n = n_blocks_old, 1, -1
-       f4%block_origin(:, n_blocks_new+n) = f4%block_origin(:, n)
-       f4%block_level(n_blocks_new+n)     = f4%block_level(n)
+    ! Copy block metadata on host
+    do n = 1, n_blocks_old
+       f4%block_origin(:, offset_copy+n) = f4%block_origin(:, n)
+       f4%block_level(offset_copy+n)     = f4%block_level(n)
     end do
 
-    ! Copy on device
+    ! Copy block solution data on device
     !$acc parallel loop
-    do n = n_blocks_old, 1, -1
-       f4%uu(:, :, :, n_blocks_new+n) = f4%uu(:, :, :, n)
+    do n = 1, n_blocks_old
+       !$acc loop collapse(3)
+       do iv = 1, f4%n_vars
+          do j = f4%ilo(2), f4%ihi(2)
+             do i = f4%ilo(1), f4%ihi(1)
+                f4%uu(i, j, iv, offset_copy+n) = f4%uu(i, j, iv, n)
+             end do
+          end do
+       end do
     end do
   end subroutine copy_blocks_to_end
-
-  !> Coarsen a family of child blocks to their parent
-  subroutine coarsen_from_blocks(f4, i_from, i_to, iv)
-    !$acc routine worker
-    type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: i_from
-    integer, intent(in)          :: i_to
-    integer, intent(in)          :: iv
-    integer                      :: n, i, j, i_c, j_c, i_f, j_f
-    integer                      :: half_bx(2), ix_offset(2)
-
-    half_bx = f4%bx / 2
-
-    !$acc loop collapse(3) private(ix_offset, j_c, j_f, i_c, i_f)
-    do n = 1, 4
-       do j = 1, half_bx(2)
-          do i = 1, half_bx(1)
-             ix_offset = child_offset(:, n) * half_bx
-             j_c = j + ix_offset(2)
-             j_f = 2 * j - 1
-             i_c = i + ix_offset(1)
-             i_f = 2 * i - 1
-
-             f4%uu(i_c, j_c, iv, i_to) = 0.25_dp * (&
-                  f4%uu(i_f,   j_f, iv, i_from+n-1) + &
-                  f4%uu(i_f+1, j_f, iv, i_from+n-1) + &
-                  f4%uu(i_f,   j_f+1, iv, i_from+n-1) + &
-                  f4%uu(i_f+1, j_f+1, iv, i_from+n-1))
-          end do
-       end do
-    end do
-  end subroutine coarsen_from_blocks
-
-  !> Prolong to family of child blocks
-  subroutine prolong_to_blocks(f4, i_from, i_to, iv)
-    !$acc routine seq
-    type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: i_from
-    integer, intent(in)          :: i_to
-    integer, intent(in)          :: iv
-    integer                      :: n, i, j, i_c, j_c, i_f, j_f
-    integer                      :: half_bx(2), ix_offset(2)
-    real(dp)                     :: fine(4)
-
-    half_bx = f4%bx / 2
-
-    !$acc loop
-    do n = 1, 4
-       !$acc loop collapse(2) private(ix_offset, j_c, j_f, i_c, i_f, fine)
-       do j = 1, half_bx(2)
-          do i = 1, half_bx(1)
-             ix_offset = child_offset(:, n) * half_bx
-             j_c = j + ix_offset(2)
-             j_f = 2 * j - 1
-             i_c = i + ix_offset(1)
-             i_f = 2 * i - 1
-
-             call prolong_local_5point(f4%uu(i_c, j_c, iv, i_from), &
-                  [f4%uu(i_c-1, j_c, iv, i_from), f4%uu(i_c+1, j_c, iv, i_from)], &
-                  [f4%uu(i_c, j_c-1, iv, i_from), f4%uu(i_c, j_c+1, iv, i_from)], &
-                  fine)
-
-             f4%uu(i_f,   j_f, iv, i_to+n-1)   = fine(1)
-             f4%uu(i_f+1, j_f, iv, i_to+n-1)   = fine(2)
-             f4%uu(i_f,   j_f+1, iv, i_to+n-1) = fine(3)
-             f4%uu(i_f+1, j_f+1, iv, i_to+n-1) = fine(4)
-          end do
-       end do
-    end do
-  end subroutine prolong_to_blocks
 
   !> Method for prolongation (interpolation) of a coarse block to its children
   subroutine prolong_local_5point(coarse_c, coarse_x, coarse_y, fine)
@@ -2441,7 +2412,7 @@ contains
     integer                              :: n_changed_global
     integer                              :: n_blocks_old, n_blocks_new
     integer(c_int64_t)                   :: gfq_old(0:f4%mpisize)
-    integer                              :: dsize
+    integer                              :: dsize, offset_copy
 
     n_blocks_old = f4%n_blocks
     call pw_partition(f4%pw, n_changed_global, gfq_old)
@@ -2454,14 +2425,14 @@ contains
     if (n_blocks_new + n_blocks_old > f4%max_blocks) &
          error stop "Not enough block memory during partitioning"
 
-    call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new)
+    call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
 
     ! Size of a block
     dsize = product(f4%bx + 2 * f4%n_gc) * f4%n_vars * storage_size(1.0_dp)/8
 
     ! Call p4est routine to transfer the block data
     call pw_partition_transfer(f4%pw, gfq_old, &
-         c_loc(f4%uu(:, :, :, n_blocks_new+1)), c_loc(f4%uu), dsize)
+         c_loc(f4%uu(:, :, :, offset_copy+1)), c_loc(f4%uu), dsize)
 
     call f4_set_quadrants(f4)
   end subroutine f4_partition
