@@ -13,21 +13,31 @@ program test_ref
   n = 0
 
   do n_gc = 1, 3
+     if (f4%mpirank == 0) print *, "Testing uniform grid with n_gc =", n_gc
+     call test_refinement(f4, n_gc, 2, 0, [1e-2_dp, 1e-2_dp], "output/test_unif", n)
+  end do
+
+  n = 0
+
+  do n_gc = 1, 3
      if (f4%mpirank == 0) print *, "Testing with n_gc = ", n_gc
-     call test_refinement(f4, n_gc, [1e-2_dp, 1e-2_dp], "output/test_ref", n)
-     call test_refinement(f4, n_gc, [0.99_dp, 1e-2_dp], "output/test_ref", n)
-     call test_refinement(f4, n_gc, [0.5_dp, 0.5_dp], "output/test_ref", n)
-     call test_refinement(f4, n_gc, [1e-2_dp, 0.99_dp], "output/test_ref", n)
-     call test_refinement(f4, n_gc, [0.99_dp, 0.99_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 1e-2_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 1e-2_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.5_dp, 0.5_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 0.99_dp], "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 0.99_dp], "output/test_ref", n)
   end do
 
   call f4_finalize(f4)
 
 contains
 
-  subroutine test_refinement(f4, n_gc, refine_location, base_name, n_output)
+  subroutine test_refinement(f4, n_gc, min_level, n_refine_steps, &
+       refine_location, base_name, n_output)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_gc
+    integer, intent(in)          :: min_level
+    integer, intent(in)          :: n_refine_steps
     real(dp), intent(in)         :: refine_location(2)
     character(len=*), intent(in) :: base_name
     integer, intent(inout)       :: n_output
@@ -37,9 +47,8 @@ contains
     integer, parameter           :: n_vars              = 2
     character(len=20)            :: var_names(n_vars)   = ['rho', 'phi']
     logical, parameter           :: periodic(2)         = [.false., .false.]
-    integer, parameter           :: min_level           = 3
     integer, parameter           :: max_blocks          = 1000
-    integer                      :: n_refine_steps
+    integer                      :: n
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, periodic, min_level, max_blocks)
@@ -50,9 +59,9 @@ contains
     n_output = n_output + 1
     call f4_write_grid(f4, base_name, n_output)
 
-    do n_refine_steps = 1, 7
+    do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location)
-       call f4_adjust_refinement(f4, .true.)
+       call f4_adjust_refinement(f4, .false.)
        call f4_update_ghostcells(f4, 2, [1, 2])
        call local_average(f4)
 
@@ -118,7 +127,7 @@ contains
   subroutine local_average(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, i, j, iv
-    real(dp)                     :: rr(2), err, max_err, tmp_err, sol
+    real(dp)                     :: rr(2), err, max_err, sol
     real(dp), allocatable        :: tmp(:, :)
     real(dp), parameter          :: max_difference = 1e-15_dp
 
@@ -128,8 +137,7 @@ contains
 
     !$acc parallel loop private(tmp) reduction(max:max_err)
     do n = 1, f4%n_blocks
-       tmp_err = 0
-       !$acc loop collapse(2) private(rr, sol, err) reduction(max:tmp_err)
+       !$acc loop collapse(2) private(rr, sol, err) reduction(max:max_err)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
@@ -140,11 +148,9 @@ contains
                   f4%uu(i, j+1, iv, n))
              sol = rho_init(rr(1), rr(2))
              err = tmp(i, j) - sol
-             tmp_err = max(abs(err), tmp_err)
+             max_err = max(abs(err), max_err)
           end do
        end do
-
-       max_err = max(max_err, tmp_err)
 
        !$acc loop collapse(2)
        do j = 1, f4%bx(2)
