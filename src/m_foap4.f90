@@ -1077,7 +1077,7 @@ contains
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
          iq = f4%gc_srl_to_buf(1, n) + 1
          i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
@@ -1094,7 +1094,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
          iq = f4%gc_srl_to_buf(1, n) + 1
          i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
@@ -1111,7 +1111,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
          iq = f4%gc_srl_to_buf(1, n) + 1
          i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
@@ -1128,7 +1128,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
          iq = f4%gc_srl_to_buf(1, n) + 1
          i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
@@ -1148,7 +1148,7 @@ contains
       ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
 
       face = 0
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
          iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
          i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
@@ -1169,7 +1169,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
          iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
          i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
@@ -1190,7 +1190,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
          iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
          i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
@@ -1211,7 +1211,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
          iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
          i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
@@ -1234,6 +1234,8 @@ contains
       f4%recv_offset(:) = f4%gc_recv_offset * n_vars
       f4%send_offset(:) = f4%gc_send_offset * n_vars
     end associate
+
+    !$acc wait
 
   end subroutine f4_fill_ghostcell_buffers
 
@@ -1259,7 +1261,7 @@ contains
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      !$acc parallel loop private(iq, offset, i_buf0)
+      !$acc parallel loop private(iq, offset, i_buf0) async
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1304,7 +1306,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, offset, i_buf0)
+      !$acc parallel loop private(iq, offset, i_buf0) async
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1348,7 +1350,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, offset, i_buf0)
+      !$acc parallel loop private(iq, offset, i_buf0) async
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1393,7 +1395,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, offset, i_buf0)
+      !$acc parallel loop private(iq, offset, i_buf0) async
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1441,6 +1443,8 @@ contains
       f4%send_offset(:) = f4%gc_send_offset_c2f * n_vars
     end associate
 
+    !$acc wait
+
   end subroutine f4_fill_ghostcell_buffers_c2f
 
   !> Exchange the receive and send buffers according to the specified offsets
@@ -1484,38 +1488,18 @@ contains
 
   end subroutine f4_exchange_buffers
 
-  !> Update ghost cells for selected variables
-  subroutine f4_update_ghostcells(f4, n_vars, i_vars)
+  !> Fill ghost cells at the same refinement level from the buffer
+  subroutine handle_gc_srl_from_buf(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer                      :: n, i, j, iq, jq, face
-    integer                      :: i_buf, i_buf0, iv, ivar, i_f, j_f, i_c, j_c
-    integer                      :: half_bx(2), half_n_gc, offset
-    real(dp)                     :: fine(4), t0, t1
-    logical                      :: odd_n_gc
-
-    t0 = MPI_Wtime()
-    call f4_update_ghostcell_pattern(f4)
-    t1 = MPI_Wtime()
-    f4%wtime_update_gc_pattern = f4%wtime_update_gc_pattern + t1 - t0
-
-    call f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
-    t0 = MPI_Wtime()
-    f4%wtime_gc_fill_buffers = f4%wtime_gc_fill_buffers + t0 - t1
-
-    call f4_exchange_buffers(f4)
-    t1 = MPI_Wtime()
-    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t1 - t0
-
-    half_bx   = f4%bx/2
-    half_n_gc = f4%n_gc/2 ! Round down
-    odd_n_gc  = (iand(f4%n_gc, 1) == 1)
+    integer                      :: n, i, j, iq, face
+    integer                      :: i_buf, i_buf0, iv, ivar
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_srl_from_buf_iface(face), f4%gc_srl_from_buf_iface(face+1)-1
          iq = f4%gc_srl_from_buf(1, n) + 1
          i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
@@ -1532,7 +1516,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_srl_from_buf_iface(face), f4%gc_srl_from_buf_iface(face+1)-1
          iq = f4%gc_srl_from_buf(1, n) + 1
          i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
@@ -1550,7 +1534,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_srl_from_buf_iface(face), f4%gc_srl_from_buf_iface(face+1)-1
          iq = f4%gc_srl_from_buf(1, n) + 1
          i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
@@ -1568,7 +1552,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_srl_from_buf_iface(face), f4%gc_srl_from_buf_iface(face+1)-1
          iq = f4%gc_srl_from_buf(1, n) + 1
          i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
@@ -1584,10 +1568,25 @@ contains
             end do
          end do
       end do
+    end associate
 
-      ! Local fine-to-coarse refinement boundaries, fill coarse side
+  end subroutine handle_gc_srl_from_buf
+
+  !> Fill coarse side of local fine-to-coarse refinement boundaries
+  subroutine handle_gc_f2c_local_coarse(f4, n_vars, i_vars)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer                      :: n, i, j, iq, jq, face
+    integer                      :: iv, ivar, i_f, j_f
+    integer                      :: half_bx(2), offset
+
+    half_bx = f4%bx/2
+
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
+
       face = 0
-      !$acc parallel loop private(iq, jq, offset)
+      !$acc parallel loop private(iq, jq, offset) async
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1608,7 +1607,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, jq, offset)
+      !$acc parallel loop private(iq, jq, offset) async
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1629,7 +1628,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, jq, offset)
+      !$acc parallel loop private(iq, jq, offset) async
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1650,7 +1649,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, jq, offset)
+      !$acc parallel loop private(iq, jq, offset) async
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1669,10 +1668,25 @@ contains
             end do
          end do
       end do
+    end associate
 
-      ! Coarse-to-fine, update coarse side from buffers
+  end subroutine handle_gc_f2c_local_coarse
+
+  !> Update coarse side from buffers at coarse-to-fine buffer
+  subroutine handle_gc_c2f_from_buf(f4, n_vars, i_vars)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer                      :: n, i, j, iq, face
+    integer                      :: i_buf, i_buf0, iv, ivar
+    integer                      :: half_bx(2), offset
+
+    half_bx = f4%bx/2
+
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
+
       face = 0
-      !$acc parallel loop private(iq, offset, i_buf0)
+      !$acc parallel loop private(iq, offset, i_buf0) async
       do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
          iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
          offset = f4%gc_c2f_from_buf(2, n)     ! Offset
@@ -1692,7 +1706,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, offset, i_buf0)
+      !$acc parallel loop private(iq, offset, i_buf0) async
       do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
          iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
          offset = f4%gc_c2f_from_buf(2, n)     ! Offset
@@ -1712,7 +1726,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, offset, i_buf0)
+      !$acc parallel loop private(iq, offset, i_buf0) async
       do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
          iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
          offset = f4%gc_c2f_from_buf(2, n)     ! Offset
@@ -1732,7 +1746,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, offset, i_buf0)
+      !$acc parallel loop private(iq, offset, i_buf0) async
       do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
          iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
          offset = f4%gc_c2f_from_buf(2, n)     ! Offset
@@ -1750,11 +1764,22 @@ contains
             end do
          end do
       end do
+    end associate
 
-      ! Local boundaries at the same refinement level
+  end subroutine handle_gc_c2f_from_buf
+
+  !> Fill local boundaries at the same refinement level
+  subroutine handle_gc_srl_local(f4, n_vars, i_vars)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer                      :: n, i, j, iq, jq, face
+    integer                      :: iv, ivar
+
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
 
       face = 0
-      !$acc parallel loop private(iq, jq)
+      !$acc parallel loop private(iq, jq) async
       do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
          iq   = f4%gc_srl_local(1, n) + 1
          jq   = f4%gc_srl_local(2, n) + 1
@@ -1772,7 +1797,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, jq)
+      !$acc parallel loop private(iq, jq) async
       do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
          iq   = f4%gc_srl_local(1, n) + 1
          jq   = f4%gc_srl_local(2, n) + 1
@@ -1790,7 +1815,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, jq)
+      !$acc parallel loop private(iq, jq) async
       do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
          iq   = f4%gc_srl_local(1, n) + 1
          jq   = f4%gc_srl_local(2, n) + 1
@@ -1808,7 +1833,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, jq)
+      !$acc parallel loop private(iq, jq) async
       do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
          iq   = f4%gc_srl_local(1, n) + 1
          jq   = f4%gc_srl_local(2, n) + 1
@@ -1824,10 +1849,22 @@ contains
             end do
          end do
       end do
+    end associate
 
-      ! Physical boundaries
+  end subroutine handle_gc_srl_local
+
+  !> Fill physical boundarise
+  subroutine handle_gc_phys(f4, n_vars, i_vars)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer                      :: n, i, j, iq, face
+    integer                      :: iv, ivar
+
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
+
       face = 0
-      !$acc parallel loop private(iq)
+      !$acc parallel loop private(iq) async
       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
          iq = f4%gc_phys(n) + 1
 
@@ -1844,7 +1881,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq)
+      !$acc parallel loop private(iq) async
       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
          iq = f4%gc_phys(n) + 1
 
@@ -1861,7 +1898,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq)
+      !$acc parallel loop private(iq) async
       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
          iq = f4%gc_phys(n) + 1
 
@@ -1878,7 +1915,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq)
+      !$acc parallel loop private(iq) async
       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
          iq = f4%gc_phys(n) + 1
 
@@ -1893,21 +1930,29 @@ contains
             end do
          end do
       end do
+    end associate
 
-      ! Do coarse-to-fine refinement boundaries last, so that ghost cells
-      ! required for interpolation have been filled
-      t0 = MPI_Wtime()
-      f4%wtime_gc_fill = f4%wtime_gc_fill + t0 - t1
-      call f4_fill_ghostcell_buffers_c2f(f4, n_vars, i_vars)
-      t1 = MPI_Wtime()
-      f4%wtime_gc_fill_buffers_c2f = f4%wtime_gc_fill_buffers_c2f + t1 - t0
-      call f4_exchange_buffers(f4)
-      t0 = MPI_Wtime()
-      f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
+  end subroutine handle_gc_phys
 
-      ! Local coarse-to-fine boundaries, fill fine side
+  !> Fill fine side of local coarse-to-fine boundaries
+  subroutine handle_gc_f2c_local_fine(f4, n_vars, i_vars)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer                      :: n, i, j, iq, jq, face
+    integer                      :: iv, ivar, i_f, j_f, i_c, j_c
+    integer                      :: half_bx(2), half_n_gc, offset
+    real(dp)                     :: fine(4)
+    logical                      :: odd_n_gc
+
+    half_bx   = f4%bx/2
+    half_n_gc = f4%n_gc/2 ! Round down
+    odd_n_gc  = (iand(f4%n_gc, 1) == 1)
+
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
+
       face = 0
-      !$acc parallel loop private(iq, jq, offset)
+      !$acc parallel loop private(iq, jq, offset) async
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1955,7 +2000,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, jq, offset)
+      !$acc parallel loop private(iq, jq, offset) async
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -2002,7 +2047,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, jq, offset)
+      !$acc parallel loop private(iq, jq, offset) async
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -2049,7 +2094,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, jq, offset)
+      !$acc parallel loop private(iq, jq, offset) async
       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
          iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
          jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -2094,11 +2139,27 @@ contains
             end do
          end if
       end do
+    end associate
 
-      ! Nonlocal coarse-to-fine boundaries, fill fine side
+  end subroutine handle_gc_f2c_local_fine
 
+  !> Fill fine side of nonlocal coarse-to-fine boundaries
+  subroutine handle_gc_f2c_from_buf(f4, n_vars, i_vars)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer                      :: n, i, j, iq, face
+    integer                      :: i_buf, i_buf0, iv, ivar, i_f, j_f
+    integer                      :: half_bx(2), half_n_gc
+    logical                      :: odd_n_gc
+
+    half_bx   = f4%bx/2
+    half_n_gc = f4%n_gc/2 ! Round down
+    odd_n_gc  = (iand(f4%n_gc, 1) == 1)
+
+    associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
       face = 0
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
          iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
          i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2139,7 +2200,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
          iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
          i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2181,7 +2242,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
          iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
          i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2222,7 +2283,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, i_buf0)
+      !$acc parallel loop private(iq, i_buf0) async
       do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
          iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
          i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2263,6 +2324,51 @@ contains
       end do
     end associate
 
+  end subroutine handle_gc_f2c_from_buf
+
+  !> Update ghost cells for selected variables
+  subroutine f4_update_ghostcells(f4, n_vars, i_vars)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    real(dp)                     :: t0, t1
+
+    t0 = MPI_Wtime()
+    call f4_update_ghostcell_pattern(f4)
+    t1 = MPI_Wtime()
+    f4%wtime_update_gc_pattern = f4%wtime_update_gc_pattern + t1 - t0
+
+    call f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
+    t0 = MPI_Wtime()
+    f4%wtime_gc_fill_buffers = f4%wtime_gc_fill_buffers + t0 - t1
+
+    call f4_exchange_buffers(f4)
+    t1 = MPI_Wtime()
+    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t1 - t0
+
+    call handle_gc_srl_local(f4, n_vars, i_vars)
+    call handle_gc_f2c_local_coarse(f4, n_vars, i_vars)
+    call handle_gc_srl_from_buf(f4, n_vars, i_vars)
+    call handle_gc_c2f_from_buf(f4, n_vars, i_vars)
+    call handle_gc_phys(f4, n_vars, i_vars)
+
+    !$acc wait
+    t0 = MPI_Wtime()
+    f4%wtime_gc_fill = f4%wtime_gc_fill + t0 - t1
+
+    ! Do coarse-to-fine refinement boundaries last, so that ghost cells
+    ! required for interpolation have been filled
+    call f4_fill_ghostcell_buffers_c2f(f4, n_vars, i_vars)
+    t1 = MPI_Wtime()
+    f4%wtime_gc_fill_buffers_c2f = f4%wtime_gc_fill_buffers_c2f + t1 - t0
+    call f4_exchange_buffers(f4)
+    t0 = MPI_Wtime()
+    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
+
+    call handle_gc_f2c_local_fine(f4, n_vars, i_vars)
+    call handle_gc_f2c_from_buf(f4, n_vars, i_vars)
+
+    !$acc wait
     t1 = MPI_Wtime()
     f4%wtime_gc_fill_c2f = f4%wtime_gc_fill_c2f + t1 - t0
 
@@ -2337,7 +2443,7 @@ contains
 
     ! Copy on device
 
-    !$acc parallel loop private(i_from, i_to)
+    !$acc parallel loop private(i_from, i_to) async
     do n = 1, i_srl
        i_from = srl(1, n)
        i_to = srl(2, n)
@@ -2354,7 +2460,7 @@ contains
 
     ! Refine on device
 
-    !$acc parallel loop private(i_from, i_to)
+    !$acc parallel loop private(i_from, i_to) async
     do n = 1, i_refine
        i_from = refine(1, n)
        i_to = refine(2, n)
@@ -2388,7 +2494,7 @@ contains
 
     ! Coarsen on device
 
-    !$acc parallel loop private(i_from, i_to)
+    !$acc parallel loop private(i_from, i_to) async
     do n = 1, i_coarsen
        i_from = coarsen(1, n)
        i_to = coarsen(2, n)
@@ -2414,6 +2520,7 @@ contains
        end do
     end do
 
+    !$acc wait
     !$acc exit data delete(i_srl, srl, i_refine, refine, &
     !$acc &i_coarsen, coarsen, half_bx)
 

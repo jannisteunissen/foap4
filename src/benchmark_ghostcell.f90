@@ -14,6 +14,7 @@ program benchmark_gc
   call benchmark_ghostcell(f4, 10000, [1e-2_dp, 1e-2_dp], &
        "output/benchmark_gc", n_output)
 
+  if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains
