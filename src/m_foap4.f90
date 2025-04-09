@@ -1206,8 +1206,8 @@ contains
                   j_c = j + offset * half_bx(2)
                   i_c = i
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                       f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
+                       f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
                   i_buf = i_buf0 + 4 * (((iv - 1) * half_bx(2) + (j - 1)) * half_n_gc + i - 1)
                   f4%send_buffer(i_buf+1:i_buf+4) = fine
@@ -1225,8 +1225,8 @@ contains
                   i_c = 1 + half_n_gc
                   j_c = j + offset * half_bx(2)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                       f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
+                       f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
                   i_buf = i_buf0 + 2 * ((iv - 1) * half_bx(2) + (j - 1))
                   f4%send_buffer(i_buf+1) = fine(1)
@@ -1251,8 +1251,8 @@ contains
                   j_c = j + offset * half_bx(2)
                   i_c = bx(1) - half_n_gc + i
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                       f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
+                       f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
                   i_buf = i_buf0 + 4 * (((iv - 1) * half_bx(2) + (j - 1)) * half_n_gc + i - 1)
                   f4%send_buffer(i_buf+1:i_buf+4) = fine
                end do
@@ -1269,8 +1269,8 @@ contains
                   i_c = bx(1) - half_n_gc
                   j_c = j + offset * half_bx(2)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                       f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
+                       f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
                   i_buf = i_buf0 + 2 * ((iv - 1) * half_bx(2) + (j - 1))
                   f4%send_buffer(i_buf+1) = fine(2)
@@ -1295,8 +1295,8 @@ contains
                   j_c = j
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                       f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
+                       f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
                   i_buf = i_buf0 + 4 * (((iv - 1) * half_n_gc + (j - 1)) * half_bx(1) + i - 1)
                   f4%send_buffer(i_buf+1:i_buf+4) = fine
@@ -1314,8 +1314,8 @@ contains
                   j_c = 1 + half_n_gc
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                       f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
+                       f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
                   i_buf = i_buf0 + 2 * ((iv - 1) * half_bx(1) + (i - 1))
                   f4%send_buffer(i_buf+1) = fine(1)
@@ -1340,8 +1340,8 @@ contains
                   j_c = bx(2) - half_n_gc + j
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                       f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
+                       f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
                   i_buf = i_buf0 + 4 * (((iv - 1) * half_n_gc + (j - 1)) * half_bx(1) + i - 1)
                   f4%send_buffer(i_buf+1:i_buf+4) = fine
@@ -1359,8 +1359,8 @@ contains
                   j_c = bx(2) - half_n_gc
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, iq), &
-                       [f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq)], &
-                       [f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq)], fine)
+                       f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
+                       f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
                   i_buf = i_buf0 + 2 * ((iv - 1) * half_bx(1) + (i - 1))
                   f4%send_buffer(i_buf+1) = fine(3)
@@ -1841,8 +1841,8 @@ contains
                   i_c = bx(1) - half_n_gc + i
                   i_f = -(2 * half_n_gc) + 2*i - 1
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                       f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                       f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                   f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
                   f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
                   f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
@@ -1863,8 +1863,8 @@ contains
                   j_c = j + offset * half_bx(2)
 
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                       f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                       f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                   f4%uu(i_f, j_f, ivar, iq) = fine(2)
                   f4%uu(i_f, j_f+1, ivar, iq) = fine(4)
                end do
@@ -1889,8 +1889,8 @@ contains
                   i_c = i
                   i_f = bx(1) + 2*i - 1
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                       f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                       f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                   f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
                   f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
                   f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
@@ -1910,8 +1910,8 @@ contains
                   j_f = 2 * j - 1
                   j_c = j + offset * half_bx(2)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                       f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                       f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                   f4%uu(i_f, j_f, ivar, iq) = fine(1)
                   f4%uu(i_f, j_f+1, ivar, iq) = fine(3)
                end do
@@ -1936,8 +1936,8 @@ contains
                   i_f = 2 * i - 1
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                       f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                       f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                   f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
                   f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
                   f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
@@ -1957,8 +1957,8 @@ contains
                   i_f = 2 * i - 1
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                       f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                       f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                   f4%uu(i_f, j_f, ivar, iq) = fine(3)
                   f4%uu(i_f+1, j_f, ivar, iq) = fine(4)
                end do
@@ -1983,8 +1983,8 @@ contains
                   i_f = 2 * i - 1
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                       f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                       f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                   f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
                   f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
                   f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
@@ -2004,8 +2004,8 @@ contains
                   i_f = 2 * i - 1
                   i_c = i + offset * half_bx(1)
                   call prolong_local_5point(f4%uu(i_c, j_c, iv, jq), &
-                       [f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq)], &
-                       [f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq)], fine)
+                       f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                       f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                   f4%uu(i_f, j_f, ivar, iq) = fine(1)
                   f4%uu(i_f+1, j_f, ivar, iq) = fine(2)
                end do
@@ -2205,9 +2205,6 @@ contains
 
     n_blocks_new = pw_get_num_local_quadrants(f4%pw)
 
-    if (n_blocks_new + f4%n_blocks > f4%max_blocks) &
-         error stop "Not enough block memory during refinement"
-
     call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
     call f4_set_quadrants(f4)
 
@@ -2284,10 +2281,10 @@ contains
                    i_f = 2 * i - 1
 
                    call prolong_local_5point(f4%uu(i_c, j_c, iv, i_from), &
-                        [f4%uu(i_c-1, j_c, iv, i_from), &
-                        f4%uu(i_c+1, j_c, iv, i_from)], &
-                        [f4%uu(i_c, j_c-1, iv, i_from), &
-                        f4%uu(i_c, j_c+1, iv, i_from)], &
+                        f4%uu(i_c-1, j_c, iv, i_from), &
+                        f4%uu(i_c+1, j_c, iv, i_from), &
+                        f4%uu(i_c, j_c-1, iv, i_from), &
+                        f4%uu(i_c, j_c+1, iv, i_from), &
                         fine)
 
                    f4%uu(i_f,   j_f, iv, i_to+n-1)   = fine(1)
@@ -2344,6 +2341,9 @@ contains
 
     offset_copy = max(n_blocks_old, n_blocks_new)
 
+    if (offset_copy + n_blocks_old > f4%max_blocks) &
+         error stop "Not enough block memory for copying"
+
     ! Copy block metadata on host
     do n = 1, n_blocks_old
        f4%block_origin(:, offset_copy+n) = f4%block_origin(:, n)
@@ -2365,16 +2365,18 @@ contains
   end subroutine copy_blocks_to_end
 
   !> Method for prolongation (interpolation) of a coarse block to its children
-  subroutine prolong_local_5point(coarse_c, coarse_x, coarse_y, fine)
-    real(dp), intent(in)  :: coarse_c    ! Center value
-    real(dp), intent(in)  :: coarse_x(2) ! x-neighbors (-1, +1)
-    real(dp), intent(in)  :: coarse_y(2) ! y-neighbors (-1, +1)
+  subroutine prolong_local_5point(center, xlo, xhi, ylo, yhi, fine)
+    real(dp), intent(in)  :: center ! Center value
+    real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
+    real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
     real(dp), intent(out) :: fine(4)
     real(dp)              :: f(0:2), slopes_a(2), slopes_b(2)
 
-    f(0) = coarse_c          ! Identical to coarse_y(2)
-    slopes_a = [coarse_c - coarse_x(1), coarse_c - coarse_y(1)]
-    slopes_b = [coarse_x(2) - coarse_c, coarse_y(2) - coarse_c]
+    f(0) = center          ! Identical to coarse_y(2)
+    slopes_a(1) = center - xlo
+    slopes_a(2) = center - ylo
+    slopes_b(1) = xhi - center
+    slopes_b(2) = yhi - center
     f(1:2) = 0.25_dp * limiter_minmod(slopes_a, slopes_b)
 
     fine(1) = f(0) - f(1) - f(2)
@@ -2421,9 +2423,6 @@ contains
     if (n_changed_global == 0) return
 
     n_blocks_new = pw_get_num_local_quadrants(f4%pw)
-
-    if (n_blocks_new + n_blocks_old > f4%max_blocks) &
-         error stop "Not enough block memory during partitioning"
 
     call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
 
