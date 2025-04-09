@@ -363,7 +363,8 @@ void pw_adjust_refinement(pw_state_t *pw, const int n_quadrants,
 }
 
 /* Re-partition the quadrants over the MPI ranks */
-void pw_partition(pw_state_t *pw, int *n_changed, int64_t *gfq_old) {
+void pw_partition(pw_state_t *pw, int *n_changed, int64_t *gfq_old,
+                  int64_t *gfq_new) {
   /* Ensures siblings are at the same MPI rank */
   const int allow_for_coarsening = 1;
 
@@ -372,6 +373,10 @@ void pw_partition(pw_state_t *pw, int *n_changed, int64_t *gfq_old) {
   }
 
   *n_changed = p4est_partition_ext (pw->p4est, allow_for_coarsening, NULL);
+
+  for (int rank = 0; rank < pw->p4est->mpisize+1; rank++) {
+    gfq_new[rank] = pw->p4est->global_first_quadrant[rank];
+  }
 }
 
 /* Transfer user data after partitioning */

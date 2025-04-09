@@ -242,11 +242,12 @@ module m_foap4
      end subroutine pw_adjust_refinement
 
      !> Partition the blocks over the MPI ranks
-     subroutine pw_partition(pw, n_changed_global, gfq_old) bind(c)
+     subroutine pw_partition(pw, n_changed_global, gfq_old, gfq_new) bind(c)
        import c_int, c_int64_t, c_ptr
        type(c_ptr), intent(in), value    :: pw
        integer(c_int), intent(out)       :: n_changed_global
        integer(c_int64_t), intent(out)   :: gfq_old(*)
+       integer(c_int64_t), intent(out)   :: gfq_new(*)
      end subroutine pw_partition
 
      !> Transfer block data between MPI ranks
@@ -312,8 +313,8 @@ contains
     call pw_initialize(f4%pw, f4%mpicomm%MPI_VAL, log_level)
 
     ! Set MPI rank and size
-    call MPI_COMM_RANK(f4%mpicomm, f4%mpirank, ierr)
-    call MPI_COMM_SIZE(f4%mpicomm, f4%mpisize, ierr)
+    call MPI_Comm_rank(f4%mpicomm, f4%mpirank, ierr)
+    call MPI_Comm_size(f4%mpicomm, f4%mpisize, ierr)
 
   end subroutine f4_initialize
 
@@ -1396,7 +1397,7 @@ contains
 
        if (ihi >= ilo) then
           n_send = n_send + 1
-          call mpi_isend(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
+          call MPI_Isend(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
                MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, &
                send_req(n_send), ierr)
        end if
@@ -1406,14 +1407,14 @@ contains
 
        if (ihi >= ilo) then
           n_recv = n_recv + 1
-          call mpi_irecv(f4%recv_buffer(ilo:ihi), ihi-ilo+1, MPI_DOUBLE_PRECISION, &
-               rank, 0, f4%mpicomm, recv_req(n_recv), ierr)
+          call MPI_Irecv(f4%recv_buffer(ilo:ihi), ihi-ilo+1, MPI_DOUBLE_PRECISION, &
+               rank, tag, f4%mpicomm, recv_req(n_recv), ierr)
        end if
     end do
     !$acc end host_data
 
-    call mpi_waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
-    call mpi_waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
+    call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
+    call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
 
   end subroutine f4_exchange_buffers
 
@@ -2187,12 +2188,12 @@ contains
   subroutine f4_adjust_refinement(f4, partition)
     type(foap4_t), intent(inout) :: f4
     logical, intent(in)          :: partition
-    integer                      :: n_blocks_new, n_blocks_old, k, iv
+    integer                      :: n_blocks_new, n_blocks_old, iv
     integer                      :: has_changed, i_srl, i_refine, i_coarsen
     integer, allocatable         :: srl(:, :), refine(:, :), coarsen(:, :)
-    integer                      :: n, i, j, i_c, j_c, i_f, j_f
+    integer                      :: n, i, j, i_c, j_c, i_f, j_f, n_old
     integer                      :: half_bx(2), offset_copy
-    integer                      :: i_from, i_to
+    integer                      :: i_from, i_to, i_ch
     real(dp)                     :: fine(4)
 
     half_bx = f4%bx / 2
@@ -2213,34 +2214,34 @@ contains
     i_srl     = 0
     i_refine  = 0
     i_coarsen = 0
-    k         = offset_copy + 1
+    n_old     = offset_copy + 1
     n         = 1
     do while (n <= n_blocks_new)
-       select case (f4%block_level(n) - f4%block_level(k))
+       select case (f4%block_level(n) - f4%block_level(n_old))
        case (0)
           ! Same refinement level
           i_srl = i_srl + 1
-          srl(:, i_srl) = [k, n]
+          srl(:, i_srl) = [n_old, n]
           n = n + 1
-          k = k + 1
+          n_old = n_old + 1
        case (1)
           ! Block has been refined
           i_refine = i_refine + 1
-          refine(:, i_refine) = [k, n]
+          refine(:, i_refine) = [n_old, n]
           n = n + 4
-          k = k + 1
+          n_old = n_old + 1
        case (-1)
           ! Block has been coarsened
           i_coarsen = i_coarsen + 1
-          coarsen(:, i_coarsen) = [k, n]
+          coarsen(:, i_coarsen) = [n_old, n]
           n = n + 1
-          k = k + 4
+          n_old = n_old + 4
        case default
           error stop "Refinement: difference in levels > 1"
        end select
     end do
 
-    if (k /= offset_copy + n_blocks_old + 1) &
+    if (n_old /= offset_copy + n_blocks_old + 1) &
          error stop "Refinement: loops did not end simultaneously"
 
     !$acc enter data copyin(i_srl, srl, i_refine, refine, &
@@ -2266,18 +2267,18 @@ contains
     ! Refine on device
 
     !$acc parallel loop private(i_from, i_to)
-    do k = 1, i_refine
-       i_from = refine(1, k)
-       i_to = refine(2, k)
+    do n = 1, i_refine
+       i_from = refine(1, n)
+       i_to = refine(2, n)
 
        !$acc loop collapse(4) private(j_c, j_f, i_c, i_f, fine)
-       do n = 1, 4
+       do i_ch = 1, 4
           do iv = 1, f4%n_vars
              do j = 1, half_bx(2)
                 do i = 1, half_bx(1)
-                   j_c = j + child_offset(2, n) * half_bx(2)
+                   j_c = j + child_offset(2, i_ch) * half_bx(2)
                    j_f = 2 * j - 1
-                   i_c = i + child_offset(1, n) * half_bx(1)
+                   i_c = i + child_offset(1, i_ch) * half_bx(1)
                    i_f = 2 * i - 1
 
                    call prolong_local_5point(f4%uu(i_c, j_c, iv, i_from), &
@@ -2287,10 +2288,10 @@ contains
                         f4%uu(i_c, j_c+1, iv, i_from), &
                         fine)
 
-                   f4%uu(i_f,   j_f, iv, i_to+n-1)   = fine(1)
-                   f4%uu(i_f+1, j_f, iv, i_to+n-1)   = fine(2)
-                   f4%uu(i_f,   j_f+1, iv, i_to+n-1) = fine(3)
-                   f4%uu(i_f+1, j_f+1, iv, i_to+n-1) = fine(4)
+                   f4%uu(i_f,   j_f, iv, i_to+i_ch-1)   = fine(1)
+                   f4%uu(i_f+1, j_f, iv, i_to+i_ch-1)   = fine(2)
+                   f4%uu(i_f,   j_f+1, iv, i_to+i_ch-1) = fine(3)
+                   f4%uu(i_f+1, j_f+1, iv, i_to+i_ch-1) = fine(4)
                 end do
              end do
           end do
@@ -2300,25 +2301,25 @@ contains
     ! Coarsen on device
 
     !$acc parallel loop private(i_from, i_to)
-    do k = 1, i_coarsen
-       i_from = coarsen(1, k)
-       i_to = coarsen(2, k)
+    do n = 1, i_coarsen
+       i_from = coarsen(1, n)
+       i_to = coarsen(2, n)
 
        !$acc loop collapse(4) private(j_c, j_f, i_c, i_f)
-       do n = 1, 4
+       do i_ch = 1, 4
           do iv = 1, f4%n_vars
              do j = 1, half_bx(2)
                 do i = 1, half_bx(1)
-                   j_c = j + child_offset(2, n) * half_bx(2)
+                   j_c = j + child_offset(2, i_ch) * half_bx(2)
                    j_f = 2 * j - 1
-                   i_c = i + child_offset(1, n) * half_bx(1)
+                   i_c = i + child_offset(1, i_ch) * half_bx(1)
                    i_f = 2 * i - 1
 
                    f4%uu(i_c, j_c, iv, i_to) = 0.25_dp * (&
-                        f4%uu(i_f,   j_f, iv, i_from+n-1) + &
-                        f4%uu(i_f+1, j_f, iv, i_from+n-1) + &
-                        f4%uu(i_f,   j_f+1, iv, i_from+n-1) + &
-                        f4%uu(i_f+1, j_f+1, iv, i_from+n-1))
+                        f4%uu(i_f,   j_f, iv, i_from+i_ch-1) + &
+                        f4%uu(i_f+1, j_f, iv, i_from+i_ch-1) + &
+                        f4%uu(i_f,   j_f+1, iv, i_from+i_ch-1) + &
+                        f4%uu(i_f+1, j_f+1, iv, i_from+i_ch-1))
                 end do
              end do
           end do
@@ -2410,30 +2411,154 @@ contains
 
   !> Partition the blocks over the MPI ranks
   subroutine f4_partition(f4)
-    type(foap4_t), intent(inout), target :: f4
-    integer                              :: n_changed_global
-    integer                              :: n_blocks_old, n_blocks_new
-    integer(c_int64_t)                   :: gfq_old(0:f4%mpisize)
-    integer                              :: dsize, offset_copy
+    type(foap4_t), intent(inout)   :: f4
+    integer                        :: n_changed_global
+    integer                        :: n_blocks_old, n_blocks_new
+    integer(c_int64_t)             :: gfq_old(0:f4%mpisize)
+    integer(c_int64_t)             :: gfq_new(0:f4%mpisize)
+    integer                        :: dsize, offset_copy, ierr
+    integer, parameter             :: tag = 0
+    integer                        :: gfq_src(0:f4%mpisize)
+    integer                        :: gfq_dest(0:f4%mpisize)
+    integer                        :: dest_begin, dest_end
+    integer                        :: src_begin, src_end
+    integer                        :: gend, gbegin, n_blocks_transfer
+    integer                        :: first_sender, last_sender
+    integer                        :: first_receiver, last_receiver
+    integer                        :: num_senders, num_receivers
+    integer                        :: n_recv, n_send
+    integer                        :: rank, block_ix
+    type(MPI_Request), allocatable :: send_req(:), recv_req(:)
 
     n_blocks_old = f4%n_blocks
-    call pw_partition(f4%pw, n_changed_global, gfq_old)
+    call pw_partition(f4%pw, n_changed_global, gfq_old, gfq_new)
 
     ! No need to do anything if the global number of blocks shipped is zero
     if (n_changed_global == 0) return
 
-    n_blocks_new = pw_get_num_local_quadrants(f4%pw)
+    ! Convert to one-based indexing and to default integer type
+    gfq_src(:) = int(gfq_old(:) + 1)
+    gfq_dest(:) = int(gfq_new(:) + 1)
 
+    ! Copy blocks
+    n_blocks_new = pw_get_num_local_quadrants(f4%pw)
     call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
 
     ! Size of a block
-    dsize = product(f4%bx + 2 * f4%n_gc) * f4%n_vars * storage_size(1.0_dp)/8
+    dsize = product(f4%bx + 2*f4%n_gc) * f4%n_vars
 
-    ! Call p4est routine to transfer the block data
-    call pw_partition_transfer(f4%pw, gfq_old, &
-         c_loc(f4%uu(:, :, :, offset_copy+1)), c_loc(f4%uu), dsize)
+    ! First and last block this rank owns after partitioning
+    dest_begin = gfq_dest(f4%mpirank)
+    dest_end   = gfq_dest(f4%mpirank + 1)
+
+    ! First and last block this rank owned before partitioning
+    src_begin = gfq_src(f4%mpirank)
+    src_end   = gfq_src(f4%mpirank + 1)
+
+    n_recv = 0
+    n_send = 0
+
+    if (dest_end > dest_begin) then
+       ! Find index of first/last sender, -1 to get zero-based index
+       first_sender = find_bracket(f4%mpisize+1, gfq_src, dest_begin) - 1
+       last_sender = find_bracket(f4%mpisize+1, gfq_src, dest_end-1) - 1
+
+       num_senders = last_sender - first_sender + 1
+       allocate(recv_req(num_senders))
+
+       gend = dest_begin
+       block_ix = 1
+
+       !$acc host_data use_device(f4%uu)
+       do rank = first_sender, last_sender
+          gbegin = gend
+          gend = min(dest_end, gfq_src(rank + 1))
+          n_blocks_transfer = gend - gbegin
+
+          if (n_blocks_transfer > 0) then
+             n_recv = n_recv + 1
+             call MPI_Irecv (f4%uu(:, :, :, block_ix), dsize*n_blocks_transfer, &
+                  MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, recv_req(n_recv), ierr)
+             block_ix = block_ix + n_blocks_transfer
+          end if
+       end do
+       !$acc end host_data
+    end if
+
+    if (src_end > src_begin) then
+       ! Find index of first/last receiver, -1 to get zero-based index
+       first_receiver = find_bracket(f4%mpisize+1, gfq_dest, src_begin) - 1
+       last_receiver = find_bracket(f4%mpisize+1, gfq_dest, src_end-1) - 1
+
+       num_receivers = last_receiver - first_receiver + 1
+       allocate(send_req(num_receivers))
+
+       gend = src_begin
+       block_ix = offset_copy + 1
+
+       !$acc host_data use_device(f4%uu)
+       do rank = first_receiver, last_receiver
+          gbegin = gend
+          gend = min(src_end, gfq_dest(rank + 1))
+          n_blocks_transfer = gend - gbegin
+
+          if (n_blocks_transfer > 0) then
+             n_send = n_send + 1
+             call MPI_Isend (f4%uu(:, :, :, block_ix), dsize*n_blocks_transfer, &
+                  MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, send_req(n_send), ierr)
+             block_ix = block_ix + n_blocks_transfer
+          end if
+       end do
+       !$acc end host_data
+    end if
+
+    call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
+    call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
 
     call f4_set_quadrants(f4)
   end subroutine f4_partition
+
+  !> Performs a binary search for the index ix such that:
+  !> array(ix) <= key < array(ix+1)
+  !>
+  !> Returns:
+  !>   ix    : the bracketing index (1 <= ix < n-1)
+  !>   ix = 0  if key <  array(1)
+  !>   ix = -1 if key >  array(n)
+  !>   ix = -2 if no valid bracketing index was found (shouldn't happen if key in bounds)
+  pure function find_bracket(n, array, key) result(ix)
+    integer, intent(in) :: n
+    integer, intent(in) :: array(n)
+    integer, intent(in) :: key
+    integer             :: ix
+    integer             :: i_min, i_max, i_middle
+
+    if (n < 2) error stop "n < 2"
+
+    if (key < array(1)) then
+       error stop "key < array(1)"
+    else if (key > array(n)) then
+       error stop "key > array(n)"
+    end if
+
+    ! Binary search
+    i_min = 1
+    i_max = n - 1
+
+    do while (i_min <= i_max)
+       i_middle = i_min + ishft(i_max - i_min, -1)  ! midpoint = (i_min + i_max) / 2
+
+       if (key < array(i_middle)) then
+          i_max = i_middle - 1
+       else if (key >= array(i_middle + 1)) then
+          i_min = i_middle + 1
+       else
+          ix = i_middle
+          return
+       end if
+    end do
+
+    error stop "No index found, is the array sorted?"
+  end function find_bracket
 
 end module m_foap4

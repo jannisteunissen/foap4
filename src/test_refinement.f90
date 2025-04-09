@@ -53,7 +53,7 @@ contains
     character(len=20)            :: var_names(n_vars)   = ['rho', 'phi']
     logical, parameter           :: periodic(2)         = [.false., .false.]
     integer, parameter           :: max_blocks          = 1000
-    logical, parameter           :: partition           = .false.
+    logical, parameter           :: partition           = .true.
     integer                      :: n, prev_mesh_revision
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &

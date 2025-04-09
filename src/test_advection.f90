@@ -47,7 +47,7 @@ contains
 
     call set_init_cond(f4)
 
-    do_refinement = .false.
+    do_refinement = .true.
 
     if (do_refinement) then
        do n = 1, 10
@@ -144,6 +144,7 @@ contains
     integer, parameter           :: max_level = 4
     integer, parameter           :: min_level = 2
 
+    !$acc parallel loop private(level, dr)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        dr = f4%dr_level(:, level)
@@ -154,6 +155,7 @@ contains
           ref_flag = 0
        end if
 
+       !$acc loop collapse(2) private(diff)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
 
@@ -176,6 +178,7 @@ contains
        f4%refinement_flags(n) = ref_flag
     end do
 
+    !$acc update host(f4%refinement_flags(1:f4%n_blocks))
   end subroutine set_refinement_flag
 
   subroutine forward_euler(f4, bx, lo, hi, n_vars, n_blocks, dt, uu, &
