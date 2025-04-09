@@ -143,6 +143,19 @@ module m_foap4
      integer :: gc_f2c_to_buf_iface(0:4)   !< Start index per face direction
      integer :: gc_phys_iface(0:4)         !< Start index per face direction
 
+     ! Performance information
+     real(dp) :: wtime_t0 = 0.0_dp
+     real(dp) :: wtime_gc_fill = 0.0_dp
+     real(dp) :: wtime_gc_fill_c2f = 0.0_dp
+     real(dp) :: wtime_gc_fill_buffers = 0.0_dp
+     real(dp) :: wtime_gc_fill_buffers_c2f = 0.0_dp
+     real(dp) :: wtime_adjust_ref_p4est = 0.0_dp
+     real(dp) :: wtime_adjust_ref_foap4 = 0.0_dp
+     real(dp) :: wtime_partition = 0.0_dp
+     real(dp) :: wtime_write_grid = 0.0_dp
+     real(dp) :: wtime_update_gc_pattern = 0.0_dp
+     real(dp) :: wtime_exchange_buffers = 0.0_dp
+
   end type foap4_t
 
   interface
@@ -265,6 +278,8 @@ module m_foap4
   public :: f4_destroy
   public :: f4_finalize
   public :: f4_construct_brick
+  public :: f4_reset_wtime
+  public :: f4_print_wtime
   public :: f4_write_grid
   public :: f4_get_mesh_revision
   public :: f4_get_global_highest_level
@@ -317,6 +332,53 @@ contains
     call MPI_Comm_size(f4%mpicomm, f4%mpisize, ierr)
 
   end subroutine f4_initialize
+
+  !> Reset wall clock time measurements
+  subroutine f4_reset_wtime(f4)
+    type(foap4_t), intent(inout) :: f4
+
+    f4%wtime_t0 = MPI_Wtime()
+    f4%wtime_gc_fill = 0.0_dp
+    f4%wtime_gc_fill_c2f = 0.0_dp
+    f4%wtime_gc_fill_buffers = 0.0_dp
+    f4%wtime_gc_fill_buffers_c2f = 0.0_dp
+    f4%wtime_adjust_ref_p4est = 0.0_dp
+    f4%wtime_adjust_ref_foap4 = 0.0_dp
+    f4%wtime_partition = 0.0_dp
+    f4%wtime_write_grid = 0.0_dp
+    f4%wtime_update_gc_pattern = 0.0_dp
+    f4%wtime_exchange_buffers = 0.0_dp
+  end subroutine f4_reset_wtime
+
+  !> Print wall clock time measurements
+  subroutine f4_print_wtime(f4)
+    type(foap4_t), intent(inout) :: f4
+    real(dp)                     :: t_total, fac
+
+    t_total = MPI_Wtime() - f4%wtime_t0
+    fac     = 1e2_dp / t_total
+    write(*, "(I6,A25,F9.2,' s')") f4%mpirank, "total_time", t_total
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill", &
+         f4%wtime_gc_fill * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_c2f", &
+         f4%wtime_gc_fill_c2f * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_buffers", &
+         f4%wtime_gc_fill_buffers * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_buffers_c2f", &
+         f4%wtime_gc_fill_buffers_c2f * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "adjust_ref_p4est", &
+         f4%wtime_adjust_ref_p4est * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "adjust_ref_foap4", &
+         f4%wtime_adjust_ref_foap4 * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "partition", &
+         f4%wtime_partition * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "write_grid", &
+         f4%wtime_write_grid * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "update_gc_pattern", &
+         f4%wtime_update_gc_pattern * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "exchange_buffers", &
+         f4%wtime_exchange_buffers * fac
+  end subroutine f4_print_wtime
 
   !> Destroy all data for the current mesh
   subroutine f4_destroy(f4)
@@ -487,15 +549,17 @@ contains
   !> Write the AMR grid to a file
   subroutine f4_write_grid(f4, fname, n_output, time, viewer)
     use m_xdmf_writer
-    type(foap4_t), intent(in)              :: f4
-    character(len=*), intent(in)           :: fname !< Base file name
+    type(foap4_t), intent(inout)           :: f4
+    character(len=*), intent(in)           :: fname    !< Base file name
     integer, intent(in)                    :: n_output !< Output index
-    real(dp), intent(in), optional         :: time !< Simulation time
-    character(len=*), intent(in), optional :: viewer !< Optimize for viewer
+    real(dp), intent(in), optional         :: time     !< Simulation time
+    character(len=*), intent(in), optional :: viewer   !< Optimize for viewer
     character(len=len_trim(fname)+7)       :: full_fname
     integer                                :: n
     real(dp), allocatable                  :: dr(:, :)
+    real(dp)                               :: t0, t1
 
+    t0 = MPI_Wtime()
     ! OpenACC - get the block data from the device
     !$acc update self(f4%uu(:, :, :, 1:f4%n_blocks))
 
@@ -513,6 +577,8 @@ contains
          f4%n_blocks, f4%bx+2*f4%n_gc, f4%n_vars, &
          f4%var_names, f4%n_gc, f4%block_origin(:, 1:f4%n_blocks), dr, &
          cc_data=f4%uu(:, :, :, 1:f4%n_blocks), time=time, viewer=viewer)
+    t1 = MPI_Wtime()
+    f4%wtime_write_grid = f4%wtime_write_grid + t1 - t0
   end subroutine f4_write_grid
 
   !> Return the coordinates at the center of a grid cells
@@ -1426,12 +1492,21 @@ contains
     integer                      :: n, i, j, iq, jq, face
     integer                      :: i_buf, i_buf0, iv, ivar, i_f, j_f, i_c, j_c
     integer                      :: half_bx(2), half_n_gc, offset
-    real(dp)                     :: fine(4)
+    real(dp)                     :: fine(4), t0, t1
     logical                      :: odd_n_gc
 
+    t0 = MPI_Wtime()
     call f4_update_ghostcell_pattern(f4)
+    t1 = MPI_Wtime()
+    f4%wtime_update_gc_pattern = f4%wtime_update_gc_pattern + t1 - t0
+
     call f4_fill_ghostcell_buffers(f4, n_vars, i_vars)
+    t0 = MPI_Wtime()
+    f4%wtime_gc_fill_buffers = f4%wtime_gc_fill_buffers + t0 - t1
+
     call f4_exchange_buffers(f4)
+    t1 = MPI_Wtime()
+    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t1 - t0
 
     half_bx   = f4%bx/2
     half_n_gc = f4%n_gc/2 ! Round down
@@ -1821,8 +1896,14 @@ contains
 
       ! Do coarse-to-fine refinement boundaries last, so that ghost cells
       ! required for interpolation have been filled
+      t0 = MPI_Wtime()
+      f4%wtime_gc_fill = f4%wtime_gc_fill + t0 - t1
       call f4_fill_ghostcell_buffers_c2f(f4, n_vars, i_vars)
+      t1 = MPI_Wtime()
+      f4%wtime_gc_fill_buffers_c2f = f4%wtime_gc_fill_buffers_c2f + t1 - t0
       call f4_exchange_buffers(f4)
+      t0 = MPI_Wtime()
+      f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
 
       ! Local coarse-to-fine boundaries, fill fine side
       face = 0
@@ -2182,6 +2263,9 @@ contains
       end do
     end associate
 
+    t1 = MPI_Wtime()
+    f4%wtime_gc_fill_c2f = f4%wtime_gc_fill_c2f + t1 - t0
+
   end subroutine f4_update_ghostcells
 
   !> Refine the mesh according to f4%refinement_flags
@@ -2194,13 +2278,17 @@ contains
     integer                      :: n, i, j, i_c, j_c, i_f, j_f, n_old
     integer                      :: half_bx(2), offset_copy
     integer                      :: i_from, i_to, i_ch
-    real(dp)                     :: fine(4)
+    real(dp)                     :: fine(4), t0, t1
 
+    t0 = MPI_Wtime()
     half_bx = f4%bx / 2
 
     n_blocks_old = f4%n_blocks
     call pw_adjust_refinement(f4%pw, f4%n_blocks, &
          f4%refinement_flags(1:f4%n_blocks), has_changed)
+
+    t1 = MPI_Wtime()
+    f4%wtime_adjust_ref_p4est = f4%wtime_adjust_ref_p4est + t1 - t0
 
     if (has_changed == 0) return
 
@@ -2329,6 +2417,9 @@ contains
     !$acc exit data delete(i_srl, srl, i_refine, refine, &
     !$acc &i_coarsen, coarsen, half_bx)
 
+    t0 = MPI_Wtime()
+    f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
+
     if (partition) call f4_partition(f4)
   end subroutine f4_adjust_refinement
 
@@ -2429,7 +2520,9 @@ contains
     integer                        :: n_recv, n_send
     integer                        :: rank, block_ix
     type(MPI_Request), allocatable :: send_req(:), recv_req(:)
+    real(dp)                       :: t0, t1
 
+    t0 = MPI_Wtime()
     n_blocks_old = f4%n_blocks
     call pw_partition(f4%pw, n_changed_global, gfq_old, gfq_new)
 
@@ -2516,6 +2609,9 @@ contains
     call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
 
     call f4_set_quadrants(f4)
+
+    t1 = MPI_Wtime()
+    f4%wtime_partition = f4%wtime_partition + t1 - t0
   end subroutine f4_partition
 
   !> Performs a binary search for the index ix such that:

@@ -5,45 +5,52 @@ program test_ref
   implicit none
   integer, parameter :: dp = kind(0.0d0)
 
-  type(foap4_t), target :: f4
-  integer               :: n, n_gc
+  type(foap4_t) :: f4
+  integer       :: n, n_gc
+  logical       :: test_coarsening
+  logical       :: write_output
 
   call f4_initialize(f4, "error")
 
+  write_output = .false.
+  test_coarsening = .true.
   n = 0
   do n_gc = 1, 4
      if (f4%mpirank == 0) print *, "Testing uniform grid with n_gc =", n_gc
-     call test_refinement(f4, n_gc, 4, 0, [1e-2_dp, 1e-2_dp], .true., &
-          "output/test_unif", n)
+     call test_refinement(f4, n_gc, 4, 0, [1e-2_dp, 1e-2_dp], test_coarsening, &
+          write_output, "output/test_unif", n)
   end do
 
+  test_coarsening = .false.
   n = 0
   do n_gc = 1, 4
      if (f4%mpirank == 0) print *, "Testing with n_gc = ", n_gc
-     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 1e-2_dp], .false., &
-          "output/test_ref", n)
-     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 1e-2_dp], .false., &
-          "output/test_ref", n)
-     call test_refinement(f4, n_gc, 3, 7, [0.5_dp, 0.5_dp], .false., &
-          "output/test_ref", n)
-     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 0.99_dp], .false., &
-          "output/test_ref", n)
-     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 0.99_dp], .false., &
-          "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 1e-2_dp], test_coarsening, &
+          write_output, "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 1e-2_dp], test_coarsening, &
+          write_output, "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.5_dp, 0.5_dp], test_coarsening, &
+          write_output, "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 0.99_dp], test_coarsening, &
+          write_output, "output/test_ref", n)
+     call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 0.99_dp], test_coarsening, &
+          write_output, "output/test_ref", n)
   end do
 
+  if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains
 
   subroutine test_refinement(f4, n_gc, min_level, n_refine_steps, &
-       refine_location, test_coarsening, base_name, n_output)
+       refine_location, test_coarsening, write_output, base_name, n_output)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_gc
     integer, intent(in)          :: min_level
     integer, intent(in)          :: n_refine_steps
     real(dp), intent(in)         :: refine_location(2)
     logical, intent(in)          :: test_coarsening
+    logical, intent(in)          :: write_output
     character(len=*), intent(in) :: base_name
     integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
@@ -63,8 +70,10 @@ contains
     call f4_update_ghostcells(f4, 2, [1, 2])
     call local_average(f4)
 
-    n_output = n_output + 1
-    call f4_write_grid(f4, base_name, n_output)
+    if (write_output) then
+       n_output = n_output + 1
+       call f4_write_grid(f4, base_name, n_output)
+    end if
 
     do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location)
@@ -72,8 +81,10 @@ contains
        call f4_update_ghostcells(f4, 2, [1, 2])
        call local_average(f4)
 
-       n_output = n_output + 1
-       call f4_write_grid(f4, base_name, n_output)
+       if (write_output) then
+          n_output = n_output + 1
+          call f4_write_grid(f4, base_name, n_output)
+       end if
     end do
 
     if (test_coarsening) then
@@ -85,8 +96,10 @@ contains
           call f4_update_ghostcells(f4, 2, [1, 2])
           call local_average(f4)
 
-          n_output = n_output + 1
-          call f4_write_grid(f4, base_name, n_output)
+          if (write_output) then
+             n_output = n_output + 1
+             call f4_write_grid(f4, base_name, n_output)
+          end if
 
           if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
        end do

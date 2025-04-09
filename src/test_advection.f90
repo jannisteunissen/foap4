@@ -9,20 +9,23 @@ program test_adv
   integer, parameter  :: i_rho             = 1
   character(len=20)   :: var_names(n_vars) = ['rho', 'tmp']
   real(dp), parameter :: velocity(2)       = [1.0_dp, 1.0_dp]
+  logical             :: write_output      = .true.
 
-  type(foap4_t), target :: f4
+  type(foap4_t) :: f4
 
   call f4_initialize(f4, "error")
 
-  call test_advection(f4, 1, "output/test_adv")
+  call test_advection(f4, 1, write_output, "output/test_adv")
 
+  if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains
 
-  subroutine test_advection(f4, min_level, base_name)
+  subroutine test_advection(f4, min_level, write_output, base_name)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: min_level
+    logical, intent(in)          :: write_output
     character(len=*), intent(in) :: base_name
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
@@ -33,7 +36,7 @@ contains
     real(dp), parameter          :: cfl_number          = 0.5_dp
     integer                      :: n, prev_mesh_revision, n_output
     integer                      :: highest_level
-    logical                      :: write_output, do_refinement
+    logical                      :: write_this_step, do_refinement
     real(dp)                     :: dt, dt_output, min_dr(2)
     real(dp)                     :: time, end_time
 
@@ -61,8 +64,11 @@ contains
        end do
     end if
 
-    call f4_write_grid(f4, base_name, n_output, time)
-    n_output = n_output + 1
+    if (write_output) then
+       call f4_write_grid(f4, base_name, n_output, time)
+       n_output = n_output + 1
+    end if
+
     n = 0
 
     call f4_get_global_highest_level(f4, highest_level)
@@ -70,14 +76,15 @@ contains
 
     do while (time < end_time)
        n = n + 1
+
        dt = cfl_number / (sum(abs(velocity)/min_dr) + epsilon(1.0_dp))
-       write_output = (time + dt > n_output * dt_output)
-       if (write_output) dt = n_output * dt_output - time
+       write_this_step = (time + dt > n_output * dt_output) .and. write_output
+       if (write_this_step) dt = n_output * dt_output - time
 
        call advance_heuns_method(f4, dt)
        time = time + dt
 
-       if (write_output) then
+       if (write_this_step) then
           call f4_write_grid(f4, base_name, n_output)
           n_output = n_output + 1
        end if
