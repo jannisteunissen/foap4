@@ -1906,7 +1906,7 @@ contains
        end do
     end do
 
-    !$end parallel
+    !$acc end parallel
 
   end subroutine fill_ghostcells_round_one
 
