@@ -1,17 +1,28 @@
 program benchmark_gc
 
+  use mpi_f08
   use m_foap4
 
   implicit none
   integer, parameter :: dp = kind(0.0d0)
 
   type(foap4_t), target :: f4
-  integer :: n_output
+  integer               :: n_output, min_level, n_refine_steps
+  integer               :: n_iterations, max_blocks
+  logical               :: write_grid
 
   call f4_initialize(f4, "error")
 
-  n_output = 0
-  call benchmark_ghostcell(f4, 10000, [1e-2_dp, 1e-2_dp], &
+  n_output       = 0
+  n_iterations   = 100
+  ! n_iterations   = 10000
+  min_level      = 7
+  n_refine_steps = 0
+  max_blocks     = 20000
+  write_grid     = .false.
+
+  call benchmark_ghostcell(f4, n_iterations, [1e-2_dp, 1e-2_dp], &
+       min_level, n_refine_steps, max_blocks, write_grid, &
        "output/benchmark_gc", n_output)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
@@ -19,25 +30,26 @@ program benchmark_gc
 
 contains
 
-  subroutine benchmark_ghostcell(f4, n_update_gc, refine_location, &
-       base_name, n_output)
+  subroutine benchmark_ghostcell(f4, n_iterations, refine_location, &
+       min_level, n_refine_steps, max_blocks, write_grid, base_name, n_output)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: n_update_gc
+    integer, intent(in)          :: n_iterations
     real(dp), intent(in)         :: refine_location(2)
+    integer, intent(in)          :: min_level
+    integer, intent(in)          :: n_refine_steps
+    integer, intent(in)          :: max_blocks
+    logical, intent(in)          :: write_grid
     character(len=*), intent(in) :: base_name
     integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
-    integer, parameter           :: bx(2)               = [16, 16]
+    integer, parameter           :: bx(2)               = [32, 32]
     integer, parameter           :: n_gc                = 1
     integer, parameter           :: n_vars              = 2
     character(len=20)            :: var_names(n_vars)   = ['rho', 'phi']
     logical, parameter           :: periodic(2)         = [.false., .false.]
-    integer, parameter           :: min_level           = 5
-    integer, parameter           :: max_blocks          = 8000
-    integer, parameter           :: n_refine_steps      = 2
-    integer                      :: n, n_ghostcells
-    integer                      :: t_start, t_end, count_rate
+    integer                      :: n, n_ghostcells, n_blocks_global
+    real(dp)                     :: t0, t1
     real(dp)                     :: t_total, ghostcells_per_ns
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
@@ -52,22 +64,27 @@ contains
        call f4_update_ghostcells(f4, 2, [1, 2])
     end do
 
-    n_output = n_output + 1
-    call f4_write_grid(f4, base_name, n_output)
+    if (write_grid) then
+       n_output = n_output + 1
+       call f4_write_grid(f4, base_name, n_output)
+    end if
 
-    call system_clock(t_start, count_rate)
-    do n = 1, n_update_gc
+    t0 = MPI_Wtime()
+    do n = 1, n_iterations
        call f4_update_ghostcells(f4, 2, [1, 2])
     end do
-    call system_clock(t_end, count_rate)
+    t1 = MPI_Wtime()
 
-    t_total = (t_end - t_start)/real(count_rate, dp)
-    n_ghostcells = f4_get_num_global_blocks(f4) * n_vars * &
-         2 * n_gc * sum(f4%bx)
-    ghostcells_per_ns = 1e-9_dp * n_update_gc/t_total * n_ghostcells
+    t_total = (t1 - t0)
+    n_blocks_global = f4_get_num_global_blocks(f4)
+    n_ghostcells = n_blocks_global * n_vars * 2 * n_gc * sum(f4%bx)
+    ghostcells_per_ns = 1e-9_dp * n_iterations/t_total * n_ghostcells
 
     if (f4%mpirank == 0) then
-       write(*, "(A,F12.6)") " Ghostcells/ns:", ghostcells_per_ns
+       write(*, "(A,F14.3)") " Ghostcells/ns:      ", ghostcells_per_ns
+       write(*, "(A,I14)") " n_blocks_global:    ", n_blocks_global
+       write(*, "(A,F14.3)") " Mesh data size (MB):", n_blocks_global * &
+            n_vars * 0.5_dp**20 * product(f4%bx + 2 * f4%n_gc)
     end if
 
     call f4_destroy(f4)
@@ -88,7 +105,9 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
+    !$acc parallel loop
     do n = 1, f4%n_blocks
+       !$acc loop collapse(2) private(rr)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
