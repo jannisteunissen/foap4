@@ -11,6 +11,9 @@ program test_adv
   real(dp), parameter :: velocity(2)       = [1.0_dp, 1.0_dp]
   logical             :: write_output      = .true.
 
+  integer, parameter :: max_refinement_level = 5
+  integer, parameter :: min_refinement_level = 2
+
   type(foap4_t) :: f4
 
   call f4_initialize(f4, "error")
@@ -148,15 +151,13 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, i, j, ref_flag, level
     real(dp)                     :: dr(2), diff
-    integer, parameter           :: max_level = 4
-    integer, parameter           :: min_level = 2
 
     !$acc parallel loop private(level, dr)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        dr = f4%dr_level(:, level)
 
-       if (f4%block_level(n) > min_level) then
+       if (f4%block_level(n) > min_refinement_level) then
           ref_flag = -1
        else
           ref_flag = 0
@@ -172,7 +173,7 @@ contains
                   f4%uu(i, j-1, i_rho, n) - 2 * f4%uu(i, j, i_rho, n)))
 
              if (diff > 1.0e-10_dp) then
-                if (f4%block_level(n) < max_level) then
+                if (f4%block_level(n) < max_refinement_level) then
                    ref_flag = 1
                    exit
                 else

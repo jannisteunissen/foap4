@@ -1253,6 +1253,13 @@ contains
     logical                      :: odd_n_gc
     real(dp)                     :: fine(4)
 
+    ! Update send/recv offsets
+    f4%recv_offset(:) = f4%gc_recv_offset_c2f * n_vars
+    f4%send_offset(:) = f4%gc_send_offset_c2f * n_vars
+
+    ! If nothing to do, save time by not starting parallel region
+    if (f4%gc_c2f_to_buf_iface(4) == 1) return
+
     if (maxval(f4%gc_send_offset_c2f) * n_vars > size(f4%send_buffer)) &
          error stop "send buffer too small"
 
@@ -1261,9 +1268,10 @@ contains
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
+      !$acc parallel
 
       face = 0
-      !$acc parallel loop private(iq, offset, i_buf0) async
+      !$acc loop gang private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1308,7 +1316,7 @@ contains
       end do
 
       face = 1
-      !$acc parallel loop private(iq, offset, i_buf0) async
+      !$acc loop gang private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1352,7 +1360,7 @@ contains
       end do
 
       face = 2
-      !$acc parallel loop private(iq, offset, i_buf0) async
+      !$acc loop gang private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1397,7 +1405,7 @@ contains
       end do
 
       face = 3
-      !$acc parallel loop private(iq, offset, i_buf0) async
+      !$acc loop gang private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1441,11 +1449,8 @@ contains
          end if
       end do
 
-      f4%recv_offset(:) = f4%gc_recv_offset_c2f * n_vars
-      f4%send_offset(:) = f4%gc_send_offset_c2f * n_vars
+      !$acc end parallel
     end associate
-
-    !$acc wait
 
   end subroutine fill_ghostcell_buffers_round_two
 
@@ -1928,6 +1933,10 @@ contains
     integer                      :: half_bx(2), half_n_gc, offset
     logical                      :: odd_n_gc
     real(dp)                     :: fine(4)
+
+    ! If nothing to do, save time by not starting parallel region
+    if (f4%gc_f2c_local_iface(4) == 1 .and. &
+         f4%gc_f2c_from_buf_iface(4) == 1) return
 
     half_bx   = f4%bx/2
     half_n_gc = f4%n_gc/2 ! Round down
@@ -2414,9 +2423,10 @@ contains
     !$acc enter data copyin(i_srl, srl, i_refine, refine, &
     !$acc &i_coarsen, coarsen, half_bx)
 
-    ! Copy on device
+    !$acc parallel
 
-    !$acc parallel loop private(i_from, i_to) async
+    ! Copy on device
+    !$acc loop gang private(i_from, i_to)
     do n = 1, i_srl
        i_from = srl(1, n)
        i_to = srl(2, n)
@@ -2432,8 +2442,7 @@ contains
     end do
 
     ! Refine on device
-
-    !$acc parallel loop private(i_from, i_to) async
+    !$acc loop gang private(i_from, i_to)
     do n = 1, i_refine
        i_from = refine(1, n)
        i_to = refine(2, n)
@@ -2466,8 +2475,7 @@ contains
     end do
 
     ! Coarsen on device
-
-    !$acc parallel loop private(i_from, i_to) async
+    !$acc loop gang private(i_from, i_to)
     do n = 1, i_coarsen
        i_from = coarsen(1, n)
        i_to = coarsen(2, n)
@@ -2493,7 +2501,7 @@ contains
        end do
     end do
 
-    !$acc wait
+    !$acc end parallel
     !$acc exit data delete(i_srl, srl, i_refine, refine, &
     !$acc &i_coarsen, coarsen, half_bx)
 
