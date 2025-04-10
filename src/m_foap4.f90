@@ -466,7 +466,7 @@ contains
     allocate(f4%block_level(max_blocks))
     allocate(f4%refinement_flags(max_blocks))
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, n_vars, max_blocks))
-    f4%uu(:, :, :, :) = 0.0_dp
+    f4%uu = 0.0_dp
 
     f4%gc_data_size = f4%bx(1) * f4%n_gc
 
@@ -476,8 +476,6 @@ contains
     allocate(f4%send_buffer(i))
     allocate(f4%recv_offset(0:f4%mpisize))
     allocate(f4%send_offset(0:f4%mpisize))
-
-    f4%uu = 0.0_dp
 
     ! OpenACC - Copy data structure and create allocatable components
     !$acc enter data copyin(f4)
@@ -514,12 +512,14 @@ contains
   !> Set the number of blocks, their origins and their refinement levels
   subroutine f4_set_quadrants(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n
+    integer                      :: n, n_blocks
 
-    f4%n_blocks = f4_get_num_local_blocks(f4)
     if (.not. allocated(f4%block_origin)) error stop "block_origin not allocated"
     if (.not. allocated(f4%block_level)) error stop "block_level not allocated"
-    if (f4%n_blocks > f4%max_blocks) error stop "n_blocks > max_blocks"
+
+    n_blocks = f4_get_num_local_blocks(f4)
+    if (n_blocks > f4%max_blocks) error stop "n_blocks > max_blocks"
+    f4%n_blocks = n_blocks
 
     call pw_get_quadrants(f4%pw, f4%n_blocks, &
          f4%block_origin(:, 1:f4%n_blocks), &
@@ -2420,10 +2420,8 @@ contains
     if (n_old /= offset_copy + n_blocks_old + 1) &
          error stop "Refinement: loops did not end simultaneously"
 
-    !$acc enter data copyin(i_srl, srl, i_refine, refine, &
+    !$acc parallel copyin(i_srl, srl, i_refine, refine, &
     !$acc &i_coarsen, coarsen, half_bx)
-
-    !$acc parallel
 
     ! Copy on device
     !$acc loop gang private(i_from, i_to)
@@ -2502,8 +2500,6 @@ contains
     end do
 
     !$acc end parallel
-    !$acc exit data delete(i_srl, srl, i_refine, refine, &
-    !$acc &i_coarsen, coarsen, half_bx)
 
     t0 = MPI_Wtime()
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
@@ -2546,6 +2542,7 @@ contains
 
   !> Method for prolongation (interpolation) of a coarse block to its children
   subroutine prolong_local_5point(center, xlo, xhi, ylo, yhi, fine)
+    !$acc routine seq
     real(dp), intent(in)  :: center ! Center value
     real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
     real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
@@ -2569,6 +2566,7 @@ contains
   !> the limiter is, with 1 corresponding to the minmod limiter and 2 to the MC
   !> limiter.
   elemental function limiter_gminmod(a, b, theta) result(phi)
+    !$acc routine seq
     real(dp), intent(in) :: a, b, theta
     real(dp)             :: phi
 
@@ -2582,6 +2580,7 @@ contains
 
   !> Minmod limiter
   elemental function limiter_minmod(a, b) result(phi)
+    !$acc routine seq
     real(dp), intent(in) :: a
     real(dp), intent(in) :: b
     real(dp)             :: phi
