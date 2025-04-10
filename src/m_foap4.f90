@@ -574,6 +574,7 @@ contains
 
   !> Set the number of blocks, their origins and their refinement levels
   subroutine f4_set_quadrants(f4)
+    use iso_fortran_env, only: error_unit
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, n_blocks
 
@@ -581,7 +582,12 @@ contains
     if (.not. allocated(f4%block_level)) error stop "block_level not allocated"
 
     n_blocks = f4_get_num_local_blocks(f4)
-    if (n_blocks > f4%max_blocks) error stop "n_blocks > max_blocks"
+    if (n_blocks > f4%max_blocks) then
+       write(error_unit, "(A,I0,A,I0)") "ERROR: n_blocks = ", n_blocks, &
+            ", max_blocks = ", f4%max_blocks
+       error stop "n_blocks > max_blocks"
+    end if
+
     f4%n_blocks = n_blocks
 
     call pw_get_quadrants(f4%pw, f4%n_blocks, &
