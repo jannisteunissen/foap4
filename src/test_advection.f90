@@ -1,5 +1,5 @@
 program test_adv
-
+  use mpi_f08
   use m_foap4
 
   implicit none
@@ -9,25 +9,55 @@ program test_adv
   integer, parameter  :: i_rho             = 1
   character(len=20)   :: var_names(n_vars) = ['rho', 'tmp']
   real(dp), parameter :: velocity(2)       = [1.0_dp, 1.0_dp]
-  logical             :: write_output      = .true.
 
-  integer, parameter :: max_refinement_level = 5
-  integer, parameter :: min_refinement_level = 2
+  logical :: write_output         = .true.
+  logical :: do_refinement        = .true.
+  logical :: benchmark            = .false.
+  integer :: max_refinement_level = 5
+  integer :: min_refinement_level = 2
+  integer :: max_blocks           = 1000
+  integer :: n_args
+  character(len=100) :: argstr
 
   type(foap4_t) :: f4
 
   call f4_initialize(f4, "error")
 
-  call test_advection(f4, 1, write_output, "output/test_adv")
+  n_args = command_argument_count()
+
+  if (n_args >= 2) then
+     benchmark = .true.
+     call get_command_argument(1, argstr)
+     read(argstr, *) min_refinement_level
+     call get_command_argument(2, argstr)
+     read(argstr, *) max_blocks
+
+     if (f4%mpirank == 0) then
+        write(*, "(A,I0,A,I0,A)") " Running benchmark (min_level = ", &
+          min_refinement_level, ", max_blocks = ", max_blocks, ")"
+     end if
+  end if
+
+  if (benchmark) then
+     write_output = .false.
+     do_refinement = .false.
+  end if
+
+  call test_advection(f4, min_refinement_level, do_refinement, &
+       max_blocks, benchmark, write_output, "output/test_adv")
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains
 
-  subroutine test_advection(f4, min_level, write_output, base_name)
+  subroutine test_advection(f4, min_level, do_refinement, &
+       max_blocks, benchmark, write_output, base_name)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: min_level
+    logical, intent(in)          :: do_refinement
+    integer, intent(in)          :: max_blocks
+    logical, intent(in)          :: benchmark
     logical, intent(in)          :: write_output
     character(len=*), intent(in) :: base_name
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
@@ -35,25 +65,24 @@ contains
     integer, parameter           :: bx(2)               = [32, 32]
     integer, parameter           :: n_gc                = 2
     logical, parameter           :: periodic(2)         = [.true., .true.]
-    integer, parameter           :: max_blocks          = 1000
     real(dp), parameter          :: cfl_number          = 0.5_dp
-    integer                      :: n, prev_mesh_revision, n_output
-    integer                      :: highest_level
-    logical                      :: write_this_step, do_refinement
+    integer                      :: prev_mesh_revision, n_output
+    integer                      :: highest_level, n_iterations
+    integer                      :: n_blocks_global
+    logical                      :: write_this_step
     real(dp)                     :: dt, dt_output, min_dr(2)
-    real(dp)                     :: time, end_time
+    real(dp)                     :: time, end_time, t0, t1
 
     time = 0.0_dp
     end_time = 1.0_dp
     dt_output = end_time / 40
     n_output = 0
+    n_iterations = 0
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, periodic, min_level, max_blocks)
 
     call set_init_cond(f4)
-
-    do_refinement = .true.
 
     if (do_refinement) then
        do n = 1, 10
@@ -77,8 +106,10 @@ contains
     call f4_get_global_highest_level(f4, highest_level)
     min_dr = f4%dr_level(:, highest_level)
 
+    t0 = MPI_Wtime()
+
     do while (time < end_time)
-       n = n + 1
+       n_iterations = n_iterations + 1
 
        dt = cfl_number / (sum(abs(velocity)/min_dr) + epsilon(1.0_dp))
        write_this_step = (time + dt > n_output * dt_output) .and. write_output
@@ -102,8 +133,18 @@ contains
        end if
     end do
 
-    if (f4%mpirank == 0) then
-       print *, "n_iterations: ", n
+    t1 = MPI_Wtime()
+
+    if (benchmark) then
+       n_blocks_global = f4_get_num_global_blocks(f4)
+
+       if (f4%mpirank == 0) then
+          print *, "n_iterations:    ", n_iterations
+          print *, "n_blocks_global: ", n_blocks_global
+          print *, "block size:      ", bx
+          write(*, "(A,F14.3)") " unknowns/ns:     ", n_iterations * &
+               1e-9_dp * n_blocks_global * (product(f4%bx) * 2 / (t1 - t0))
+       end if
     end if
 
     call f4_destroy(f4)
