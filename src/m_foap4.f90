@@ -2420,11 +2420,12 @@ contains
     if (n_old /= offset_copy + n_blocks_old + 1) &
          error stop "Refinement: loops did not end simultaneously"
 
-    !$acc parallel copyin(i_srl, srl, i_refine, refine, &
-    !$acc &i_coarsen, coarsen, half_bx)
+    t1 = MPI_Wtime()
+
+    !$acc enter data copyin(srl, refine, coarsen, half_bx)
 
     ! Copy on device
-    !$acc loop gang private(i_from, i_to)
+    !$acc parallel loop private(i_from, i_to) async
     do n = 1, i_srl
        i_from = srl(1, n)
        i_to = srl(2, n)
@@ -2440,7 +2441,7 @@ contains
     end do
 
     ! Refine on device
-    !$acc loop gang private(i_from, i_to)
+    !$acc parallel loop private(i_from, i_to) async
     do n = 1, i_refine
        i_from = refine(1, n)
        i_to = refine(2, n)
@@ -2473,7 +2474,7 @@ contains
     end do
 
     ! Coarsen on device
-    !$acc loop gang private(i_from, i_to)
+    !$acc parallel loop private(i_from, i_to) async
     do n = 1, i_coarsen
        i_from = coarsen(1, n)
        i_to = coarsen(2, n)
@@ -2499,7 +2500,8 @@ contains
        end do
     end do
 
-    !$acc end parallel
+    !$acc wait
+    !$acc exit data delete(srl, refine, coarsen, half_bx)
 
     t0 = MPI_Wtime()
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
