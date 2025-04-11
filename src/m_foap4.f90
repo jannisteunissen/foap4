@@ -99,7 +99,6 @@ module m_foap4
 
      !> Receive offset (per MPI rank) in recv_buffer
      integer, allocatable :: gc_recv_offset(:)
-
      !> Receive offset (per MPI rank) in recv_buffer for the coarse-to-fine step
      integer, allocatable :: gc_recv_offset_c2f(:)
      !> Send offset (per MPI rank) in send_buffer
@@ -1553,8 +1552,9 @@ contains
 
        if (ihi >= ilo) then
           n_recv = n_recv + 1
-          call MPI_Irecv(f4%recv_buffer(ilo:ihi), ihi-ilo+1, MPI_DOUBLE_PRECISION, &
-               rank, tag, f4%mpicomm, recv_req(n_recv), ierr)
+          call MPI_Irecv(f4%recv_buffer(ilo:ihi), ihi-ilo+1, &
+               MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, &
+               recv_req(n_recv), ierr)
        end if
     end do
     !$acc end host_data
@@ -2426,9 +2426,9 @@ contains
   end subroutine f4_update_ghostcells
 
   !> Refine the mesh according to f4%refinement_flags
-  subroutine f4_adjust_refinement(f4, partition)
+  subroutine f4_adjust_refinement(f4, partition_after)
     type(foap4_t), intent(inout) :: f4
-    logical, intent(in)          :: partition
+    logical, intent(in)          :: partition_after
     integer                      :: n_blocks_new, n_blocks_old, iv
     integer                      :: has_changed, i_srl, i_refine, i_coarsen
     integer, allocatable         :: srl(:, :), refine(:, :), coarsen(:, :)
@@ -2575,7 +2575,7 @@ contains
     t0 = MPI_Wtime()
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
 
-    if (partition) call f4_partition(f4)
+    if (partition_after) call f4_partition(f4)
   end subroutine f4_adjust_refinement
 
   !> Temporarily copy blocks to the end of the block array

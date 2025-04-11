@@ -265,7 +265,7 @@ contains
 
        ! Set output state after computations are done, since s_out can be
        ! equal to s_deriv and s_prev
-       !$acc loop collapse(2)
+       !$acc loop collapse(2) private(m)
        do j = 1, bx(2)
           do i = 1, bx(1)
              do m = 1, n_prev
