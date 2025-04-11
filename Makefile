@@ -6,7 +6,8 @@ INCDIRS := p4est/build/local/include
 LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
 CFLAGS := -Wall -O2 -g
-TARGETS := test_refinement test_advection test_xdmf_writer benchmark_ghostcell
+TARGETS := test_refinement test_advection test_xdmf_writer test_euler	\
+	benchmark_ghostcell
 
 .PHONY: all
 all: $(TARGETS)
@@ -16,9 +17,10 @@ compiler_version = $(shell $(FC) --version)
 compiler_brand = $(word 1, $(compiler_version))
 
 ifeq ($(compiler_brand), GNU)
-	# FFLAGS ?= -Wall -Wextra -Wrealloc-lhs -O0 -g -fcheck=all -Jsrc -cpp	\
-	# $(FFLAGS_USER)
 	FFLAGS ?= -Wall -O2 -g -Jsrc -cpp $(FFLAGS_USER)
+	ifeq ($(DEBUG), 1)
+		FFLAGS += -O0 -fcheck=all
+	endif
 else ifeq ($(compiler_brand), nvfortran)
 	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g -module	\
 	src $(FFLAGS_USER)
@@ -27,14 +29,12 @@ else ifeq ($(compiler_brand), pgfortran)
 	src $(FFLAGS_USER)
 endif
 
-$(TARGETS): src/m_foap4.o src/p4est_wrapper.o src/m_xdmf_writer.o src/m_config.o
-
 # Dependencies
+$(TARGETS): src/m_foap4.o src/p4est_wrapper.o src/m_xdmf_writer.o src/m_config.o
+$(addsuffix .o,$(addprefix src/,$(TARGETS))): src/m_foap4.mod
+src/test_euler.o: src/m_euler.mod
+test_euler: src/m_euler.o
 src/m_foap4.o: src/m_xdmf_writer.mod
-src/test_refinement.o: src/m_foap4.mod
-src/benchmark_ghostcell.o: src/m_foap4.mod
-src/test_advection.o: src/m_foap4.mod
-src/test_xdmf_writer.o: src/m_foap4.mod
 
 .PHONY: clean
 clean:

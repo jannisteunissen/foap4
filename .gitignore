@@ -9,3 +9,4 @@
 /test_refinement
 /test_advection
 /test_xdmf_writer
+/test_euler

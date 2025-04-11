@@ -110,7 +110,7 @@ contains
        time = time + dt
 
        if (write_this_step) then
-          call f4_write_grid(f4, base_name, n_output)
+          call f4_write_grid(f4, base_name, n_output, time)
           n_output = n_output + 1
        end if
 
