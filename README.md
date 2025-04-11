@@ -10,18 +10,18 @@ The `p4est` library is included as a git submodule. It seems most robust to comp
 
 1. Get the `p4est` source code:
 
-    git submodule init
-    git submodule update
+        git submodule init
+        git submodule update
 
 2. Get the `sc` source code required for `p4est`:
 
-    cd p4est
-    git submodule init
-    git submodule update
+        cd p4est
+        git submodule init
+        git submodule update
 
 3. Go back to the top folder and execute the `build_p4est.sh` script with:
 
-    bash build_p4est.sh
+        bash build_p4est.sh
 
 It is also possible to install `p4est` in a different location (or through a different method), but then the main Makefile has to be updated accordingly.
 
