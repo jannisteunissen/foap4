@@ -2580,6 +2580,7 @@ contains
 
   !> Temporarily copy blocks to the end of the block array
   subroutine copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
+    use iso_fortran_env, only: error_unit
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_blocks_old
     integer, intent(in)          :: n_blocks_new
@@ -2588,8 +2589,11 @@ contains
 
     offset_copy = max(n_blocks_old, n_blocks_new)
 
-    if (offset_copy + n_blocks_old > f4%max_blocks) &
-         error stop "Not enough block memory for copying"
+    if (offset_copy + n_blocks_old > f4%max_blocks) then
+       write(error_unit, "(A,I0,A,I0)") "ERROR: max_blocks = ", &
+            f4%max_blocks, ", copy requires ", offset_copy + n_blocks_old
+       error stop "Not enough block memory for copying"
+    end if
 
     ! Copy block metadata on host
     do n = 1, n_blocks_old
