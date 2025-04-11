@@ -1,6 +1,8 @@
 program test_adv
+  use iso_fortran_env, only: int64
   use mpi_f08
   use m_foap4
+  use m_config
 
   implicit none
   integer, parameter :: dp = kind(0.0d0)
@@ -10,74 +12,69 @@ program test_adv
   character(len=20)   :: var_names(n_vars) = ['rho', 'tmp']
   real(dp), parameter :: velocity(2)       = [1.0_dp, 1.0_dp]
 
-  logical :: write_output         = .true.
-  logical :: do_refinement        = .true.
-  logical :: benchmark            = .false.
-  integer :: max_refinement_level = 5
-  integer :: min_refinement_level = 2
-  integer :: max_blocks           = 1000
-  integer :: n_args
+  logical            :: do_refinement        = .true.
+  logical            :: benchmark            = .false.
+  integer            :: max_refinement_level = 5
+  integer            :: min_refinement_level = 2
+  integer            :: max_blocks           = 1000
+  integer            :: bx(2)                = [32, 32]
+  integer            :: num_outputs          = 40
   character(len=100) :: argstr
 
   type(foap4_t) :: f4
+  type(CFG_t) :: cfg
 
   call f4_initialize(f4, "error")
 
-  n_args = command_argument_count()
+  call CFG_update_from_arguments(cfg)
+  call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
+  call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
+  call CFG_add_get(cfg, 'min_refinement_level', min_refinement_level, &
+       'Minimum refinement level in the domain')
+  call CFG_add_get(cfg, 'max_refinement_level', max_refinement_level, &
+       'Maximum refinement level in the domain')
+  call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
+  call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
+  call CFG_check(cfg)
 
-  if (n_args >= 2) then
-     benchmark = .true.
-     call get_command_argument(1, argstr)
-     read(argstr, *) min_refinement_level
-     call get_command_argument(2, argstr)
-     read(argstr, *) max_blocks
+  if (max_refinement_level < min_refinement_level) &
+       error stop "max_refinement_level < min_refinement_level"
 
-     if (f4%mpirank == 0) then
-        write(*, "(A,I0,A,I0,A)") " Running benchmark (min_level = ", &
-          min_refinement_level, ", max_blocks = ", max_blocks, ")"
-     end if
-  end if
-
-  if (benchmark) then
-     write_output = .false.
-     do_refinement = .false.
-  end if
-
-  call test_advection(f4, min_refinement_level, do_refinement, &
-       max_blocks, benchmark, write_output, "output/test_adv")
+  call test_advection(f4, bx, min_refinement_level, do_refinement, &
+       max_blocks, num_outputs, "output/test_adv")
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains
 
-  subroutine test_advection(f4, min_level, do_refinement, &
-       max_blocks, benchmark, write_output, base_name)
+  subroutine test_advection(f4, bx, min_level, do_refinement, &
+       max_blocks, num_outputs, base_name)
     type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: bx(2)
     integer, intent(in)          :: min_level
     logical, intent(in)          :: do_refinement
     integer, intent(in)          :: max_blocks
-    logical, intent(in)          :: benchmark
-    logical, intent(in)          :: write_output
+    integer, intent(in)          :: num_outputs
     character(len=*), intent(in) :: base_name
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
-    integer, parameter           :: bx(2)               = [32, 32]
     integer, parameter           :: n_gc                = 2
     logical, parameter           :: periodic(2)         = [.true., .true.]
     real(dp), parameter          :: cfl_number          = 0.5_dp
     integer                      :: prev_mesh_revision, n_output
-    integer                      :: highest_level, n_iterations
-    integer                      :: n_blocks_global
+    integer                      :: highest_level, n_iterations, ierr
+    integer(int64)               :: sum_local_blocks, sum_global_blocks
     logical                      :: write_this_step
     real(dp)                     :: dt, dt_output, min_dr(2)
     real(dp)                     :: time, end_time, t0, t1
 
     time = 0.0_dp
     end_time = 1.0_dp
-    dt_output = end_time / 40
+    dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
     n_output = 0
     n_iterations = 0
+    sum_local_blocks = 0
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, periodic, min_level, max_blocks)
@@ -96,12 +93,8 @@ contains
        end do
     end if
 
-    if (write_output) then
-       call f4_write_grid(f4, base_name, n_output, time)
-       n_output = n_output + 1
-    end if
-
-    n = 0
+    if (dt_output < end_time) call f4_write_grid(f4, base_name, n_output, time)
+    n_output = n_output + 1
 
     call f4_get_global_highest_level(f4, highest_level)
     min_dr = f4%dr_level(:, highest_level)
@@ -112,7 +105,7 @@ contains
        n_iterations = n_iterations + 1
 
        dt = cfl_number / (sum(abs(velocity)/min_dr) + epsilon(1.0_dp))
-       write_this_step = (time + dt > n_output * dt_output) .and. write_output
+       write_this_step = (time + dt > n_output * dt_output)
        if (write_this_step) dt = n_output * dt_output - time
 
        call advance_heuns_method(f4, dt)
@@ -131,20 +124,21 @@ contains
           call f4_get_global_highest_level(f4, highest_level)
           min_dr = f4%dr_level(:, highest_level)
        end if
+
+       sum_local_blocks = sum_local_blocks + f4_get_num_local_blocks(f4)
     end do
 
     t1 = MPI_Wtime()
 
-    if (benchmark) then
-       n_blocks_global = f4_get_num_global_blocks(f4)
+    call MPI_Reduce(sum_local_blocks, sum_global_blocks, 1, MPI_INTEGER8, &
+         MPI_SUM, 0, f4%mpicomm, ierr)
 
-       if (f4%mpirank == 0) then
-          print *, "n_iterations:    ", n_iterations
-          print *, "n_blocks_global: ", n_blocks_global
-          print *, "block size:      ", bx
-          write(*, "(A,F14.3)") " unknowns/ns:     ", n_iterations * &
-               1e-9_dp * n_blocks_global * (product(f4%bx) * 2 / (t1 - t0))
-       end if
+    if (f4%mpirank == 0) then
+       print *, "n_iterations:    ", n_iterations
+       print *, "n_blocks_global: ", sum_global_blocks/n_iterations
+       print *, "block size:      ", bx
+       write(*, "(A,F14.3)") " unknowns/ns:     ", 1e-9_dp * &
+            sum_global_blocks * (product(f4%bx) * 2 / (t1 - t0))
     end if
 
     call f4_destroy(f4)

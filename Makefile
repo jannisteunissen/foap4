@@ -6,10 +6,10 @@ INCDIRS := p4est/build/local/include
 LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
 CFLAGS := -Wall -O2 -g
-TARGET := test_refinement test_advection test_xdmf_writer benchmark_ghostcell
+TARGETS := test_refinement test_advection test_xdmf_writer benchmark_ghostcell
 
 .PHONY: all
-all: $(TARGET)
+all: $(TARGETS)
 
 # Determine compiler brand
 compiler_version = $(shell $(FC) --version)
@@ -27,7 +27,7 @@ else ifeq ($(compiler_brand), pgfortran)
 	src $(FFLAGS_USER)
 endif
 
-$(TARGET): src/m_foap4.o src/p4est_wrapper.o src/m_xdmf_writer.o
+$(TARGETS): src/m_foap4.o src/p4est_wrapper.o src/m_xdmf_writer.o src/m_config.o
 
 # Dependencies
 src/m_foap4.o: src/m_xdmf_writer.mod
@@ -38,7 +38,7 @@ src/test_xdmf_writer.o: src/m_foap4.mod
 
 .PHONY: clean
 clean:
-	$(RM) $(TARGET) src/*.o src/*.mod src/*.smod
+	$(RM) $(TARGETS) src/*.o src/*.mod src/*.smod
 
 # How to get .o object files from .c source files
 src/%.o: src/%.c
