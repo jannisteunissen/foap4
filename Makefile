@@ -22,6 +22,9 @@ ifeq ($(compiler_brand), GNU)
 else ifeq ($(compiler_brand), nvfortran)
 	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g -module	\
 	src $(FFLAGS_USER)
+else ifeq ($(compiler_brand), pgfortran)
+	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g -module	\
+	src $(FFLAGS_USER)
 endif
 
 $(TARGET): src/m_foap4.o src/p4est_wrapper.o src/m_xdmf_writer.o
