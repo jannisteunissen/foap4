@@ -494,7 +494,7 @@ contains
     integer, intent(in)          :: max_blocks  !< Maximum number of blocks
     integer                      :: i, periodic_as_int(2)
 
-    if (bx(1) /= bx(2)) error stop "Unequal bx(:) not supported"
+    if (bx(1) /= bx(2)) error stop "TODO: unequal bx(:) not yet supported"
     if (any(bx < 2 * n_gc)) error stop "Cannot have any(bx < 2 * n_gc)"
     if (any(iand(bx, 1) == 1)) error stop "All bx have to be even"
 
@@ -2659,6 +2659,7 @@ contains
   end function limiter_minmod
 
   !> Partition the blocks over the MPI ranks
+  !> TODO: try strided transfer, of only first N variables per block
   subroutine f4_partition(f4)
     type(foap4_t), intent(inout)   :: f4
     integer                        :: n_changed_global
