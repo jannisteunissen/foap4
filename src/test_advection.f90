@@ -13,13 +13,11 @@ program test_adv
   real(dp), parameter :: velocity(2)       = [1.0_dp, 1.0_dp]
 
   logical            :: do_refinement        = .true.
-  logical            :: benchmark            = .false.
   integer            :: max_refinement_level = 5
   integer            :: min_refinement_level = 2
   integer            :: max_blocks           = 1000
   integer            :: bx(2)                = [32, 32]
   integer            :: num_outputs          = 40
-  character(len=100) :: argstr
 
   type(foap4_t) :: f4
   type(CFG_t) :: cfg
@@ -62,7 +60,7 @@ contains
     integer, parameter           :: n_gc                = 2
     logical, parameter           :: periodic(2)         = [.true., .true.]
     real(dp), parameter          :: cfl_number          = 0.5_dp
-    integer                      :: prev_mesh_revision, n_output
+    integer                      :: n, prev_mesh_revision, n_output
     integer                      :: highest_level, n_iterations, ierr
     integer(int64)               :: sum_local_blocks, sum_global_blocks
     logical                      :: write_this_step

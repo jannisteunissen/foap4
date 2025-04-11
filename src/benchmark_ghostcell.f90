@@ -2,14 +2,16 @@ program benchmark_gc
 
   use mpi_f08
   use m_foap4
+  use m_config
 
   implicit none
   integer, parameter :: dp = kind(0.0d0)
 
-  type(foap4_t), target :: f4
-  integer               :: n_output, min_level, n_refine_steps
-  integer               :: n_iterations, max_blocks, bx(2)
-  logical               :: write_grid
+  type(foap4_t) :: f4
+  type(CFG_t)   :: cfg
+  integer       :: n_output, min_level, n_refine_steps
+  integer       :: n_iterations, max_blocks, bx(2)
+  logical       :: write_grid
 
   call f4_initialize(f4, "error")
 
@@ -20,6 +22,17 @@ program benchmark_gc
   max_blocks     = 40000
   write_grid     = .false.
   bx(:)          = 32
+
+  call CFG_update_from_arguments(cfg)
+  call CFG_add_get(cfg, 'write_grid', write_grid, 'Write grid to file')
+  call CFG_add_get(cfg, 'n_iterations', n_iterations, 'Number of iterations')
+  call CFG_add_get(cfg, 'min_level', min_level, &
+       'Minimum refinement level in the domain')
+  call CFG_add_get(cfg, 'n_refine_steps', n_refine_steps, &
+       'Number of refinement steps')
+  call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
+  call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
+  call CFG_check(cfg)
 
   call benchmark_ghostcell(f4, bx, n_iterations, [1e-2_dp, 1e-2_dp], &
        min_level, n_refine_steps, max_blocks, write_grid, &

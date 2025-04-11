@@ -201,7 +201,7 @@ contains
 
     if (max_err > max_difference) then
        print *, f4%mpirank, max_err
-       ! error stop "Too large error"
+       error stop "Too large error"
     end if
 
   end subroutine local_average
