@@ -361,7 +361,7 @@ contains
     ! Get the hostids to determine how many processes are on this host
     hostid = gethostid()
     call MPI_Allgather(hostid, 1, MPI_INTEGER, hostids, 1, MPI_INTEGER, &
-         MPI_COMM_WORLD, ierr)
+         f4%mpicomm, ierr)
 
     ! Determine the local MPI ranks and number them, starting at zero
     num_local_procs = 0
