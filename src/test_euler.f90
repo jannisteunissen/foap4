@@ -141,9 +141,11 @@ contains
   pure subroutine to_primitive(u)
     !$acc routine seq
     real(dp), intent(inout) :: u(n_vars_euler)
+    real(dp) :: inv_rho
 
-    u(ix_momx) = u(ix_momx)/u(ix_rho)
-    u(ix_momy) = u(ix_momy)/u(ix_rho)
+    inv_rho = 1/u(ix_rho)
+    u(ix_momx) = u(ix_momx) * inv_rho
+    u(ix_momy) = u(ix_momy) * inv_rho
 
     u(ix_e) = (euler_gamma-1.0_dp) * (u(ix_e) - &
          0.5_dp * u(ix_rho)* (u(ix_momx)**2 + u(ix_momy)**2))
@@ -304,18 +306,17 @@ contains
     real(dp)                     :: fx(n_vars_euler, 2), fy(n_vars_euler, 2)
     real(dp)                     :: tmp(5, n_vars_euler), u(n_vars_euler)
     real(dp)                     :: uprim(lo(1):hi(1), lo(2):hi(2), n_vars_euler)
-    real(dp)                     :: dvar(bx(1), bx(2), n_vars_euler)
+    real(dp)                     :: dvar(n_vars_euler)
 
     call f4_update_ghostcells(f4, n_vars_euler, i_vars_grid+s_deriv)
 
-    dt_lim = 1e100_dp
+    max_cfl = 0.0_dp
 
-    !$acc parallel loop private(level, inv_dr, max_cfl, uprim, dvar) &
-    !$acc &reduction(min:dt_lim)
+    !$acc parallel loop private(level, inv_dr, max_cfl, uprim) &
+    !$acc &reduction(max:max_cfl)
     do n = 1, n_blocks
        level = f4%block_level(n)
        inv_dr = 1/f4%dr_level(:, level)
-       max_cfl = 0.0_dp
 
        !$acc loop collapse(2) private(u)
        do j = lo(2), hi(2)
@@ -327,7 +328,8 @@ contains
           end do
        end do
 
-       !$acc loop collapse(2) private(tmp, fx, fy, wmax) reduction(max:max_cfl)
+       !$acc loop collapse(2) private(tmp, fx, fy, dvar, wmax, iv, m) &
+       !$acc &reduction(max:max_cfl)
        do j = 1, bx(2)
           do i = 1, bx(1)
              ! Compute x and y fluxes
@@ -337,33 +339,26 @@ contains
              tmp = uprim(i, j-2:j+2, :)
              call muscl_flux_euler_prim(tmp, 2, fy, wmax(2))
 
-             ! Keep track of changes in variables
-             dvar(i, j, :) = dt * &
-                  ((fx(:, 1) - fx(:, 2)) * inv_dr(1) + &
+             max_cfl = max(max_cfl, sum(wmax * inv_dr))
+
+             ! Change due to fluxes
+             dvar(:) = dt * ((fx(:, 1) - fx(:, 2)) * inv_dr(1) + &
                   (fy(:, 1) - fy(:, 2)) * inv_dr(2))
 
-             max_cfl = max(max_cfl, sum(wmax * inv_dr))
-          end do
-       end do
-
-       dt_lim = min(dt_lim, 1/max_cfl)
-
-       ! Set output state after computations are done, since s_out can be
-       ! equal to s_deriv and s_prev
-       !$acc loop collapse(3) private(m)
-       do iv = 1, n_vars_euler
-          do j = 1, bx(2)
-             do i = 1, bx(1)
+             ! Set output state
+             do iv = 1, n_vars_euler
                 do m = 1, n_prev
                    ! Add weighted previous states
-                   dvar(i, j, iv) = dvar(i, j, iv) + &
+                   dvar(iv) = dvar(iv) + &
                         uu(i, j, i_vars_grid(iv)+s_prev(m), n) * w_prev(m)
                 end do
-                uu(i, j, i_vars_grid(iv)+s_out, n) = dvar(i, j, iv)
+                uu(i, j, i_vars_grid(iv)+s_out, n) = dvar(iv)
              end do
           end do
        end do
     end do
+
+    dt_lim = 1/max_cfl
 
   end subroutine forward_euler
 
