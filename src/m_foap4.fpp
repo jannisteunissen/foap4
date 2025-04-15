@@ -4,7 +4,6 @@
 !> methods.
 !>
 !> Author(s): Jannis Teunissen
-!> 
 module m_foap4
   use, intrinsic :: iso_c_binding
   use mpi_f08

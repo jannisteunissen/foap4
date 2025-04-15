@@ -4,6 +4,12 @@ This project aims to combine [p4est](https://www.p4est.org/) with OpenAcc and Fo
 
 # Installation
 
+## Prerequisites
+
+* [fypp](https://fypp.readthedocs.io/en/stable/)
+* An MPI-compatible C and Fortran compiler
+* [NVHPC](https://developer.nvidia.com/hpc-sdk-downloads) or another OpenACC-compatible compiler for GPU support
+
 ## Compiling p4est
 
 The `p4est` library is included as a git submodule. It seems most robust to compile this library using a GCC toolchain. To compile it into `p4est/build`, the following steps can be used:
