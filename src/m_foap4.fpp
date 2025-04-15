@@ -1136,7 +1136,7 @@ contains
     integer, intent(in)          :: i_vars(n_vars)
     integer                      :: i, j, n, ivar, iv
     integer                      :: i_f, j_f, half_bx(2)
-    integer                      :: iq, i_buf, i_buf0, face
+    integer                      :: iq, i_buf, i_buf0
 
     if (maxval(f4%gc_send_offset) * n_vars > size(f4%send_buffer)) &
          error stop "send buffer too small"
