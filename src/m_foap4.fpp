@@ -4,6 +4,7 @@
 !> methods.
 !>
 !> Author(s): Jannis Teunissen
+!> 
 module m_foap4
   use, intrinsic :: iso_c_binding
   use mpi_f08
@@ -1146,160 +1147,60 @@ contains
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
       !$acc parallel
 
-      face = 0
+#:def fyp_srl_to_buf(face, jlim, ilim, i0=0, j0=0)
       !$acc loop gang private(iq, i_buf0)
-      do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
+      do n = f4%gc_srl_to_buf_iface(${face}$), f4%gc_srl_to_buf_iface(${face}$+1)-1
          iq = f4%gc_srl_to_buf(1, n) + 1
          i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
          !$acc loop collapse(3) private(ivar, i_buf)
          do iv = 1, n_vars
-            do j = 1, bx(2)
-               do i = 1, n_gc
+            do j = 1, ${jlim}$
+               do i = 1, ${ilim}$
                   ivar = i_vars(iv)
-                  i_buf = i_buf0 + (iv - 1) * bx(2) * n_gc + (j - 1) * n_gc + i
-                  f4%send_buffer(i_buf) = uu(i, j, ivar, iq)
+                  i_buf = i_buf0 + (iv - 1) * ${jlim}$ * ${ilim}$ + (j - 1) * ${ilim}$ + i
+                  f4%send_buffer(i_buf) = uu(${i0}$+i, ${j0}$+j, ivar, iq)
                end do
             end do
          end do
       end do
+#:enddef
 
-      face = 1
-      !$acc loop gang private(iq, i_buf0)
-      do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
-         iq = f4%gc_srl_to_buf(1, n) + 1
-         i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
-         !$acc loop collapse(3) private(ivar, i_buf)
-         do iv = 1, n_vars
-            do j = 1, bx(2)
-               do i = 1, n_gc
-                  ivar = i_vars(iv)
-                  i_buf = i_buf0 + (iv - 1) * bx(2) * n_gc + (j - 1) * n_gc + i
-                  f4%send_buffer(i_buf) = uu(bx(1)-n_gc+i, j, ivar, iq)
-               end do
-            end do
-         end do
-      end do
-
-      face = 2
-      !$acc loop gang private(iq, i_buf0)
-      do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
-         iq = f4%gc_srl_to_buf(1, n) + 1
-         i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
-         !$acc loop collapse(3) private(ivar, i_buf)
-         do iv = 1, n_vars
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  ivar = i_vars(iv)
-                  i_buf = i_buf0 + (iv - 1) * bx(1) * n_gc + (j - 1) * bx(1) + i
-                  f4%send_buffer(i_buf) = uu(i, j, ivar, iq)
-               end do
-            end do
-         end do
-      end do
-
-      face = 3
-      !$acc loop gang private(iq, i_buf0)
-      do n = f4%gc_srl_to_buf_iface(face), f4%gc_srl_to_buf_iface(face+1)-1
-         iq = f4%gc_srl_to_buf(1, n) + 1
-         i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
-
-         !$acc loop collapse(3) private(ivar, i_buf)
-         do iv = 1, n_vars
-            do j = 1, n_gc
-               do i = 1, bx(1)
-                  ivar = i_vars(iv)
-                  i_buf = i_buf0 + (iv - 1) * bx(1) * n_gc + (j - 1) * bx(1) + i
-                  f4%send_buffer(i_buf) = uu(i, bx(2)-n_gc+j, ivar, iq)
-               end do
-            end do
-         end do
-      end do
+      @:fyp_srl_to_buf(0, bx(2), n_gc)
+      @:fyp_srl_to_buf(1, bx(2), n_gc, i0=bx(1)-n_gc)
+      @:fyp_srl_to_buf(2, n_gc, bx(1))
+      @:fyp_srl_to_buf(3, n_gc, bx(1), j0=bx(2)-n_gc)
 
       ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
 
-      face = 0
+#:def fyp_f2c_to_buf(face, jlim, ilim, i0=0, j0=0)
       !$acc loop gang private(iq, i_buf0)
-      do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
+      do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
          iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
          i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
 
          !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
          do iv = 1, n_vars
-            do j = 1, half_bx(2)
-               do i = 1, n_gc
+            do j = 1, ${jlim}$
+               do i = 1, ${ilim}$
                   ivar = i_vars(iv)
-                  j_f = 2 * j - 1
-                  i_f = 2 * i - 1
-                  i_buf = i_buf0 + (iv - 1) * n_gc * half_bx(2) + (j - 1) * n_gc + i
+                  j_f = ${j0}$ + 2 * j - 1
+                  i_f = ${i0}$ + 2 * i - 1
+                  i_buf = i_buf0 + (iv - 1) * ${ilim}$ * ${jlim}$ + (j - 1) * ${ilim}$ + i
                   f4%send_buffer(i_buf) = 0.25_dp * &
                        sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                end do
             end do
          end do
       end do
+#:enddef
 
-      face = 1
-      !$acc loop gang private(iq, i_buf0)
-      do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
-         iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
-         i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
+      @:fyp_f2c_to_buf(0, half_bx(2), n_gc)
 
-         !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
-         do iv = 1, n_vars
-            do j = 1, half_bx(2)
-               do i = 1, n_gc
-                  ivar = i_vars(iv)
-                  j_f = 2 * j - 1
-                  i_f = bx(1) - 2 * n_gc + 2 * i - 1
-                  i_buf = i_buf0 + (iv - 1) * n_gc * half_bx(2) + (j - 1) * n_gc + i
-                  f4%send_buffer(i_buf) = 0.25_dp * &
-                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-               end do
-            end do
-         end do
-      end do
+      @:fyp_f2c_to_buf(1, half_bx(2), n_gc, i0=bx(1) - 2*n_gc)
 
-      face = 2
-      !$acc loop gang private(iq, i_buf0)
-      do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
-         iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
-         i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
+      @:fyp_f2c_to_buf(2, n_gc, half_bx(1))
 
-         !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
-         do iv = 1, n_vars
-            do j = 1, n_gc
-               do i = 1, half_bx(1)
-                  ivar = i_vars(iv)
-                  j_f = 2 * j - 1
-                  i_f = 2 * i - 1
-                  i_buf = i_buf0 + (iv - 1) * n_gc * half_bx(1) + (j - 1) * half_bx(1) + i
-                  f4%send_buffer(i_buf) = 0.25_dp * &
-                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-               end do
-            end do
-         end do
-      end do
-
-      face = 3
-      !$acc loop gang private(iq, i_buf0)
-      do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
-         iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
-         i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
-
-         !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
-         do iv = 1, n_vars
-            do j = 1, n_gc
-               do i = 1, half_bx(1)
-                  ivar = i_vars(iv)
-                  j_f = bx(2) - 2 * n_gc + 2 * j - 1
-                  i_f = 2 * i - 1
-                  i_buf = i_buf0 + (iv - 1) * n_gc * half_bx(1) + (j - 1) * half_bx(1) + i
-                  f4%send_buffer(i_buf) = 0.25_dp * &
-                       sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
-               end do
-            end do
-         end do
-      end do
+      @:fyp_f2c_to_buf(3, n_gc, half_bx(1), j0=bx(2) - 2*n_gc)
 
       !$acc end parallel
 

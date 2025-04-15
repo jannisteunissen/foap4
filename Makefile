@@ -2,6 +2,7 @@
 
 FC := mpif90
 CC := mpicc
+FYPPFLAGS := -n
 INCDIRS := p4est/build/local/include
 LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
@@ -56,3 +57,7 @@ src/%.mod: src/%.f90 src/%.o
 # How to get Fortran executables from .o object files
 %: src/%.o
 	$(FC) -o $@ $^ $(FFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
+
+.PRECIOUS: src/%.f90
+src/%.f90: src/%.fpp
+	fypp $(FYPPFLAGS) $< $@
