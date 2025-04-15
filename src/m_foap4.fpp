@@ -851,6 +851,16 @@ contains
             bnd_face(i)%quadid(2), bnd_face(i)%offset]
     end do
 
+    ! Convert faces 0 and 2 to 1 and 3, respectively
+    do n = f4%gc_srl_local_iface(0), f4%gc_srl_local_iface(1)-1
+       f4%gc_srl_local(:, n) = f4%gc_srl_local([2, 1], n)
+    end do
+    do n = f4%gc_srl_local_iface(2), f4%gc_srl_local_iface(3)-1
+       f4%gc_srl_local(:, n) = f4%gc_srl_local([2, 1], n)
+    end do
+    f4%gc_srl_local_iface(1) = f4%gc_srl_local_iface(0)
+    f4%gc_srl_local_iface(3) = f4%gc_srl_local_iface(2)
+
     ! Non-local ghost cell exchange at the same level
     n = sum(i_same) - i_same(mpirank)
     allocate(f4%gc_srl_from_buf(2, n))
@@ -1194,11 +1204,8 @@ contains
 #:enddef
 
       @:fyp_f2c_to_buf(0, half_bx(2), n_gc)
-
       @:fyp_f2c_to_buf(1, half_bx(2), n_gc, i0=bx(1) - 2*n_gc)
-
       @:fyp_f2c_to_buf(2, n_gc, half_bx(1))
-
       @:fyp_f2c_to_buf(3, n_gc, half_bx(1), j0=bx(2) - 2*n_gc)
 
       !$acc end parallel
@@ -1486,84 +1493,31 @@ contains
 
     !$acc parallel
 
-    ! ----------------------------------------
+#:def fyp_srl_local(face, jlim, ilim, i0, j0, i1, j1, i2, j2, i3, j3)
+    !$acc loop gang private(iq, jq)
+    do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
+       iq   = f4%gc_srl_local(1, n) + 1
+       jq   = f4%gc_srl_local(2, n) + 1
+
+       !$acc loop collapse(3) private(ivar)
+       do iv = 1, n_vars
+          do j = 1, ${jlim}$
+             do i = 1, ${ilim}$
+                ivar = i_vars(iv)
+                uu(${i0}$+i, ${j0}$+j, ivar, iq) = uu(${i1}$+i, ${j1}$+j, ivar, jq)
+                uu(${i2}$+i, ${j2}$+j, ivar, jq) = uu(${i3}$+i, ${j3}$+j, ivar, iq)
+             end do
+          end do
+       end do
+    end do
+#:enddef
+
     ! Fill local boundaries at the same refinement level
-    ! ----------------------------------------
-    face = 0
-    !$acc loop gang private(iq, jq)
-    do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
-       iq   = f4%gc_srl_local(1, n) + 1
-       jq   = f4%gc_srl_local(2, n) + 1
+    @:fyp_srl_local(1, bx(2), n_gc, bx(1), 0, 0, 0, -n_gc, 0, bx(1)-n_gc, 0)
+    @:fyp_srl_local(3, n_gc, bx(1), 0, bx(2), 0, 0, 0, -n_gc, 0, bx(2)-n_gc)
 
-       !$acc loop collapse(3) private(ivar)
-       do iv = 1, n_vars
-          do j = 1, bx(2)
-             do i = 1, n_gc
-                ivar = i_vars(iv)
-                uu(-n_gc+i, j, ivar, iq) = uu(bx(1)-n_gc+i, j, ivar, jq)
-                uu(bx(1)+i, j, ivar, jq) = uu(i, j, ivar, iq)
-             end do
-          end do
-       end do
-    end do
 
-    face = 1
-    !$acc loop gang private(iq, jq)
-    do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
-       iq   = f4%gc_srl_local(1, n) + 1
-       jq   = f4%gc_srl_local(2, n) + 1
-
-       !$acc loop collapse(3) private(ivar)
-       do iv = 1, n_vars
-          do j = 1, bx(2)
-             do i = 1, n_gc
-                ivar = i_vars(iv)
-                uu(bx(1)+i, j, ivar, iq) = uu(i, j, ivar, jq)
-                uu(-n_gc+i, j, ivar, jq) = uu(bx(1)-n_gc+i, j, ivar, iq)
-             end do
-          end do
-       end do
-    end do
-
-    face = 2
-    !$acc loop gang private(iq, jq)
-    do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
-       iq   = f4%gc_srl_local(1, n) + 1
-       jq   = f4%gc_srl_local(2, n) + 1
-
-       !$acc loop collapse(3) private(ivar)
-       do iv = 1, n_vars
-          do j = 1, n_gc
-             do i = 1, bx(1)
-                ivar = i_vars(iv)
-                uu(i, -n_gc+j, ivar, iq) = uu(i, bx(2)-n_gc+j, ivar, jq)
-                uu(i, bx(2)+j, ivar, jq) = uu(i, j, ivar, iq)
-             end do
-          end do
-       end do
-    end do
-
-    face = 3
-    !$acc loop gang private(iq, jq)
-    do n = f4%gc_srl_local_iface(face), f4%gc_srl_local_iface(face+1)-1
-       iq   = f4%gc_srl_local(1, n) + 1
-       jq   = f4%gc_srl_local(2, n) + 1
-
-       !$acc loop collapse(3) private(ivar)
-       do iv = 1, n_vars
-          do j = 1, n_gc
-             do i = 1, bx(1)
-                ivar = i_vars(iv)
-                uu(i, bx(2)+j, ivar, iq) = uu(i, j, ivar, jq)
-                uu(i, -n_gc+j, ivar, jq) = uu(i, bx(2)-n_gc+j, ivar, iq)
-             end do
-          end do
-       end do
-    end do
-
-    ! ----------------------------------------
     ! Fill physical boundaries
-    ! ----------------------------------------
 
     face = 0
     !$acc loop gang private(iq)
