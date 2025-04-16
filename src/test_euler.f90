@@ -19,6 +19,7 @@ program euler
   logical  :: periodic(2) = .true.
   integer  :: n_gc        = 2
   real(dp) :: dt          = 1e-3_dp
+  character(len=10) :: test_case = "sod"
 
   call f4_initialize(f4, "error")
 
@@ -31,25 +32,28 @@ program euler
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
   call CFG_add_get(cfg, 'n_gc', n_gc, 'Number of ghost cells')
   call CFG_add_get(cfg, 'dt', dt, 'Time step')
+  call CFG_add_get(cfg, 'test_case', test_case, 'Which test case to run')
   call CFG_check(cfg)
 
   if (n_gc < 2) error stop "n_gc < 2"
 
   call test_euler(f4, bx, min_level, max_blocks, &
-       num_outputs, "output/test_euler")
+       num_outputs, "output/test_euler", test_case)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains
 
-  subroutine test_euler(f4, bx, min_level, max_blocks, num_outputs, base_name)
+  subroutine test_euler(f4, bx, min_level, max_blocks, num_outputs, base_name, &
+       test_case)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: bx(2)
     integer, intent(in)          :: min_level
     integer, intent(in)          :: max_blocks
     integer, intent(in)          :: num_outputs
     character(len=*), intent(in) :: base_name
+    character(len=*), intent(in) :: test_case
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
     integer, parameter           :: n_gc                = 2
@@ -73,7 +77,7 @@ contains
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_variables, var_names, periodic, min_level, max_blocks)
 
-    call set_initial_conditions(f4, "sod")
+    call set_initial_conditions(f4, test_case)
 
     ! if (do_refinement) then
     !    do n = 1, 10
@@ -241,8 +245,7 @@ contains
   subroutine set_initial_conditions(f4, test_case)
     type(foap4_t), intent(inout) :: f4
     character(len=*), intent(in) :: test_case
-    integer                      :: n, i, j
-    real(dp)                     :: rr(2)
+    integer                      :: n
     real(dp)                     :: u0(n_vars_euler, 4)
 
     select case (test_case)
@@ -251,24 +254,45 @@ contains
        u0(ix_rho, :)    = [1.0_dp, 0.5197_dp, 0.1072_dp, 0.2579_dp]
        u0(ix_momx, :) = [0.0_dp, -0.7259_dp, -0.7259_dp, 0.0_dp]
        u0(ix_momy, :) = [0.0_dp, 0.0_dp, -1.4045_dp, -1.4045_dp]
+
+       do n = 1, 4
+          call to_conservative(u0(:, n))
+       end do
+       call set_initial_quadrants(f4, u0)
     case ("sixth")
        u0(ix_e, :)      = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp]
        u0(ix_rho, :)    = [1.0_dp, 2.0_dp, 1.0_dp, 3.0_dp]
        u0(ix_momx, :) = [0.75_dp, 0.75_dp, -0.75_dp, -0.75_dp]
        u0(ix_momy, :) = [-0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp]
+
+       do n = 1, 4
+          call to_conservative(u0(:, n))
+       end do
+       call set_initial_quadrants(f4, u0)
     case ("sod")
        ! 1D Sod shock test case
        u0(ix_rho, :)    = [0.125_dp, 1.0_dp, 1.0_dp, 0.125_dp]
        u0(ix_e, :)      = [0.1_dp, 1.0_dp, 1.0_dp, 0.1_dp]
        u0(ix_momx, :) = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
        u0(ix_momy, :) = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
+
+       do n = 1, 4
+          call to_conservative(u0(:, n))
+       end do
+       call set_initial_quadrants(f4, u0)
+    case ("rt")
+       call set_rayleigh_taylor(f4)
     case default
-       error stop "Unknown test case"
+       error stop "Unknown test case, options: rt, sod, first, sixth"
     end select
 
-    do n = 1, 4
-       call to_conservative(u0(:, n))
-    end do
+  end subroutine set_initial_conditions
+
+  subroutine set_initial_quadrants(f4, u0)
+    type(foap4_t), intent(inout) :: f4
+    real(dp), intent(in)         :: u0(n_vars_euler, 4)
+    integer                      :: n, i, j
+    real(dp)                     :: rr(2)
 
     !$acc parallel loop
     do n = 1, f4%n_blocks
@@ -289,7 +313,53 @@ contains
           end do
        end do
     end do
-  end subroutine set_initial_conditions
+  end subroutine set_initial_quadrants
+
+  subroutine set_rayleigh_taylor(f4)
+    type(foap4_t), intent(inout) :: f4
+    integer                      :: n, i, j
+    real(dp)                     :: y0, rho_high, rho_low, width
+    real(dp)                     :: p_interface, kx, rr(2)
+    real(dp), parameter          :: pi = acos(-1.0_dp)
+
+    ! The location of interface
+    y0 = 0.8d0
+
+    ! Width of the interface
+    width = 0.05d0
+
+    ! High and low density
+    rho_high = 1.0_dp
+    rho_low  = 0.1_dp
+
+    ! Pressure at interface
+    p_interface = 1.0_dp
+
+    ! Wavelength
+    kx = 2 * pi
+
+    !$acc parallel loop
+    do n = 1, f4%n_blocks
+       !$acc loop collapse(2) private(rr)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
+             rr = f4_cell_coord(f4, n, i, j)
+
+             f4%uu(i, j, i_momx, n) = 0.0_dp
+             f4%uu(i, j, i_momy, n) = 0.0_dp
+
+             if (rr(2) > y0 + width * sin(kx * rr(1))) then
+                f4%uu(i, j, i_rho, n) = rho_high
+             else
+                f4%uu(i, j, i_rho, n) = rho_low
+             end if
+
+             f4%uu(i, j, i_e, n) = p_interface - f4%uu(i, j, i_rho, n) * &
+                  (rr(2) - y0) * inv_gamma_m1
+          end do
+       end do
+    end do
+  end subroutine set_rayleigh_taylor
 
   subroutine forward_euler(f4, bx, lo, hi, n_vars, n_blocks, dt, dt_lim, uu, &
        s_deriv, n_prev, s_prev, w_prev, s_out)
@@ -390,4 +460,4 @@ contains
     end if
   end function vanleer
 
-end program euler
+end program
