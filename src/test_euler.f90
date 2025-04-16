@@ -172,35 +172,37 @@ contains
     real(dp), intent(out) :: flux(n_vars_euler, 2)
     real(dp), intent(out) :: wmax
     real(dp)              :: wmax1, wmax2
+
+    call muscl_flux_euler_prim_side(u, 2, flux_dim, flux(:, 1), wmax1)
+    call muscl_flux_euler_prim_side(u, 3, flux_dim, flux(:, 2), wmax2)
+    wmax = max(wmax1, wmax2)
+  end subroutine muscl_flux_euler_prim
+
+  subroutine muscl_flux_euler_prim_side(u, i0, flux_dim, flux, wmax)
+    !$acc routine seq
+    real(dp), intent(in)  :: u(5, n_vars_euler)
+    integer, intent(in)   :: i0
+    integer, intent(in)   :: flux_dim
+    real(dp), intent(out) :: flux(n_vars_euler)
+    real(dp), intent(out) :: wmax
     real(dp)              :: uL(n_vars_euler), uR(n_vars_euler), wL, wR
     real(dp)              :: flux_l(n_vars_euler), flux_r(n_vars_euler)
 
-    ! Construct uL, uR for first cell face
-    uL = u(2, :) + 0.5_dp * vanleer(u(2, :) - u(1, :), u(3, :) - u(2, :))
-    uR = u(3, :) - 0.5_dp * vanleer(u(3, :) - u(2, :), u(4, :) - u(3, :))
+    ! Construct uL, uR for cell face
+    uL = u(i0, :) + 0.5_dp * vanleer(u(i0, :) - u(i0-1, :), &
+         u(i0+1, :) - u(i0, :))
+    uR = u(i0+1, :) - 0.5_dp * vanleer(u(i0+1, :) - u(i0, :), &
+         u(i0+2, :) - u(i0+1, :))
 
     call euler_flux(uL, flux_dim, flux_l, wL)
     call euler_flux(uR, flux_dim, flux_r, wR)
-    wmax1 = max(wL, wR)
+    wmax = max(wL, wR)
 
     call to_conservative(uL)
     call to_conservative(uR)
-    flux(:, 1) = 0.5_dp * (flux_l + flux_r - wmax1 * (uR - uL))
+    flux(:) = 0.5_dp * (flux_l + flux_r - wmax * (uR - uL))
 
-    ! Construct uL, uR for second cell face
-    uL = u(3, :) + 0.5_dp * vanleer(u(3, :) - u(2, :), u(4, :) - u(3, :))
-    uR = u(4, :) - 0.5_dp * vanleer(u(4, :) - u(3, :), u(5, :) - u(4, :))
-
-    call euler_flux(uL, flux_dim, flux_l, wL)
-    call euler_flux(uR, flux_dim, flux_r, wR)
-    wmax2 = max(wL, wR)
-
-    call to_conservative(uL)
-    call to_conservative(uR)
-    flux(:, 2) = 0.5_dp * (flux_l + flux_r - wmax2 * (uR - uL))
-
-    wmax = max(wmax1, wmax2)
-  end subroutine muscl_flux_euler_prim
+  end subroutine muscl_flux_euler_prim_side
 
   subroutine euler_flux(u, flux_dim, flux, w)
     !$acc routine seq
