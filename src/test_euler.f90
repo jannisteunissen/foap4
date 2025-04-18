@@ -38,7 +38,7 @@ program euler
   if (n_gc < 2) error stop "n_gc < 2"
 
   call test_euler(f4, bx, min_level, max_blocks, &
-       num_outputs, "output/test_euler", test_case)
+       num_outputs, "output/test_euler", test_case, 2.0_dp)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
@@ -46,7 +46,7 @@ program euler
 contains
 
   subroutine test_euler(f4, bx, min_level, max_blocks, num_outputs, base_name, &
-       test_case)
+       test_case, end_time)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: bx(2)
     integer, intent(in)          :: min_level
@@ -57,7 +57,7 @@ contains
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
     integer, parameter           :: n_gc                = 2
-    logical, parameter           :: periodic(2)         = [.true., .true.]
+    logical                      :: periodic(2)         = [.true., .true.]
     real(dp), parameter          :: cfl_number          = 0.5_dp
     integer                      :: n_output !n, prev_mesh_revision
     integer                      :: n_iterations, ierr
@@ -67,15 +67,22 @@ contains
     real(dp)                     :: time, end_time, t0, t1
 
     time = 0.0_dp
-    end_time = 1.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
     n_output = 0
     n_iterations = 0
     sum_local_blocks = 0
     dt_lim = 0.0_dp
 
+    if (test_case == "rt") periodic(2) = .false.
+
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
-         n_variables, var_names, periodic, min_level, max_blocks)
+         n_variables, var_names, periodic, min_level, max_blocks, &
+         f4_bc_neumann, 0.0_dp)
+
+    if (test_case == "rt") then
+       call f4_set_physical_boundary(f4, i_momy, 2, f4_bc_dirichlet, 0.0_dp)
+       call f4_set_physical_boundary(f4, i_momy, 3, f4_bc_dirichlet, 0.0_dp)
+    end if
 
     call set_initial_conditions(f4, test_case)
 
@@ -325,7 +332,7 @@ contains
     ! The location of interface
     y0 = 0.8d0
 
-    ! Width of the interface
+    ! Width of the sinusoidal fluctuations on the interface
     width = 0.05d0
 
     ! High and low density
@@ -354,8 +361,8 @@ contains
                 f4%uu(i, j, i_rho, n) = rho_low
              end if
 
-             f4%uu(i, j, i_e, n) = p_interface - f4%uu(i, j, i_rho, n) * &
-                  (rr(2) - y0) * inv_gamma_m1
+             f4%uu(i, j, i_e, n) = inv_gamma_m1 * (p_interface - 1.0_dp * &
+                  f4%uu(i, j, i_rho, n) * (rr(2) - y0))
           end do
        end do
     end do
@@ -416,6 +423,12 @@ contains
              ! Change due to fluxes
              dvar(:) = dt * ((fx(:, 1) - fx(:, 2)) * inv_dr(1) + &
                   (fy(:, 1) - fy(:, 2)) * inv_dr(2))
+
+             ! Change due to source terms
+             ! TODO: enable/disable this source term in a nice way
+             ! TODO: use variable for source term
+             dvar(i_momy) = dvar(i_momy) + dt * (-1.0_dp) * uu(i, j, i_rho+s_deriv, n)
+             dvar(i_e) = dvar(i_e) + dt * (-1.0_dp) * uu(i, j, i_momy+s_deriv, n)
 
              ! Set output state
              do iv = 1, n_vars_euler

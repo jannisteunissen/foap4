@@ -5,7 +5,7 @@ module m_euler
 
   integer, parameter, private :: dp = kind(0.0d0)
 
-  real(dp), parameter :: euler_gamma  = 1.4_dp
+  real(dp), parameter :: euler_gamma  = 5.0_dp/3.0_dp
   real(dp), parameter :: inv_gamma_m1 = 1/(euler_gamma-1.0_dp)
 
   integer, parameter  :: n_vars_euler = 4

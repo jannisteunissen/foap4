@@ -35,6 +35,15 @@ module m_foap4
   !> Value indicating a neighbor at a lower refinement level at a block face
   integer, parameter :: FACE_FINE_TO_COARSE = 3
 
+  !> Value indicating Dirichlet boundary condition
+  integer, parameter, public :: f4_bc_dirichlet = 0
+
+  !> Value indicating Neumann boundary condition
+  integer, parameter, public :: f4_bc_neumann = 1
+
+  !> Value indicating extrapolation boundary condition
+  integer, parameter, public :: f4_bc_linear_extrap = 2
+
   !> Type to store an array of integers
   type int_array_t
      integer, allocatable :: i(:)
@@ -67,6 +76,11 @@ module m_foap4
 
      integer :: n_blocks              !< Number of blocks used
      integer :: gc_mesh_revision = -1 !< Revision number (global) of the mesh
+
+     !> Array storing physical boundary conditions bc_type(ivar, iface)
+     integer, allocatable :: bc_type(:, :)
+     !> Array storing value of boundary conditions bc_value(ivar, iface)
+     real(dp), allocatable :: bc_value(:, :)
 
      !> Level of each block
      integer, allocatable  :: block_level(:)
@@ -277,6 +291,7 @@ module m_foap4
   public :: f4_destroy
   public :: f4_finalize
   public :: f4_construct_brick
+  public :: f4_set_physical_boundary
   public :: f4_reset_wtime
   public :: f4_print_wtime
   public :: f4_write_grid
@@ -448,6 +463,7 @@ contains
 
     ! OpenACC - Remove data from device
 
+    !$acc exit data delete(f4%bc_type, f4%bc_value)
     !$acc exit data delete(f4%block_level, f4%block_origin)
     !$acc exit data delete(f4%uu, f4%refinement_flags)
     !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
@@ -460,6 +476,8 @@ contains
     call pw_destroy(f4%pw)
 
     deallocate(f4%var_names)
+    deallocate(f4%bc_type)
+    deallocate(f4%bc_value)
     deallocate(f4%block_origin)
     deallocate(f4%block_level)
     deallocate(f4%refinement_flags)
@@ -480,7 +498,7 @@ contains
 
   !> Construct a brick of blocks
   subroutine f4_construct_brick(f4, trees_per_dim, tree_length, bx, n_gc, &
-       n_vars, var_names, periodic, min_level, max_blocks)
+       n_vars, var_names, periodic, min_level, max_blocks, bc_type, bc_value)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: trees_per_dim(2) !< How many trees per dimension
     real(dp), intent(in)         :: tree_length(2)   !< Length of each tree
@@ -491,6 +509,8 @@ contains
     logical, intent(in)          :: periodic(2) !< Periodic flag per dim
     integer, intent(in)          :: min_level   !< Refine up to this level
     integer, intent(in)          :: max_blocks  !< Maximum number of blocks
+    integer, intent(in)          :: bc_type !< Default physical boundary type
+    real(dp), intent(in)         :: bc_value !< Default physical boundary value
     integer                      :: i, periodic_as_int(2)
 
     if (bx(1) /= bx(2)) error stop "TODO: unequal bx(:) not yet supported"
@@ -515,6 +535,11 @@ contains
     do i = 1, n_vars
        f4%var_names(i) = var_names(i)
     end do
+
+    allocate(f4%bc_type(n_vars, 0:3))
+    allocate(f4%bc_value(n_vars, 0:3))
+    f4%bc_type(:, :) = bc_type
+    f4%bc_value(:, :) = bc_value
 
     do i = 0, P4EST_MAXLEVEL-1
        f4%dr_level(:, i) = (tree_length/bx) * 0.5**i
@@ -541,6 +566,7 @@ contains
 
     ! OpenACC - Copy data structure and create allocatable components
     !$acc enter data copyin(f4)
+    !$acc enter data copyin(f4%bc_type, f4%bc_value)
     !$acc enter data create(f4%block_level, f4%block_origin)
     !$acc enter data create(f4%uu, f4%refinement_flags)
     !$acc enter data create(f4%recv_buffer, f4%send_buffer)
@@ -552,6 +578,22 @@ contains
     call f4_set_quadrants(f4)
 
   end subroutine f4_construct_brick
+
+  !> Set physical boundary conditions for a variable on all faces
+  subroutine f4_set_physical_boundary(f4, ivar, iface, bc_type, bc_value)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: ivar
+    integer, intent(in)          :: iface !< Range 0 - 3
+    integer, intent(in)          :: bc_type
+    real(dp), intent(in)         :: bc_value
+
+    if (iface < 0 .or. iface > 3) error stop "Must have 0 <= iface <= 3 "
+    if (ivar < 1 .or. ivar > f4%n_vars) error stop "Must have 1 <= ivar <= n_vars"
+
+    f4%bc_type(ivar, iface) = bc_type
+    f4%bc_value(ivar, iface) = bc_value
+    !$acc update device(f4%bc_type(ivar, iface), f4%bc_value(ivar, iface))
+  end subroutine f4_set_physical_boundary
 
   !> Return the mesh revision number
   pure integer function f4_get_mesh_revision(f4)
@@ -1487,7 +1529,8 @@ contains
     real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
     integer                      :: n, i, j, iq, jq, i_f, j_f, face
     integer                      :: i_buf, i_buf0, iv, ivar
-    integer                      :: half_bx(2), offset
+    integer                      :: half_bx(2), offset, bc_type, level
+    real(dp)                     :: bc_value, dr(2)
 
     half_bx = f4%bx/2
 
@@ -1519,68 +1562,123 @@ contains
     ! Fill physical boundaries
 
     face = 0
-    !$acc loop gang private(iq)
+    !$acc loop gang private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       iq = f4%gc_phys(n) + 1
+       iq    = f4%gc_phys(n) + 1
+       level = f4%block_level(n)
+       dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar)
+       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
        do iv = 1, n_vars
           do j = 1, bx(2)
              do i = 1, n_gc
                 ivar = i_vars(iv)
-                uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * &
-                     (uu(2, j, ivar, iq) - uu(1, j, ivar, iq))
+                bc_type = f4%bc_type(ivar, face)
+                bc_value = f4%bc_value(ivar, face)
+
+                select case (bc_type)
+                case (f4_bc_dirichlet)
+                   uu(1-i, j, ivar, iq) = 2 * bc_value - uu(i, j, ivar, iq)
+                case (f4_bc_neumann)
+                   uu(1-i, j, ivar, iq) = uu(i, j, ivar, iq) - &
+                        (2*i-1) * dr(1) * bc_value
+                case (f4_bc_linear_extrap)
+                   uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * &
+                        (uu(2, j, ivar, iq) - uu(1, j, ivar, iq))
+                end select
              end do
           end do
        end do
     end do
 
     face = 1
-    !$acc loop gang private(iq)
+    !$acc loop gang private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       iq = f4%gc_phys(n) + 1
+       iq    = f4%gc_phys(n) + 1
+       level = f4%block_level(n)
+       dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar)
+       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
        do iv = 1, n_vars
           do j = 1, bx(2)
              do i = 1, n_gc
                 ivar = i_vars(iv)
-                uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * &
+                bc_type = f4%bc_type(ivar, face)
+                bc_value = f4%bc_value(ivar, face)
+
+                select case (bc_type)
+                case (f4_bc_dirichlet)
+                   uu(bx(1)+i, j, ivar, iq) = &
+                        2 * bc_value - uu(bx(1)+1-i, j, ivar, iq)
+                case (f4_bc_neumann)
+                   uu(bx(1)+i, j, ivar, iq) = uu(bx(1)+1-i, j, ivar, iq) + &
+                        (2*i-1) * dr(1) * bc_value
+                case (f4_bc_linear_extrap)
+                   uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * &
                      (uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq))
+                end select
              end do
           end do
        end do
     end do
 
     face = 2
-    !$acc loop gang private(iq)
+    !$acc loop gang private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       iq = f4%gc_phys(n) + 1
+       iq    = f4%gc_phys(n) + 1
+       level = f4%block_level(n)
+       dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar)
+       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
        do iv = 1, n_vars
           do j = 1, n_gc
              do i = 1, bx(1)
                 ivar = i_vars(iv)
-                uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * &
+                bc_type = f4%bc_type(ivar, face)
+                bc_value = f4%bc_value(ivar, face)
+
+                select case (bc_type)
+                case (f4_bc_dirichlet)
+                   uu(i, 1-j, ivar, iq) = &
+                        2 * bc_value - uu(i, j, ivar, iq)
+                case (f4_bc_neumann)
+                   uu(i, 1-j, ivar, iq) = uu(i, j, ivar, iq) - &
+                        (2*j-1) * dr(2) * bc_value
+                case (f4_bc_linear_extrap)
+                   uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * &
                      (uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq))
+                end select
              end do
           end do
        end do
     end do
 
     face = 3
-    !$acc loop gang private(iq)
+    !$acc loop gang private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       iq = f4%gc_phys(n) + 1
+       iq    = f4%gc_phys(n) + 1
+       level = f4%block_level(n)
+       dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar)
+       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
        do iv = 1, n_vars
           do j = 1, n_gc
              do i = 1, bx(1)
                 ivar = i_vars(iv)
-                uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * &
+                bc_type = f4%bc_type(ivar, face)
+                bc_value = f4%bc_value(ivar, face)
+
+                select case (bc_type)
+                case (f4_bc_dirichlet)
+                   uu(i, bx(2)+j, ivar, iq) = &
+                        2 * bc_value - uu(i, bx(2)+1-j, ivar, iq)
+                case (f4_bc_neumann)
+                   uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2)+1-j, ivar, iq) + &
+                        (2*j-1) * dr(2) * bc_value
+                case (f4_bc_linear_extrap)
+                   uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * &
                      (uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq))
+                end select
              end do
           end do
        end do

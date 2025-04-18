@@ -66,7 +66,8 @@ contains
     real(dp)                     :: t_total, ghostcells_per_ns
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
-         n_vars, var_names, periodic, min_level, max_blocks)
+         n_vars, var_names, periodic, min_level, max_blocks, &
+         f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
     call f4_update_ghostcells(f4, 2, [1, 2])
