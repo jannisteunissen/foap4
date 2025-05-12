@@ -15,10 +15,10 @@ program euler
   integer  :: max_blocks  = 1000
   integer  :: bx(2)       = [32, 32]
   integer  :: num_outputs = 40
-  integer  :: n_iter      = 100
   logical  :: periodic(2) = .true.
   integer  :: n_gc        = 2
   real(dp) :: dt          = 1e-3_dp
+  real(dp) :: end_time    = 2.0_dp
   character(len=10) :: test_case = "sod"
 
   call f4_initialize(f4, "error")
@@ -27,18 +27,17 @@ program euler
   call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
   call CFG_add_get(cfg, 'min_level', min_level, 'Initial refinement level')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
-  call CFG_add_get(cfg, 'n_iter', n_iter, 'Number of iterations')
   call CFG_add_get(cfg, 'periodic', periodic, 'Whether the domain is periodic')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
   call CFG_add_get(cfg, 'n_gc', n_gc, 'Number of ghost cells')
-  call CFG_add_get(cfg, 'dt', dt, 'Time step')
+  call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_add_get(cfg, 'test_case', test_case, 'Which test case to run')
   call CFG_check(cfg)
 
   if (n_gc < 2) error stop "n_gc < 2"
 
   call test_euler(f4, bx, min_level, max_blocks, &
-       num_outputs, "output/test_euler", test_case, 2.0_dp)
+       num_outputs, "output/test_euler", test_case, end_time)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
