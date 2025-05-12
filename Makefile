@@ -23,11 +23,11 @@ ifeq ($(compiler_brand), GNU)
 		FFLAGS += -O0 -fcheck=all
 	endif
 else ifeq ($(compiler_brand), nvfortran)
-	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g -module	\
-	src $(FFLAGS_USER)
+	FFLAGS ?= -Wall -acc=gpu -gpu=ccall -fast -Mpreprocess -static-nvidia	\
+	-g -module src $(FFLAGS_USER)
 else ifeq ($(compiler_brand), pgfortran)
-	FFLAGS ?= -Wall -acc=gpu -fast -Mpreprocess -static-nvidia -g -module	\
-	src $(FFLAGS_USER)
+	FFLAGS ?= -Wall -acc=gpu -fast -gpu=ccall -Mpreprocess -static-nvidia	\
+	-g -module src $(FFLAGS_USER)
 endif
 
 # Dependencies
