@@ -1199,7 +1199,7 @@ contains
       !$acc parallel
 
 #:def fyp_srl_to_buf(face, jlim, ilim, i0=0, j0=0)
-      !$acc loop gang private(iq, i_buf0)
+      !$acc loop private(iq, i_buf0)
       do n = f4%gc_srl_to_buf_iface(${face}$), f4%gc_srl_to_buf_iface(${face}$+1)-1
          iq = f4%gc_srl_to_buf(1, n) + 1
          i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
@@ -1224,7 +1224,7 @@ contains
       ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
 
 #:def fyp_f2c_to_buf(face, jlim, ilim, i0=0, j0=0)
-      !$acc loop gang private(iq, i_buf0)
+      !$acc loop private(iq, i_buf0)
       do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
          iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
          i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
@@ -1288,7 +1288,7 @@ contains
       !$acc parallel
 
       face = 0
-      !$acc loop gang private(iq, offset, i_buf0)
+      !$acc loop private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1333,7 +1333,7 @@ contains
       end do
 
       face = 1
-      !$acc loop gang private(iq, offset, i_buf0)
+      !$acc loop private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1377,7 +1377,7 @@ contains
       end do
 
       face = 2
-      !$acc loop gang private(iq, offset, i_buf0)
+      !$acc loop private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1422,7 +1422,7 @@ contains
       end do
 
       face = 3
-      !$acc loop gang private(iq, offset, i_buf0)
+      !$acc loop private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
@@ -1537,7 +1537,7 @@ contains
     !$acc parallel
 
 #:def fyp_srl_local(face, jlim, ilim, i0, j0, i1, j1, i2, j2, i3, j3)
-    !$acc loop gang private(iq, jq)
+    !$acc loop private(iq, jq)
     do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
        iq   = f4%gc_srl_local(1, n) + 1
        jq   = f4%gc_srl_local(2, n) + 1
@@ -1562,7 +1562,7 @@ contains
     ! Fill physical boundaries
 
     face = 0
-    !$acc loop gang private(iq, level, dr)
+    !$acc loop private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
@@ -1592,7 +1592,7 @@ contains
     end do
 
     face = 1
-    !$acc loop gang private(iq, level, dr)
+    !$acc loop private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
@@ -1623,7 +1623,7 @@ contains
     end do
 
     face = 2
-    !$acc loop gang private(iq, level, dr)
+    !$acc loop private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
@@ -1654,7 +1654,7 @@ contains
     end do
 
     face = 3
-    !$acc loop gang private(iq, level, dr)
+    !$acc loop private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
@@ -1685,7 +1685,7 @@ contains
     end do
 
 #:def fyp_f2c_local(face, jlim, ilim, i0, j0, if0, jf0)
-    !$acc loop gang private(iq, jq, offset)
+    !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1713,7 +1713,7 @@ contains
     @:fyp_f2c_local(3, n_gc, half_bx(1), offset*half_bx(1), -n_gc, 0, bx(2) -2*n_gc)
 
 #:def fyp_srl_from_buf(face, jlim, ilim, i0, j0)
-    !$acc loop gang private(iq, i_buf0)
+    !$acc loop private(iq, i_buf0)
     do n = f4%gc_srl_from_buf_iface(${face}$), f4%gc_srl_from_buf_iface(${face}$+1)-1
        iq = f4%gc_srl_from_buf(1, n) + 1
        i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
@@ -1737,7 +1737,7 @@ contains
     @:fyp_srl_from_buf(3, n_gc, bx(1), 0, bx(2))
 
 #:def fyp_c2f_from_buf(face, jlim, ilim, i0, j0)
-    !$acc loop gang private(iq, offset, i_buf0)
+    !$acc loop private(iq, offset, i_buf0)
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
        offset = f4%gc_c2f_from_buf(2, n)     ! Offset
@@ -1801,7 +1801,7 @@ contains
     ! ----------------------------------------
 
     face = 0
-    !$acc loop gang private(iq, jq, offset)
+    !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1849,7 +1849,7 @@ contains
     end do
 
     face = 1
-    !$acc loop gang private(iq, jq, offset)
+    !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1896,7 +1896,7 @@ contains
     end do
 
     face = 2
-    !$acc loop gang private(iq, jq, offset)
+    !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1943,7 +1943,7 @@ contains
     end do
 
     face = 3
-    !$acc loop gang private(iq, jq, offset)
+    !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -1994,7 +1994,7 @@ contains
     ! ----------------------------------------
 
     face = 0
-    !$acc loop gang private(iq, i_buf0)
+    !$acc loop private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2035,7 +2035,7 @@ contains
     end do
 
     face = 1
-    !$acc loop gang private(iq, i_buf0)
+    !$acc loop private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2077,7 +2077,7 @@ contains
     end do
 
     face = 2
-    !$acc loop gang private(iq, i_buf0)
+    !$acc loop private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2118,7 +2118,7 @@ contains
     end do
 
     face = 3
-    !$acc loop gang private(iq, i_buf0)
+    !$acc loop private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
