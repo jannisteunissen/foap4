@@ -1,3 +1,6 @@
+#:mute
+#:include "fypp_definitions.fpp"
+#:endmute
 program test_ref
 
   use m_foap4
@@ -110,13 +113,13 @@ contains
   end subroutine test_refinement
 
   pure real(dp) function rho_init(x, y)
-    !$omp declare target
+    @{GPU_ROUTINE_SEQ()}@
     real(dp), intent(in) :: x, y
     rho_init = x + y
   end function rho_init
 
   pure real(dp) function phi_init(x, y)
-    !$omp declare target
+    @{GPU_ROUTINE_SEQ()}@
     real(dp), intent(in) :: x, y
     phi_init = x - y
   end function phi_init
@@ -126,9 +129,9 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
-    !$omp target teams loop
+    @{GPU_PARALLEL_LOOP()}@
     do n = 1, f4%n_blocks
-       !$omp loop collapse(2) private(rr)
+       @{GPU_LOOP()}@ collapse(2) private(rr)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
@@ -175,9 +178,9 @@ contains
     iv = 1
     max_err = 0.0_dp
 
-    !$omp target teams loop private(tmp) reduction(max:max_err)
+    @{GPU_PARALLEL_LOOP()}@ private(tmp) reduction(max:max_err)
     do n = 1, f4%n_blocks
-       !$omp loop collapse(2) private(rr, sol, err) reduction(max:max_err)
+       @{GPU_LOOP()}@ collapse(2) private(rr, sol, err) reduction(max:max_err)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
@@ -192,7 +195,7 @@ contains
           end do
        end do
 
-       !$omp loop collapse(2)
+       @{GPU_LOOP()}@ collapse(2)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              f4%uu(i, j, iv, n) = tmp(i, j)

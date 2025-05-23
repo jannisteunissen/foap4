@@ -2,7 +2,8 @@
 
 FC := mpif90
 CC := mpicc
-FYPPFLAGS := -n
+FYPPFLAGS := #-n
+
 INCDIRS := p4est/build/local/include
 LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
@@ -17,17 +18,32 @@ all: $(TARGETS)
 compiler_version = $(shell $(FC) --version)
 compiler_brand = $(word 1, $(compiler_version))
 
+GPU ?= OpenACC
+
+ifeq ($(GPU), OpenACC)
+	FYPPFLAGS += -DUSE_OPENACC
+else ifeq ($(GPU), OpenMP)
+	FYPPFLAGS += -DUSE_OPENMP
+endif
+
 ifeq ($(compiler_brand), GNU)
-	FFLAGS ?= -Wall -O2 -g -Jsrc -cpp $(FFLAGS_USER)
+	FFLAGS ?= -Wall -O2 -g -Jsrc -cpp -fopenacc -foffload=nvptx-none	\
+	$(FFLAGS_USER)
 	ifeq ($(DEBUG), 1)
 		FFLAGS += -O0 -fcheck=all
 	endif
 else ifeq ($(compiler_brand), nvfortran)
-	FFLAGS ?= -Wall -acc=gpu -gpu=ccall -fast -Mpreprocess -static-nvidia	\
-	-g -module src $(FFLAGS_USER)
+	FFLAGS ?= -Wall -gpu=ccall -fast -Mpreprocess -static-nvidia -g	\
+	-module src $(FFLAGS_USER)
+
+	ifeq ($(GPU), OpenACC)
+		FFLAGS += -acc=gpu
+	else ifeq ($(GPU), OpenMP)
+		FFLAGS += -mp=gpu
+	endif
 else ifeq ($(compiler_brand), pgfortran)
-	FFLAGS ?= -Wall -acc=gpu -fast -gpu=ccall -Mpreprocess -static-nvidia	\
-	-g -module src $(FFLAGS_USER)
+	FFLAGS ?= -Wall -acc=gpu -mp=gpu -fast -gpu=ccall -Mpreprocess	\
+	-static-nvidia -g -module src $(FFLAGS_USER)
 endif
 
 # Dependencies

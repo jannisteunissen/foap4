@@ -1,3 +1,6 @@
+#:mute
+#:include "fypp_definitions.fpp"
+#:endmute
 !> Foap4 stands for "Fortran OpenACC p4est", and implements MPI-parallel
 !> quadtree/octree adaptive mesh refinement with support for OpenACC. Together
 !> with p4est_wrapper.c, this module implements the required data structures and
@@ -21,7 +24,7 @@ module m_foap4
 
   !> The offset of the children
   integer, parameter :: child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
-  !$acc declare create(child_offset)
+  @:GPU_DECLARE_COPYIN(child_offset)
 
   !> Value indicating a physical boundary at a block face
   integer, parameter :: FACE_BOUNDARY = 0
@@ -345,19 +348,20 @@ contains
     call MPI_Comm_rank(f4%mpicomm, f4%mpirank, ierr)
     call MPI_Comm_size(f4%mpicomm, f4%mpisize, ierr)
 
-#ifdef _OPENACC
+#:if defined("USE_OPENACC")
     call set_openacc_device(f4)
-#endif
+#:elif defined("USE_OPENMP")
+    call set_openmp_device(f4)
+#:endif
 
   end subroutine f4_initialize
 
-#ifdef _OPENACC
-  !> Set the device to be used by OpenACC. Code based on:
+#:if defined("USE_OPENACC")
+  !> Set the OpenACC device to be used. Code based on:
   !> https://docs.nvidia.com/hpc-sdk/compilers/openacc-mpi-tutorial/
-  !> OpenMPI provides an environment variable, but this is not portable
   subroutine set_openacc_device(f4)
     use openacc
-    type(foap4_t), intent(in)            :: f4
+    type(foap4_t), intent(in) :: f4
 
     interface
        ! Get a unique number to identify the host
@@ -408,7 +412,62 @@ contains
     call acc_set_device_num(my_device, dev_type)
 
   end subroutine set_openacc_device
-#endif
+#:endif
+
+#:if defined("USE_OPENMP")
+  !> Set the OpenMP device to be used. Code based on:
+  !> https://docs.nvidia.com/hpc-sdk/compilers/openacc-mpi-tutorial/
+  subroutine set_openmp_device(f4)
+    use omp_lib
+    type(foap4_t), intent(in) :: f4
+
+    interface
+       ! Get a unique number to identify the host
+       function gethostid() bind(C)
+         import C_int
+         integer (C_int) :: gethostid
+       end function gethostid
+    end interface
+
+    integer :: hostids(0:f4%mpisize-1), local_procs(0:f4%mpisize-1)
+    integer :: hostid, ierr, num_devices, my_device, rank, num_local_procs
+
+    ! Get the hostids to determine how many processes are on this host
+    hostid = gethostid()
+    call MPI_Allgather(hostid, 1, MPI_INTEGER, hostids, 1, MPI_INTEGER, &
+         f4%mpicomm, ierr)
+
+    ! Determine the local MPI ranks and number them, starting at zero
+    num_local_procs = 0
+    local_procs     = 0
+
+    do rank = 0, f4%mpisize-1
+       if (hostid == hostids(rank)) then
+          local_procs(rank) = num_local_procs
+          num_local_procs = num_local_procs+1
+       endif
+    enddo
+
+    num_devices = omp_get_num_devices()
+    if (num_devices < 1) error stop "No devices available on host"
+
+    if (num_devices < num_local_procs) then
+       ! Print warning only for first local process
+       if (local_procs(f4%mpirank) == 0) then
+          write(*, "(A,I0,A,I0,A,I0,A)") "WARNING from ", f4%mpirank, &
+               ": more local processes (", num_local_procs, &
+               ") than GPUs (", num_devices, ")"
+       endif
+
+       my_device = mod(local_procs(f4%mpirank), num_devices)
+    else
+       my_device = local_procs(f4%mpirank)
+    endif
+
+    call omp_set_default_device(my_device)
+
+  end subroutine set_openmp_device
+#:endif
 
   !> Reset wall clock time measurements
   subroutine f4_reset_wtime(f4)
@@ -461,17 +520,25 @@ contains
   subroutine f4_destroy(f4)
     type(foap4_t), intent(inout) :: f4
 
-    ! OpenACC - Remove data from device
-
-    !$acc exit data delete(f4%bc_type, f4%bc_value)
-    !$acc exit data delete(f4%block_level, f4%block_origin)
-    !$acc exit data delete(f4%uu, f4%refinement_flags)
-    !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
-    !$acc exit data delete(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
-    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
-    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
-    !$acc exit data delete(f4)
+    ! Remove data from device
+    @:GPU_DELETE(f4%bc_type)
+    @:GPU_DELETE(f4%bc_value)
+    @:GPU_DELETE(f4%block_level)
+    @:GPU_DELETE(f4%block_origin)
+    @:GPU_DELETE(f4%uu)
+    @:GPU_DELETE(f4%refinement_flags)
+    @:GPU_DELETE(f4%recv_buffer)
+    @:GPU_DELETE(f4%send_buffer)
+    @:GPU_DELETE(f4%gc_srl_local_iface)
+    @:GPU_DELETE(f4%gc_srl_from_buf_iface)
+    @:GPU_DELETE(f4%gc_srl_to_buf_iface)
+    @:GPU_DELETE(f4%gc_f2c_local_iface)
+    @:GPU_DELETE(f4%gc_f2c_from_buf_iface)
+    @:GPU_DELETE(f4%gc_f2c_to_buf_iface)
+    @:GPU_DELETE(f4%gc_c2f_from_buf_iface)
+    @:GPU_DELETE(f4%gc_c2f_to_buf_iface)
+    @:GPU_DELETE(f4%gc_phys_iface)
+    @:GPU_DELETE(f4)
 
     call pw_destroy(f4%pw)
 
@@ -564,16 +631,25 @@ contains
     allocate(f4%recv_offset(0:f4%mpisize))
     allocate(f4%send_offset(0:f4%mpisize))
 
-    ! OpenACC - Copy data structure and create allocatable components
-    !$acc enter data copyin(f4)
-    !$acc enter data copyin(f4%bc_type, f4%bc_value)
-    !$acc enter data create(f4%block_level, f4%block_origin)
-    !$acc enter data create(f4%uu, f4%refinement_flags)
-    !$acc enter data create(f4%recv_buffer, f4%send_buffer)
-    !$acc enter data create(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
-    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
-    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+    ! Copy data structure and create allocatable components on device
+    @:GPU_DATA_COPYIN(f4)
+    @:GPU_DATA_COPYIN(f4%bc_type)
+    @:GPU_DATA_COPYIN(f4%bc_value)
+    @:GPU_DATA_CREATE(f4%block_level)
+    @:GPU_DATA_CREATE(f4%block_origin)
+    @:GPU_DATA_CREATE(f4%uu)
+    @:GPU_DATA_CREATE(f4%refinement_flags)
+    @:GPU_DATA_CREATE(f4%recv_buffer)
+    @:GPU_DATA_CREATE(f4%send_buffer)
+    @:GPU_DATA_CREATE(f4%gc_srl_local_iface)
+    @:GPU_DATA_CREATE(f4%gc_srl_from_buf_iface)
+    @:GPU_DATA_CREATE(f4%gc_srl_to_buf_iface)
+    @:GPU_DATA_CREATE(f4%gc_f2c_local_iface)
+    @:GPU_DATA_CREATE(f4%gc_f2c_from_buf_iface)
+    @:GPU_DATA_CREATE(f4%gc_f2c_to_buf_iface)
+    @:GPU_DATA_CREATE(f4%gc_c2f_from_buf_iface)
+    @:GPU_DATA_CREATE(f4%gc_c2f_to_buf_iface)
+    @:GPU_DATA_CREATE(f4%gc_phys_iface)
 
     call f4_set_quadrants(f4)
 
@@ -592,7 +668,9 @@ contains
 
     f4%bc_type(ivar, iface) = bc_type
     f4%bc_value(ivar, iface) = bc_value
-    !$acc update device(f4%bc_type(ivar, iface), f4%bc_value(ivar, iface))
+
+    @:GPU_UPDATE_DEVICE(f4%bc_type(ivar, iface))
+    @:GPU_UPDATE_DEVICE(f4%bc_value(ivar, iface))
   end subroutine f4_set_physical_boundary
 
   !> Return the mesh revision number
@@ -640,8 +718,9 @@ contains
     end do
 
     ! OpenACC - synchronize block information to device
-    !$acc update device(f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks), &
-    !$acc &f4%block_level(1:f4%n_blocks))
+    @:GPU_UPDATE_DEVICE(f4%n_blocks)
+    @:GPU_UPDATE_DEVICE(f4%block_origin(:, 1:f4%n_blocks))
+    @:GPU_UPDATE_DEVICE(f4%block_level(1:f4%n_blocks))
   end subroutine f4_set_quadrants
 
   !> Get the global highest refinement level (on all MPI ranks)
@@ -671,7 +750,7 @@ contains
 
     t0 = MPI_Wtime()
     ! OpenACC - get the block data from the device
-    !$acc update self(f4%uu(:, :, :, 1:f4%n_blocks))
+    @:GPU_UPDATE_HOST(f4%uu(:, :, :, 1:f4%n_blocks))
 
     write(full_fname, "(A,A,I06.6)") trim(fname), "_", n_output
 
@@ -693,7 +772,7 @@ contains
 
   !> Return the coordinates at the center of a grid cells
   pure function f4_cell_coord(f4, i_block, i, j) result(rr)
-    !$acc routine seq
+    @:GPU_ROUTINE_SEQ()
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_block, i, j
     real(dp)                  :: rr(2), dr(2)
@@ -818,11 +897,16 @@ contains
     end do
 
     if (allocated(f4%gc_srl_local)) then
-       ! OpenACC - deallocate arrays
-       !$acc exit data delete(&
-       !$acc &f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
-       !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
-       !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+       ! Deallocate device arrays
+       @:GPU_DELETE(f4%gc_srl_local)
+       @:GPU_DELETE(f4%gc_srl_from_buf)
+       @:GPU_DELETE(f4%gc_srl_to_buf)
+       @:GPU_DELETE(f4%gc_f2c_local)
+       @:GPU_DELETE(f4%gc_f2c_from_buf)
+       @:GPU_DELETE(f4%gc_f2c_to_buf)
+       @:GPU_DELETE(f4%gc_c2f_from_buf)
+       @:GPU_DELETE(f4%gc_c2f_to_buf)
+       @:GPU_DELETE(f4%gc_phys)
 
        deallocate(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
             f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
@@ -1054,15 +1138,25 @@ contains
 
     ! OpenACC - copy/sync data to device
 
-    !$acc enter data copyin(&
-    !$acc &f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
-    !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
-    !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+    @:GPU_DATA_COPYIN(f4%gc_srl_local)
+    @:GPU_DATA_COPYIN(f4%gc_srl_from_buf)
+    @:GPU_DATA_COPYIN(f4%gc_srl_to_buf)
+    @:GPU_DATA_COPYIN(f4%gc_f2c_local)
+    @:GPU_DATA_COPYIN(f4%gc_f2c_from_buf)
+    @:GPU_DATA_COPYIN(f4%gc_f2c_to_buf)
+    @:GPU_DATA_COPYIN(f4%gc_c2f_from_buf)
+    @:GPU_DATA_COPYIN(f4%gc_c2f_to_buf)
+    @:GPU_DATA_COPYIN(f4%gc_phys)
 
-    !$acc update device(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
-    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
-    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_srl_local_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_srl_from_buf_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_srl_to_buf_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_f2c_local_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_f2c_from_buf_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_f2c_to_buf_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_c2f_from_buf_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_c2f_to_buf_iface)
+    @:GPU_UPDATE_DEVICE(f4%gc_phys_iface)
 
   end subroutine set_ghost_cell_pattern
 
@@ -1196,14 +1290,14 @@ contains
     half_bx = f4%bx/2
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
-      !$acc parallel
+      @:GPU_START_PARALLEL()
 
 #:def fyp_srl_to_buf(face, jlim, ilim, i0=0, j0=0)
-      !$acc loop private(iq, i_buf0)
+      @{GPU_LOOP()}@ private(iq, i_buf0)
       do n = f4%gc_srl_to_buf_iface(${face}$), f4%gc_srl_to_buf_iface(${face}$+1)-1
          iq = f4%gc_srl_to_buf(1, n) + 1
          i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
-         !$acc loop collapse(3) private(ivar, i_buf)
+         @{GPU_LOOP()}@ collapse(3) private(ivar, i_buf)
          do iv = 1, n_vars
             do j = 1, ${jlim}$
                do i = 1, ${ilim}$
@@ -1224,12 +1318,12 @@ contains
       ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
 
 #:def fyp_f2c_to_buf(face, jlim, ilim, i0=0, j0=0)
-      !$acc loop private(iq, i_buf0)
+      @{GPU_LOOP()}@ private(iq, i_buf0)
       do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
          iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
          i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
 
-         !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
+         @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, i_f, i_buf)
          do iv = 1, n_vars
             do j = 1, ${jlim}$
                do i = 1, ${ilim}$
@@ -1250,7 +1344,7 @@ contains
       @:fyp_f2c_to_buf(2, n_gc, half_bx(1))
       @:fyp_f2c_to_buf(3, n_gc, half_bx(1), j0=bx(2) - 2*n_gc)
 
-      !$acc end parallel
+      @:GPU_END_PARALLEL()
 
       f4%recv_offset(:) = f4%gc_recv_offset * n_vars
       f4%send_offset(:) = f4%gc_send_offset * n_vars
@@ -1285,16 +1379,16 @@ contains
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
-      !$acc parallel
+      @:GPU_START_PARALLEL()
 
       face = 0
-      !$acc loop private(iq, offset, i_buf0)
+      @{GPU_LOOP()}@ private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
          i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars
 
-         !$acc loop collapse(3) private(ivar, j_c, i_c, i_buf)
+         @{GPU_LOOP()}@ collapse(3) private(ivar, j_c, i_c, i_buf)
          do iv = 1, n_vars
             do j = 1, half_bx(2)
                do i = 1, half_n_gc
@@ -1314,7 +1408,7 @@ contains
          i_buf0 = i_buf0 + n_vars * half_bx(2) * half_n_gc * 4
 
          if (odd_n_gc) then
-            !$acc loop collapse(2) private(ivar, j_c, i_c, i_buf)
+            @{GPU_LOOP()}@ collapse(2) private(ivar, j_c, i_c, i_buf)
             do iv = 1, n_vars
                do j = 1, half_bx(2)
                   ivar = i_vars(iv)
@@ -1333,13 +1427,13 @@ contains
       end do
 
       face = 1
-      !$acc loop private(iq, offset, i_buf0)
+      @{GPU_LOOP()}@ private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
          i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars
 
-         !$acc loop collapse(3) private(ivar, j_c, i_c, i_buf)
+         @{GPU_LOOP()}@ collapse(3) private(ivar, j_c, i_c, i_buf)
          do iv = 1, n_vars
             do j = 1, half_bx(2)
                do i = 1, half_n_gc
@@ -1358,7 +1452,7 @@ contains
          i_buf0 = i_buf0 + n_vars * half_bx(2) * half_n_gc * 4
 
          if (odd_n_gc) then
-            !$acc loop collapse(2) private(ivar, j_c, i_c, i_buf)
+            @{GPU_LOOP()}@ collapse(2) private(ivar, j_c, i_c, i_buf)
             do iv = 1, n_vars
                do j = 1, half_bx(2)
                   ivar = i_vars(iv)
@@ -1377,13 +1471,13 @@ contains
       end do
 
       face = 2
-      !$acc loop private(iq, offset, i_buf0)
+      @{GPU_LOOP()}@ private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
          i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars
 
-         !$acc loop collapse(3) private(ivar, j_c, i_c, i_buf)
+         @{GPU_LOOP()}@ collapse(3) private(ivar, j_c, i_c, i_buf)
          do iv = 1, n_vars
             do j = 1, half_n_gc
                do i = 1, half_bx(1)
@@ -1403,7 +1497,7 @@ contains
          i_buf0 = i_buf0 + n_vars * half_n_gc * half_bx(1) * 4
 
          if (odd_n_gc) then
-            !$acc loop collapse(2) private(ivar, j_c, i_c, i_buf)
+            @{GPU_LOOP()}@ collapse(2) private(ivar, j_c, i_c, i_buf)
             do iv = 1, n_vars
                do i = 1, half_bx(1)
                   ivar = i_vars(iv)
@@ -1422,13 +1516,13 @@ contains
       end do
 
       face = 3
-      !$acc loop private(iq, offset, i_buf0)
+      @{GPU_LOOP()}@ private(iq, offset, i_buf0)
       do n = f4%gc_c2f_to_buf_iface(face), f4%gc_c2f_to_buf_iface(face+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset = f4%gc_c2f_to_buf(2, n)
          i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars
 
-         !$acc loop collapse(3) private(ivar, j_c, i_c, i_buf)
+         @{GPU_LOOP()}@ collapse(3) private(ivar, j_c, i_c, i_buf)
          do iv = 1, n_vars
             do j = 1, half_n_gc
                do i = 1, half_bx(1)
@@ -1448,7 +1542,7 @@ contains
          i_buf0 = i_buf0 + n_vars * half_n_gc * half_bx(1) * 4
 
          if (odd_n_gc) then
-            !$acc loop collapse(2) private(ivar, j_c, i_c, i_buf)
+            @{GPU_LOOP()}@ collapse(2) private(ivar, j_c, i_c, i_buf)
             do iv = 1, n_vars
                do i = 1, half_bx(1)
                   ivar = i_vars(iv)
@@ -1466,7 +1560,7 @@ contains
          end if
       end do
 
-      !$acc end parallel
+      @:GPU_END_PARALLEL()
     end associate
 
   end subroutine fill_ghostcell_buffers_round_two
@@ -1484,7 +1578,7 @@ contains
     n_recv = 0
 
     ! Use device pointers for device data
-    !$acc host_data use_device(f4%recv_buffer, f4%send_buffer)
+    @:GPU_USE_DEVICE_PTR(f4%recv_buffer, f4%send_buffer)
     do rank = 0, f4%mpisize - 1
        ilo = f4%send_offset(rank) + 1
        ihi = f4%send_offset(rank+1)
@@ -1506,7 +1600,7 @@ contains
                recv_req(n_recv), ierr)
        end if
     end do
-    !$acc end host_data
+    @:GPU_END_USE_DEVICE_PTR()
 
     call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
     call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
@@ -1534,15 +1628,15 @@ contains
 
     half_bx = f4%bx/2
 
-    !$acc parallel
+    @:GPU_START_PARALLEL()
 
 #:def fyp_srl_local(face, jlim, ilim, i0, j0, i1, j1, i2, j2, i3, j3)
-    !$acc loop private(iq, jq)
+    @{GPU_LOOP()}@ private(iq, jq)
     do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
        iq   = f4%gc_srl_local(1, n) + 1
        jq   = f4%gc_srl_local(2, n) + 1
 
-       !$acc loop collapse(3) private(ivar)
+       @{GPU_LOOP()}@ collapse(3) private(ivar)
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -1562,13 +1656,13 @@ contains
     ! Fill physical boundaries
 
     face = 0
-    !$acc loop private(iq, level, dr)
+    @{GPU_LOOP()}@ private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
        dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, bc_type, bc_value)
        do iv = 1, n_vars
           do j = 1, bx(2)
              do i = 1, n_gc
@@ -1592,13 +1686,13 @@ contains
     end do
 
     face = 1
-    !$acc loop private(iq, level, dr)
+    @{GPU_LOOP()}@ private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
        dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, bc_type, bc_value)
        do iv = 1, n_vars
           do j = 1, bx(2)
              do i = 1, n_gc
@@ -1623,13 +1717,13 @@ contains
     end do
 
     face = 2
-    !$acc loop private(iq, level, dr)
+    @{GPU_LOOP()}@ private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
        dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, bc_type, bc_value)
        do iv = 1, n_vars
           do j = 1, n_gc
              do i = 1, bx(1)
@@ -1654,13 +1748,13 @@ contains
     end do
 
     face = 3
-    !$acc loop private(iq, level, dr)
+    @{GPU_LOOP()}@ private(iq, level, dr)
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
        dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, bc_type, bc_value)
        do iv = 1, n_vars
           do j = 1, n_gc
              do i = 1, bx(1)
@@ -1685,13 +1779,13 @@ contains
     end do
 
 #:def fyp_f2c_local(face, jlim, ilim, i0, j0, if0, jf0)
-    !$acc loop private(iq, jq, offset)
+    @{GPU_LOOP()}@ private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset = f4%gc_f2c_local(3, n)     ! offset
 
-       !$acc loop collapse(3) private(i_f, j_f, ivar)
+       @{GPU_LOOP()}@ collapse(3) private(i_f, j_f, ivar)
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -1713,11 +1807,11 @@ contains
     @:fyp_f2c_local(3, n_gc, half_bx(1), offset*half_bx(1), -n_gc, 0, bx(2) -2*n_gc)
 
 #:def fyp_srl_from_buf(face, jlim, ilim, i0, j0)
-    !$acc loop private(iq, i_buf0)
+    @{GPU_LOOP()}@ private(iq, i_buf0)
     do n = f4%gc_srl_from_buf_iface(${face}$), f4%gc_srl_from_buf_iface(${face}$+1)-1
        iq = f4%gc_srl_from_buf(1, n) + 1
        i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
-       !$acc loop collapse(3) private(ivar, i_buf)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, i_buf)
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -1737,13 +1831,13 @@ contains
     @:fyp_srl_from_buf(3, n_gc, bx(1), 0, bx(2))
 
 #:def fyp_c2f_from_buf(face, jlim, ilim, i0, j0)
-    !$acc loop private(iq, offset, i_buf0)
+    @{GPU_LOOP()}@ private(iq, offset, i_buf0)
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
        offset = f4%gc_c2f_from_buf(2, n)     ! Offset
        i_buf0  = f4%gc_c2f_from_buf(3, n) * n_vars
 
-       !$acc loop collapse(3) private(ivar, i_buf)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, i_buf)
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -1763,7 +1857,7 @@ contains
     @:fyp_c2f_from_buf(2, n_gc, half_bx(1), offset*half_bx(1), -n_gc)
     @:fyp_c2f_from_buf(3, n_gc, half_bx(1), offset*half_bx(1), bx(2))
 
-    !$acc end parallel
+    @:GPU_END_PARALLEL()
 
   end subroutine fill_ghostcells_round_one
 
@@ -1794,20 +1888,20 @@ contains
     half_n_gc = f4%n_gc/2 ! Round down
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
 
-    !$acc parallel
+    @:GPU_START_PARALLEL()
 
     ! ----------------------------------------
     ! Fill fine side of local coarse-to-fine boundaries
     ! ----------------------------------------
 
     face = 0
-    !$acc loop private(iq, jq, offset)
+    @{GPU_LOOP()}@ private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset = f4%gc_f2c_local(3, n)     ! Offset
 
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, j_c, i_f, i_c)
        do iv = 1, n_vars
           do j = 1, half_bx(2)
              do i = 1, half_n_gc
@@ -1831,7 +1925,7 @@ contains
           i_c = bx(1) - half_n_gc
           i_f = -n_gc + 1
 
-          !$acc loop collapse(2) private(ivar, j_f, j_c)
+          @{GPU_LOOP()}@ collapse(2) private(ivar, j_f, j_c)
           do iv = 1, n_vars
              do j = 1, half_bx(2)
                 ivar = i_vars(iv)
@@ -1849,13 +1943,13 @@ contains
     end do
 
     face = 1
-    !$acc loop private(iq, jq, offset)
+    @{GPU_LOOP()}@ private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset = f4%gc_f2c_local(3, n)     ! Offset
 
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, j_c, i_f, i_c)
        do iv = 1, n_vars
           do j = 1, half_bx(2)
              do i = 1, half_n_gc
@@ -1879,7 +1973,7 @@ contains
           i_c = 1 + half_n_gc
           i_f = bx(1) + n_gc
 
-          !$acc loop collapse(2) private(ivar, j_f, j_c)
+          @{GPU_LOOP()}@ collapse(2) private(ivar, j_f, j_c)
           do iv = 1, n_vars
              do j = 1, half_bx(2)
                 ivar = i_vars(iv)
@@ -1896,13 +1990,13 @@ contains
     end do
 
     face = 2
-    !$acc loop private(iq, jq, offset)
+    @{GPU_LOOP()}@ private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset = f4%gc_f2c_local(3, n)     ! Offset
 
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, j_c, i_f, i_c)
        do iv = 1, n_vars
           do j = 1, half_n_gc
              do i = 1, half_bx(1)
@@ -1926,7 +2020,7 @@ contains
           j_c = bx(2) - half_n_gc
           j_f = -n_gc + 1
 
-          !$acc loop collapse(2) private(ivar, i_f, i_c)
+          @{GPU_LOOP()}@ collapse(2) private(ivar, i_f, i_c)
           do iv = 1, n_vars
              do i = 1, half_bx(1)
                 ivar = i_vars(iv)
@@ -1943,13 +2037,13 @@ contains
     end do
 
     face = 3
-    !$acc loop private(iq, jq, offset)
+    @{GPU_LOOP()}@ private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset = f4%gc_f2c_local(3, n)     ! Offset
 
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, j_c, i_f, i_c)
        do iv = 1, n_vars
           do j = 1, half_n_gc
              do i = 1, half_bx(1)
@@ -1973,7 +2067,7 @@ contains
           j_c = 1 + half_n_gc
           j_f = bx(2) + n_gc
 
-          !$acc loop collapse(2) private(ivar, i_f, i_c)
+          @{GPU_LOOP()}@ collapse(2) private(ivar, i_f, i_c)
           do iv = 1, n_vars
              do i = 1, half_bx(1)
                 ivar = i_vars(iv)
@@ -1994,12 +2088,12 @@ contains
     ! ----------------------------------------
 
     face = 0
-    !$acc loop private(iq, i_buf0)
+    @{GPU_LOOP()}@ private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
 
-       !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, i_f, i_buf)
        do iv = 1, n_vars
           do j = 1, half_bx(2)
              do i = 1, half_n_gc
@@ -2020,7 +2114,7 @@ contains
           i_buf0 = i_buf0 + n_vars * half_bx(2) * half_n_gc * 4
           i_f = -n_gc + 1
 
-          !$acc loop collapse(2) private(ivar, j_f, i_buf)
+          @{GPU_LOOP()}@ collapse(2) private(ivar, j_f, i_buf)
           do iv = 1, n_vars
              do j = 1, half_bx(2)
                 ivar = i_vars(iv)
@@ -2035,12 +2129,12 @@ contains
     end do
 
     face = 1
-    !$acc loop private(iq, i_buf0)
+    @{GPU_LOOP()}@ private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
 
-       !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, i_f, i_buf)
        do iv = 1, n_vars
           do j = 1, half_bx(2)
              do i = 1, half_n_gc
@@ -2062,7 +2156,7 @@ contains
           i_buf0 = i_buf0 + n_vars * half_bx(2) * half_n_gc * 4
           i_f = bx(1) + n_gc
 
-          !$acc loop collapse(2) private(ivar, j_f, i_buf)
+          @{GPU_LOOP()}@ collapse(2) private(ivar, j_f, i_buf)
           do iv = 1, n_vars
              do j = 1, half_bx(2)
                 ivar = i_vars(iv)
@@ -2077,12 +2171,12 @@ contains
     end do
 
     face = 2
-    !$acc loop private(iq, i_buf0)
+    @{GPU_LOOP()}@ private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
 
-       !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, i_f, i_buf)
        do iv = 1, n_vars
           do j = 1, half_n_gc
              do i = 1, half_bx(1)
@@ -2103,7 +2197,7 @@ contains
           i_buf0 = i_buf0 + n_vars * half_n_gc * half_bx(1) * 4
           j_f = -n_gc + 1
 
-          !$acc loop collapse(2) private(ivar, i_f, i_buf)
+          @{GPU_LOOP()}@ collapse(2) private(ivar, i_f, i_buf)
           do iv = 1, n_vars
              do i = 1, half_bx(1)
                 ivar = i_vars(iv)
@@ -2118,12 +2212,12 @@ contains
     end do
 
     face = 3
-    !$acc loop private(iq, i_buf0)
+    @{GPU_LOOP()}@ private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(face), f4%gc_f2c_from_buf_iface(face+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
 
-       !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
+       @{GPU_LOOP()}@ collapse(3) private(ivar, j_f, i_f, i_buf)
        do iv = 1, n_vars
           do j = 1, half_n_gc
              do i = 1, half_bx(1)
@@ -2144,7 +2238,7 @@ contains
           i_buf0 = i_buf0 + n_vars * half_n_gc * half_bx(1) * 4
           j_f = bx(2) + n_gc
 
-          !$acc loop collapse(2) private(ivar, i_f, i_buf)
+          @{GPU_LOOP()}@ collapse(2) private(ivar, i_f, i_buf)
           do iv = 1, n_vars
              do i = 1, half_bx(1)
                 ivar = i_vars(iv)
@@ -2158,7 +2252,7 @@ contains
        end if
     end do
 
-    !$acc end parallel
+    @:GPU_END_PARALLEL()
 
   end subroutine fill_ghostcells_round_two
 
@@ -2274,15 +2368,18 @@ contains
 
     t1 = MPI_Wtime()
 
-    !$acc enter data copyin(srl, refine, coarsen, half_bx)
+    @:GPU_DATA_COPYIN(srl)
+    @:GPU_DATA_COPYIN(refine)
+    @:GPU_DATA_COPYIN(coarsen)
+    @:GPU_DATA_COPYIN(half_bx)
 
     ! Copy on device
-    !$acc parallel loop private(i_from, i_to) async
+    @{GPU_PARALLEL_LOOP(True)}@ private(i_from, i_to)
     do n = 1, i_srl
        i_from = srl(1, n)
        i_to = srl(2, n)
 
-       !$acc loop collapse(3)
+       @{GPU_LOOP()}@ collapse(3)
        do iv = 1, f4%n_vars
           do j = f4%ilo(2), f4%ihi(2)
              do i = f4%ilo(1), f4%ihi(2)
@@ -2293,12 +2390,12 @@ contains
     end do
 
     ! Refine on device
-    !$acc parallel loop private(i_from, i_to) async
+    @{GPU_PARALLEL_LOOP(True)}@ private(i_from, i_to)
     do n = 1, i_refine
        i_from = refine(1, n)
        i_to = refine(2, n)
 
-       !$acc loop collapse(4) private(j_c, j_f, i_c, i_f, fine)
+       @{GPU_LOOP()}@ collapse(4) private(j_c, j_f, i_c, i_f, fine)
        do i_ch = 1, 4
           do iv = 1, f4%n_vars
              do j = 1, half_bx(2)
@@ -2326,12 +2423,12 @@ contains
     end do
 
     ! Coarsen on device
-    !$acc parallel loop private(i_from, i_to) async
+    @{GPU_PARALLEL_LOOP(True)}@ private(i_from, i_to)
     do n = 1, i_coarsen
        i_from = coarsen(1, n)
        i_to = coarsen(2, n)
 
-       !$acc loop collapse(4) private(j_c, j_f, i_c, i_f)
+       @{GPU_LOOP()}@ collapse(4) private(j_c, j_f, i_c, i_f)
        do i_ch = 1, 4
           do iv = 1, f4%n_vars
              do j = 1, half_bx(2)
@@ -2352,8 +2449,11 @@ contains
        end do
     end do
 
-    !$acc wait
-    !$acc exit data delete(srl, refine, coarsen, half_bx)
+    @:GPU_WAIT_ASYNC()
+    @:GPU_DELETE(srl)
+    @:GPU_DELETE(refine)
+    @:GPU_DELETE(coarsen)
+    @:GPU_DELETE(half_bx)
 
     t0 = MPI_Wtime()
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
@@ -2385,9 +2485,9 @@ contains
     end do
 
     ! Copy block solution data on device
-    !$acc parallel loop
+    @{GPU_PARALLEL_LOOP(False)}@
     do n = 1, n_blocks_old
-       !$acc loop collapse(3)
+       @{GPU_LOOP()}@ collapse(3)
        do iv = 1, f4%n_vars
           do j = f4%ilo(2), f4%ihi(2)
              do i = f4%ilo(1), f4%ihi(1)
@@ -2400,7 +2500,7 @@ contains
 
   !> Method for prolongation (interpolation) of a coarse block to its children
   subroutine prolong_local_5point(center, xlo, xhi, ylo, yhi, fine)
-    !$acc routine seq
+    @:GPU_ROUTINE_SEQ()
     real(dp), intent(in)  :: center ! Center value
     real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
     real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
@@ -2424,7 +2524,7 @@ contains
   !> the limiter is, with 1 corresponding to the minmod limiter and 2 to the MC
   !> limiter.
   elemental function limiter_gminmod(a, b, theta) result(phi)
-    !$acc routine seq
+    @:GPU_ROUTINE_SEQ()
     real(dp), intent(in) :: a, b, theta
     real(dp)             :: phi
 
@@ -2438,7 +2538,7 @@ contains
 
   !> Minmod limiter
   elemental function limiter_minmod(a, b) result(phi)
-    !$acc routine seq
+    @:GPU_ROUTINE_SEQ()
     real(dp), intent(in) :: a
     real(dp), intent(in) :: b
     real(dp)             :: phi
@@ -2508,7 +2608,7 @@ contains
        gend = dest_begin
        block_ix = 1
 
-       !$acc host_data use_device(f4%uu)
+       @:GPU_USE_DEVICE_PTR(f4%uu)
        do rank = first_sender, last_sender
           gbegin = gend
           gend = min(dest_end, gfq_src(rank + 1))
@@ -2521,7 +2621,7 @@ contains
              block_ix = block_ix + n_blocks_transfer
           end if
        end do
-       !$acc end host_data
+       @:GPU_END_USE_DEVICE_PTR()
     end if
 
     if (src_end > src_begin) then
@@ -2535,7 +2635,7 @@ contains
        gend = src_begin
        block_ix = offset_copy + 1
 
-       !$acc host_data use_device(f4%uu)
+       @:GPU_USE_DEVICE_PTR(f4%uu)
        do rank = first_receiver, last_receiver
           gbegin = gend
           gend = min(src_end, gfq_dest(rank + 1))
@@ -2548,7 +2648,7 @@ contains
              block_ix = block_ix + n_blocks_transfer
           end if
        end do
-       !$acc end host_data
+       @:GPU_END_USE_DEVICE_PTR()
     end if
 
     call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
