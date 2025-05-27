@@ -27,8 +27,13 @@ else ifeq ($(GPU), OpenMP)
 endif
 
 ifeq ($(compiler_brand), GNU)
-	FFLAGS ?= -Wall -O2 -g -Jsrc -cpp -fopenacc -foffload=nvptx-none	\
-	$(FFLAGS_USER)
+	FFLAGS ?= -Wall -O2 -g -Jsrc -cpp $(FFLAGS_USER)
+
+	ifeq ($(GPU), OpenACC)
+		FFLAGS += -fopenacc -foffload=nvptx-none
+	else ifeq ($(GPU), OpenMP)
+		FFLAGS += -fopenmp -foffload=nvptx-none
+	endif
 	ifeq ($(DEBUG), 1)
 		FFLAGS += -O0 -fcheck=all
 	endif
