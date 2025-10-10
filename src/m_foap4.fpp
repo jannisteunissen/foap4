@@ -1484,14 +1484,13 @@ contains
     n_recv = 0
 
     ! Use device pointers for device data
-    !$acc host_data use_device(f4%recv_buffer, f4%send_buffer)
     do rank = 0, f4%mpisize - 1
        ilo = f4%send_offset(rank) + 1
        ihi = f4%send_offset(rank+1)
 
        if (ihi >= ilo) then
           n_send = n_send + 1
-          call MPI_Isend(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
+          call mpi_isend_wrapper(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
                MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, &
                send_req(n_send), ierr)
        end if
@@ -1501,17 +1500,46 @@ contains
 
        if (ihi >= ilo) then
           n_recv = n_recv + 1
-          call MPI_Irecv(f4%recv_buffer(ilo:ihi), ihi-ilo+1, &
+          call mpi_irecv_wrapper(f4%recv_buffer(ilo:ihi), ihi-ilo+1, &
                MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, &
                recv_req(n_recv), ierr)
        end if
     end do
-    !$acc end host_data
 
     call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
     call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
 
   end subroutine f4_exchange_buffers
+
+  !> Wrapper for MPI_Isend. This was done because of problems with the
+  !> use_device clause combined with an index offset and NVHPC-v25. With this
+  !> wrapper, there is no offset in "buf".
+  subroutine mpi_isend_wrapper(buf, count, datatype, dest, tag, comm, request, ierror)
+    real(dp), intent(in)           :: buf(*)
+    integer, intent(in)            :: count, dest, tag
+    type(mpi_datatype), intent(in) :: datatype
+    type(mpi_comm), intent(in)     :: comm
+    type(mpi_request), intent(out) :: request
+    integer, optional, intent(out) :: ierror
+
+    !$acc host_data use_device(buf)
+    call mpi_isend(buf, count, datatype, dest, tag, comm, request, ierror)
+    !$acc end host_data
+  end subroutine mpi_isend_wrapper
+
+  !> Wrapper for MPI_Irecv, see mpi_isend_wrapper
+  subroutine mpi_irecv_wrapper(buf, count, datatype, source, tag, comm, request, ierror)
+    real(dp), intent(inout)         :: buf(*)
+    integer, intent(in)             :: count, source, tag
+    type(mpi_datatype), intent(in)  :: datatype
+    type(mpi_comm), intent(in)      :: comm
+    type(mpi_request), intent(out) :: request
+    integer, optional, intent(out)  :: ierror
+
+    !$acc host_data use_device(buf)
+    call mpi_irecv(buf, count, datatype, source, tag, comm, request, ierror)
+    !$acc end host_data
+  end subroutine mpi_irecv_wrapper
 
   !> After buffers have been communicated, handle all ghost cells for "round
   !> one", which excludes coarse-to-fine interpolation
@@ -2508,7 +2536,6 @@ contains
        gend = dest_begin
        block_ix = 1
 
-       !$acc host_data use_device(f4%uu)
        do rank = first_sender, last_sender
           gbegin = gend
           gend = min(dest_end, gfq_src(rank + 1))
@@ -2516,12 +2543,11 @@ contains
 
           if (n_blocks_transfer > 0) then
              n_recv = n_recv + 1
-             call MPI_Irecv (f4%uu(:, :, :, block_ix), dsize*n_blocks_transfer, &
+             call mpi_irecv_wrapper(f4%uu(:, :, :, block_ix), dsize*n_blocks_transfer, &
                   MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, recv_req(n_recv), ierr)
              block_ix = block_ix + n_blocks_transfer
           end if
        end do
-       !$acc end host_data
     end if
 
     if (src_end > src_begin) then
@@ -2535,7 +2561,6 @@ contains
        gend = src_begin
        block_ix = offset_copy + 1
 
-       !$acc host_data use_device(f4%uu)
        do rank = first_receiver, last_receiver
           gbegin = gend
           gend = min(src_end, gfq_dest(rank + 1))
@@ -2543,12 +2568,11 @@ contains
 
           if (n_blocks_transfer > 0) then
              n_send = n_send + 1
-             call MPI_Isend (f4%uu(:, :, :, block_ix), dsize*n_blocks_transfer, &
+             call mpi_isend_wrapper(f4%uu(:, :, :, block_ix), dsize*n_blocks_transfer, &
                   MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, send_req(n_send), ierr)
              block_ix = block_ix + n_blocks_transfer
           end if
        end do
-       !$acc end host_data
     end if
 
     call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
