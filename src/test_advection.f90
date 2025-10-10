@@ -7,10 +7,11 @@ program test_adv
   implicit none
   integer, parameter :: dp = kind(0.0d0)
 
-  integer, parameter  :: n_vars            = 2
-  integer, parameter  :: i_rho             = 1
-  character(len=20)   :: var_names(n_vars) = ['rho', 'tmp']
-  real(dp), parameter :: velocity(2)       = [1.0_dp, 1.0_dp]
+  integer, parameter :: n_vars            = 2
+  integer, parameter :: i_rho             = 1
+  character(len=20)  :: var_names(n_vars) = ['rho', 'tmp']
+  real(dp)           :: velocity(2)       = [1.0_dp, 1.0_dp]
+  real(dp)           :: end_time          = 1.0_dp
 
   logical            :: do_refinement        = .true.
   integer            :: max_refinement_level = 5
@@ -33,13 +34,15 @@ program test_adv
        'Maximum refinement level in the domain')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
+  call CFG_add_get(cfg, 'velocity', velocity, 'Velocity')
+  call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_check(cfg)
 
   if (max_refinement_level < min_refinement_level) &
        error stop "max_refinement_level < min_refinement_level"
 
   call test_advection(f4, bx, min_refinement_level, do_refinement, &
-       max_blocks, num_outputs, "output/test_adv")
+       max_blocks, num_outputs, "output/test_adv", end_time)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
@@ -47,7 +50,7 @@ program test_adv
 contains
 
   subroutine test_advection(f4, bx, min_level, do_refinement, &
-       max_blocks, num_outputs, base_name)
+       max_blocks, num_outputs, base_name, end_time)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: bx(2)
     integer, intent(in)          :: min_level
@@ -55,6 +58,7 @@ contains
     integer, intent(in)          :: max_blocks
     integer, intent(in)          :: num_outputs
     character(len=*), intent(in) :: base_name
+    real(dp), intent(in)         :: end_time
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
     integer, parameter           :: n_gc                = 2
@@ -65,10 +69,10 @@ contains
     integer(int64)               :: sum_local_blocks, sum_global_blocks
     logical                      :: write_this_step
     real(dp)                     :: dt, dt_output, min_dr(2)
-    real(dp)                     :: time, end_time, t0, t1
+    real(dp)                     :: time, t0, t1
+    real(dp)                     :: rho_initial_sum, rho_sum
 
     time = 0.0_dp
-    end_time = 1.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
     n_output = 0
     n_iterations = 0
@@ -92,6 +96,8 @@ contains
        end do
     end if
 
+    call compute_sum(f4, i_rho, rho_initial_sum)
+
     if (dt_output < end_time) call f4_write_grid(f4, base_name, n_output, time)
     n_output = n_output + 1
 
@@ -112,17 +118,22 @@ contains
 
        if (write_this_step) then
           call f4_write_grid(f4, base_name, n_output, time)
+          call compute_sum(f4, i_rho, rho_sum)
+          if (f4%mpirank == 0) then
+             write(*, "(A,E12.4)") " Conservation error: ", &
+                  rho_sum - rho_initial_sum
+          end if
           n_output = n_output + 1
        end if
 
-       if (do_refinement) then
-          call f4_update_ghostcells(f4, 1, [i_rho])
-          call set_refinement_flag(f4)
-          call f4_adjust_refinement(f4, .true.)
+       ! if (do_refinement) then
+       !    call f4_update_ghostcells(f4, 1, [i_rho])
+       !    call set_refinement_flag(f4)
+       !    call f4_adjust_refinement(f4, .true.)
 
-          call f4_get_global_highest_level(f4, highest_level)
-          min_dr = f4%dr_level(:, highest_level)
-       end if
+       !    call f4_get_global_highest_level(f4, highest_level)
+       !    min_dr = f4%dr_level(:, highest_level)
+       ! end if
 
        sum_local_blocks = sum_local_blocks + f4_get_num_local_blocks(f4)
     end do
@@ -149,8 +160,12 @@ contains
 
     call forward_euler(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
          dt, f4%uu, 0, 1, [0], [1.0_dp], 1)
+    call f4_fix_c2f_flux(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
+         f4%uu, dt, 1, [i_rho], 1)
     call forward_euler(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
          0.5_dp*dt, f4%uu, 1, 2, [0, 1], [0.5_dp, 0.5_dp], 0)
+    call f4_fix_c2f_flux(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
+         f4%uu, 0.5_dp*dt, 1, [i_rho], 0)
   end subroutine advance_heuns_method
 
   subroutine set_init_cond(f4)
@@ -261,6 +276,12 @@ contains
              ! Keep track of changes in variables
              dvar(i, j) = dt * ((fx(1) - fx(2)) * inv_dr(1) + &
                   (fy(1) - fy(2)) * inv_dr(2))
+
+             ! Store boundary fluxes
+             if (i == 1) f4%bflux(j, 0, i_rho, n) = fx(1)
+             if (i == bx(1)) f4%bflux(j, 1, i_rho, n) = fx(2)
+             if (j == 1) f4%bflux(i, 2, i_rho, n) = fy(1)
+             if (j == bx(2)) f4%bflux(i, 3, i_rho, n) = fy(2)
           end do
        end do
 
@@ -322,5 +343,29 @@ contains
        phi = 0
     end if
   end function vanleer
+
+  subroutine compute_sum(f4, i_var, var_sum)
+    type(foap4_t), intent(in) :: f4
+    integer, intent(in)       :: i_var
+    real(dp), intent(out)     :: var_sum
+    integer                   :: level, i, j, n
+    real(dp)                  :: dvol
+
+    var_sum = 0.0_dp
+
+    !$acc parallel loop private(level, dvol) reduction(+: var_sum)
+    do n = 1, f4%n_blocks
+       level = f4%block_level(n)
+       dvol = product(f4%dr_level(:, level))
+
+       !$acc loop collapse(2) reduction(+: var_sum)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
+            var_sum = var_sum + f4%uu(i, j, i_var, n) * dvol
+          end do
+       end do
+    end do
+
+  end subroutine compute_sum
 
 end program

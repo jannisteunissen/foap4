@@ -17,7 +17,6 @@ program euler
   integer  :: num_outputs = 40
   logical  :: periodic(2) = .true.
   integer  :: n_gc        = 2
-  real(dp) :: dt          = 1e-3_dp
   real(dp) :: end_time    = 2.0_dp
   character(len=10) :: test_case = "sod"
 

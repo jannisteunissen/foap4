@@ -1,3 +1,8 @@
+# TODO list
+
+- Implement flux fixing at refinement boundaries
+- Implement 3D
+
 # p4est questions
 
 - Can refine and coarsen be combined with a single flag?

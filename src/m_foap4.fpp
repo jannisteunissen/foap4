@@ -13,6 +13,8 @@ module m_foap4
 
   integer, parameter, private :: dp = kind(0.0d0)
 
+  integer, parameter :: ndim = 2
+
   !> Maximum refinement level in p4est
   integer, parameter :: P4EST_MAXLEVEL = 30
 
@@ -88,6 +90,8 @@ module m_foap4
      real(dp), allocatable :: block_origin(:, :)
      !> Storage of block data uu(i, j, i_var, i_block)
      real(dp), allocatable :: uu(:, :, :, :)
+     !> Storage of boundary fluxes bflux(i, face, i_var, i_block)
+     real(dp), allocatable :: bflux(:, :, :, :)
      !> Refinement flag of each block. Negative means coarsen (if possible),
      !> positive means refine, and zero means keep refinement.
      integer, allocatable  :: refinement_flags(:)
@@ -304,6 +308,7 @@ module m_foap4
   public :: f4_update_ghostcells
   public :: f4_adjust_refinement
   public :: f4_partition
+  public :: f4_fix_c2f_flux
 
 contains
 
@@ -465,7 +470,7 @@ contains
 
     !$acc exit data delete(f4%bc_type, f4%bc_value)
     !$acc exit data delete(f4%block_level, f4%block_origin)
-    !$acc exit data delete(f4%uu, f4%refinement_flags)
+    !$acc exit data delete(f4%uu, f4%bflux, f4%refinement_flags)
     !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
     !$acc exit data delete(&
     !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
@@ -482,6 +487,7 @@ contains
     deallocate(f4%block_level)
     deallocate(f4%refinement_flags)
     deallocate(f4%uu)
+    deallocate(f4%bflux)
     deallocate(f4%recv_buffer)
     deallocate(f4%send_buffer)
     deallocate(f4%recv_offset)
@@ -555,6 +561,9 @@ contains
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, n_vars, max_blocks))
     f4%uu = 0.0_dp
 
+    allocate(f4%bflux(bx(1), 0:2*ndim-1, n_vars, max_blocks))
+    f4%bflux = 0.0_dp
+
     f4%gc_data_size = f4%bx(1) * f4%n_gc
 
     ! Maximum size of recv/send buffer
@@ -568,7 +577,7 @@ contains
     !$acc enter data copyin(f4)
     !$acc enter data copyin(f4%bc_type, f4%bc_value)
     !$acc enter data create(f4%block_level, f4%block_origin)
-    !$acc enter data create(f4%uu, f4%refinement_flags)
+    !$acc enter data create(f4%uu, f4%bflux, f4%refinement_flags)
     !$acc enter data create(f4%recv_buffer, f4%send_buffer)
     !$acc enter data create(&
     !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
@@ -2626,5 +2635,155 @@ contains
 
     error stop "No index found, is the array sorted?"
   end function find_bracket
+
+  !> Correct fluxes at refinement boundaries
+  subroutine f4_fix_c2f_flux(f4, bx, ilo, ihi, max_vars, max_blocks, uu, &
+       dt, n_vars, i_vars, s_out)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: bx(2)
+    integer, intent(in)          :: ilo(2)
+    integer, intent(in)          :: ihi(2)
+    integer, intent(in)          :: max_vars
+    integer, intent(in)          :: max_blocks
+    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
+    real(dp), intent(in)         :: dt
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer, intent(in)          :: s_out
+    integer                      :: i_coarse, i_fine
+    integer                      :: n, i, j, i_f, j_f, i_c, j_c, face, oface
+    integer                      :: iv, ivar
+    integer                      :: half_bx(2), offset, level
+    real(dp)                     :: fac, flux_diff
+
+    half_bx = f4%bx/2
+
+    !$acc parallel
+
+    !$acc loop private(i_coarse, i_fine, offset, level, fac, face, oface)
+    do n = f4%gc_f2c_local_iface(0), f4%gc_f2c_local_iface(1)-1
+       i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
+       i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
+       offset   = f4%gc_f2c_local(3,n)      ! offset
+       level    = f4%block_level(i_coarse)
+       fac      = dt/f4%dr_level(1, level)
+       face     = 0
+       oface    = 1
+
+       !$acc loop collapse(2) private(j_c, j_f, ivar, flux_diff)
+       do iv = 1, n_vars
+          do j = 1, half_bx(2)
+             ivar = i_vars(iv)
+             j_f = 2 * j - 1
+             j_c = j + offset * half_bx(2)
+
+             ! Difference in flux between coarse and fine side
+             flux_diff = f4%bflux(j_c, oface, ivar, i_coarse) - 0.5_dp * ( &
+                  f4%bflux(j_f, face, ivar, i_fine) + &
+                  f4%bflux(j_f+1, face, ivar, i_fine))
+
+             ! Correct solution on coarse side
+             uu(bx(1), j_c, ivar+s_out, i_coarse) = &
+                  uu(bx(1), j_c, ivar+s_out, i_coarse) + &
+                  fac * flux_diff
+          end do
+       end do
+    end do
+
+    !$acc loop private(i_coarse, i_fine, offset, level, fac, face, oface)
+    do n = f4%gc_f2c_local_iface(1), f4%gc_f2c_local_iface(2)-1
+       i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
+       i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
+       offset   = f4%gc_f2c_local(3,n)      ! offset
+       level    = f4%block_level(i_coarse)
+       fac      = dt/f4%dr_level(1, level)
+       face     = 1
+       oface    = 0
+
+       !$acc loop collapse(2) private(j_c, j_f, ivar, flux_diff)
+       do iv = 1, n_vars
+          do j = 1, half_bx(2)
+             ivar = i_vars(iv)
+             j_f = 2 * j - 1
+             j_c = j + offset * half_bx(2)
+
+             ! Difference in flux between coarse and fine side
+             flux_diff = f4%bflux(j_c, oface, ivar, i_coarse) - 0.5_dp * ( &
+                  f4%bflux(j_f, face, ivar, i_fine) + &
+                  f4%bflux(j_f+1, face, ivar, i_fine))
+
+             ! Correct solution on coarse side
+             uu(1, j_c, ivar+s_out, i_coarse) = &
+                  uu(1, j_c, ivar+s_out, i_coarse) - &
+                  fac * flux_diff
+          end do
+       end do
+    end do
+
+    !$acc end parallel
+
+    !$acc parallel
+
+    !$acc loop private(i_coarse, i_fine, offset, level, fac, face, oface)
+    do n = f4%gc_f2c_local_iface(2), f4%gc_f2c_local_iface(3)-1
+       i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
+       i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
+       offset   = f4%gc_f2c_local(3,n)      ! offset
+       level    = f4%block_level(i_coarse)
+       fac      = dt/f4%dr_level(2, level)
+       face     = 2
+       oface    = 3
+
+       !$acc loop collapse(2) private(i_c, i_f, ivar, flux_diff)
+       do iv = 1, n_vars
+          do i = 1, half_bx(1)
+             ivar = i_vars(iv)
+             i_f = 2 * i - 1
+             i_c = i + offset * half_bx(1)
+
+             ! Difference in flux between coarse and fine side
+             flux_diff = f4%bflux(i_c, oface, ivar, i_coarse) - 0.5_dp * ( &
+                  f4%bflux(i_f, face, ivar, i_fine) + &
+                  f4%bflux(i_f+1, face, ivar, i_fine))
+
+             ! Correct solution on coarse side
+             uu(i_c, bx(2), ivar, i_coarse) = uu(i_c, bx(2), ivar, i_coarse) + &
+                  fac * flux_diff
+          end do
+       end do
+    end do
+
+    !$acc loop private(i_coarse, i_fine, offset, fac)
+    do n = f4%gc_f2c_local_iface(3), f4%gc_f2c_local_iface(4)-1
+       i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
+       i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
+       offset   = f4%gc_f2c_local(3,n)      ! offset
+       level    = f4%block_level(i_coarse)
+       fac      = dt/f4%dr_level(2, level)
+       face     = 3
+       oface    = 2
+
+       !$acc loop collapse(2) private(i_c, i_f, ivar, flux_diff)
+       do iv = 1, n_vars
+          do i = 1, half_bx(1)
+             ivar = i_vars(iv)
+             i_f = 2 * i - 1
+             i_c = i + offset * half_bx(1)
+
+             ! Difference in flux between coarse and fine side
+             flux_diff = f4%bflux(i_c, oface, ivar, i_coarse) - 0.5_dp * ( &
+                  f4%bflux(i_f, face, ivar, i_fine) + &
+                  f4%bflux(i_f+1, face, ivar, i_fine))
+
+             ! Correct solution on coarse side
+             uu(i_c, 1, ivar, i_coarse) = uu(i_c, 1, ivar, i_coarse) - &
+                  fac * flux_diff
+          end do
+       end do
+    end do
+
+    !$acc end parallel
+
+  end subroutine f4_fix_c2f_flux
 
 end module m_foap4
