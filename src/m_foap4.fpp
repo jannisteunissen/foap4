@@ -90,7 +90,7 @@ module m_foap4
      real(dp), allocatable :: block_origin(:, :)
      !> Storage of block data uu(i, j, i_var, i_block)
      real(dp), allocatable :: uu(:, :, :, :)
-     !> Storage of boundary fluxes bflux(i, face, i_var, i_block)
+     !> Storage of boundary flux * dt / dx, as bflux(i, face, i_var, i_block)
      real(dp), allocatable :: bflux(:, :, :, :)
      !> Refinement flag of each block. Negative means coarsen (if possible),
      !> positive means refine, and zero means keep refinement.
@@ -119,10 +119,14 @@ module m_foap4
      integer, allocatable :: gc_recv_offset(:)
      !> Receive offset (per MPI rank) in recv_buffer for the coarse-to-fine step
      integer, allocatable :: gc_recv_offset_c2f(:)
+     !> Receive offset (per MPI rank) in recv_buffer for flux fixing
+     integer, allocatable :: gc_recv_offset_fluxfix(:)
      !> Send offset (per MPI rank) in send_buffer
      integer, allocatable :: gc_send_offset(:)
      !> Send offset (per MPI rank) in send_buffer for the coarse-to-fine step
      integer, allocatable :: gc_send_offset_c2f(:)
+     !> Send offset (per MPI rank) in send_buffer for flux fixing
+     integer, allocatable :: gc_send_offset_fluxfix(:)
 
      ! All the arrays below are sorted by face direction
 
@@ -145,6 +149,11 @@ module m_foap4
      integer, allocatable :: gc_f2c_to_buf(:, :)
      !> List of quad indices with a physical boundary
      integer, allocatable :: gc_phys(:)
+
+     !> Same as gc_f2c_to_buf but for flux fixing (different buffer offsets)
+     integer, allocatable :: gc_f2c_to_buf_fluxfix(:, :)
+     !> Same as gc_c2f_from_buf but for flux fixing (different buffer offsets)
+     integer, allocatable :: gc_c2f_from_buf_fluxfix(:, :)
 
      ! Since the above arrays are sorted by face direction, we can loop over
      ! them per face direction. The arrays below define the start index for each
@@ -478,6 +487,8 @@ contains
     !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
     !$acc exit data delete(f4)
 
+    ! TODO: delete ghost cell patterns
+
     call pw_destroy(f4%pw)
 
     deallocate(f4%var_names)
@@ -794,12 +805,16 @@ contains
        allocate(f4%gc_send_offset(0:mpisize))
        allocate(f4%gc_recv_offset_c2f(0:mpisize))
        allocate(f4%gc_send_offset_c2f(0:mpisize))
+       allocate(f4%gc_recv_offset_fluxfix(0:mpisize))
+       allocate(f4%gc_send_offset_fluxfix(0:mpisize))
     end if
 
     f4%gc_recv_offset(0) = 0
     f4%gc_send_offset(0) = 0
     f4%gc_recv_offset_c2f(0) = 0
     f4%gc_send_offset_c2f(0) = 0
+    f4%gc_recv_offset_fluxfix(0) = 0
+    f4%gc_send_offset_fluxfix(0) = 0
 
     ! Determine offsets for sending and receiving with other ranks
     do rank = 1, mpisize
@@ -809,6 +824,9 @@ contains
 
           f4%gc_recv_offset_c2f(rank) = f4%gc_recv_offset_c2f(rank-1)
           f4%gc_send_offset_c2f(rank) = f4%gc_send_offset_c2f(rank-1)
+
+          f4%gc_recv_offset_fluxfix(rank) = f4%gc_recv_offset_fluxfix(rank-1)
+          f4%gc_send_offset_fluxfix(rank) = f4%gc_send_offset_fluxfix(rank-1)
        else
           f4%gc_recv_offset(rank) = f4%gc_recv_offset(rank-1) + &
                f4%gc_data_size * i_same(rank-1) + &
@@ -823,6 +841,11 @@ contains
                f4%gc_data_size * i_f2c(rank-1)
           f4%gc_send_offset_c2f(rank) = f4%gc_send_offset_c2f(rank-1) + &
                f4%gc_data_size * i_c2f(rank-1)
+
+          f4%gc_recv_offset_fluxfix(rank) = f4%gc_recv_offset_fluxfix(rank-1) + &
+               f4%bx(1)/2 * i_c2f(rank-1)
+          f4%gc_send_offset_fluxfix(rank) = f4%gc_send_offset_fluxfix(rank-1) + &
+               f4%gc_data_size/2 * i_f2c(rank-1)
        end if
     end do
 
@@ -831,11 +854,13 @@ contains
        !$acc exit data delete(&
        !$acc &f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
        !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
-       !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+       !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys, &
+       !$acc &f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
 
        deallocate(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
             f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
-            f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+            f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys, &
+            f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
     end if
 
     ! Local ghost cell exchange at the same level
@@ -923,12 +948,14 @@ contains
     n = sum(i_f2c) - i_f2c(mpirank)
     allocate(f4%gc_f2c_from_buf(2, n))
     allocate(f4%gc_f2c_to_buf(2, n))
+    allocate(f4%gc_f2c_to_buf_fluxfix(2, n))
     allocate(all_f2c_from_buf%i(n))
     allocate(all_f2c_to_buf%i(n))
 
     ! Non-local ghost cell exchange from coarse to fine
     n = sum(i_c2f) - i_c2f(mpirank)
     allocate(f4%gc_c2f_from_buf(3, n))
+    allocate(f4%gc_c2f_from_buf_fluxfix(3, n))
     allocate(f4%gc_c2f_to_buf(3, n))
     allocate(all_c2f_from_buf%i(n))
     allocate(all_c2f_to_buf%i(n))
@@ -1061,12 +1088,51 @@ contains
             bnd_face(i)%offset, bnd_face(i)%ibuf_send]
     end do
 
+    ! Repeat the above for flux fixing
+    do rank = 0, mpisize - 1
+       if (rank == mpirank) cycle
+
+       ! Incremental offsets for sending and receiving data
+       i_buf_recv(rank) = f4%gc_recv_offset_fluxfix(rank)
+       i_buf_send(rank) = f4%gc_send_offset_fluxfix(rank)
+
+       ! Sending from fine to coarse
+       call sort_for_recv_or_send(f2c_ix(rank), n_faces, bnd_face, send)
+
+       do n = 1, size(f2c_ix(rank)%i)
+          i = f2c_ix(rank)%i(n) ! Index in bnd_face array
+          bnd_face(i)%ibuf_send = i_buf_send(rank)
+          i_buf_send(rank) = i_buf_send(rank) + f4%bx(1) / 2
+       end do
+
+       ! Receiving coarse from fine
+       call sort_for_recv_or_send(c2f_ix(rank), n_faces, bnd_face, recv)
+
+       do n = 1, size(c2f_ix(rank)%i)
+          i = c2f_ix(rank)%i(n) ! Index in bnd_face array
+          bnd_face(i)%ibuf_recv = i_buf_recv(rank)
+          i_buf_recv(rank) = i_buf_recv(rank) + f4%bx(1) / 2
+       end do
+    end do
+
+    do n = 1, i_f2c_to_buf
+       i = all_f2c_to_buf%i(n)
+       f4%gc_f2c_to_buf_fluxfix(:, n) = [bnd_face(i)%quadid(1), bnd_face(i)%ibuf_send]
+    end do
+
+    do n = 1, i_c2f_from_buf
+       i = all_c2f_from_buf%i(n)
+       f4%gc_c2f_from_buf_fluxfix(:, n) = [bnd_face(i)%quadid(1), &
+            bnd_face(i)%offset, bnd_face(i)%ibuf_recv]
+    end do
+
     ! OpenACC - copy/sync data to device
 
     !$acc enter data copyin(&
     !$acc &f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
     !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
-    !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+    !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys, &
+    !$acc &f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
 
     !$acc update device(&
     !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
@@ -2638,7 +2704,7 @@ contains
 
   !> Correct fluxes at refinement boundaries
   subroutine f4_fix_c2f_flux(f4, bx, ilo, ihi, max_vars, max_blocks, uu, &
-       dt, n_vars, i_vars, s_out)
+       n_vars, i_vars, s_out)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: bx(2)
     integer, intent(in)          :: ilo(2)
@@ -2646,27 +2712,222 @@ contains
     integer, intent(in)          :: max_vars
     integer, intent(in)          :: max_blocks
     real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
-    real(dp), intent(in)         :: dt
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
     integer, intent(in)          :: s_out
     integer                      :: i_coarse, i_fine
     integer                      :: n, i, j, i_f, j_f, i_c, j_c, face, oface
-    integer                      :: iv, ivar
-    integer                      :: half_bx(2), offset, level
-    real(dp)                     :: fac, flux_diff
+    integer                      :: iv, ivar, i_buf0, i_buf
+    integer                      :: half_bx(2), offset
+    real(dp)                     :: flux_diff
 
     half_bx = f4%bx/2
 
+    ! Fill buffers with data from fine side
+
     !$acc parallel
 
-    !$acc loop private(i_coarse, i_fine, offset, level, fac, face, oface)
+    !$acc loop private(i_fine, i_buf0, face)
+    do n = f4%gc_f2c_to_buf_iface(0), f4%gc_f2c_to_buf_iface(1)-1
+       i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
+       i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
+       face   = 0
+
+       !$acc loop collapse(2) private(j_f, ivar, i_buf)
+       do iv = 1, n_vars
+          do j = 1, half_bx(2)
+             ivar = i_vars(iv)
+             j_f = 2 * j - 1
+
+             i_buf = i_buf0 + (iv-1)*half_bx(2) + j
+             f4%send_buffer(i_buf) = 0.25_dp * ( &
+                  f4%bflux(j_f, face, ivar, i_fine) + &
+                  f4%bflux(j_f+1, face, ivar, i_fine))
+          end do
+       end do
+    end do
+
+    !$acc loop private(i_fine, i_buf0, face)
+    do n = f4%gc_f2c_to_buf_iface(1), f4%gc_f2c_to_buf_iface(2)-1
+       i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
+       i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
+       face   = 1
+
+       !$acc loop collapse(2) private(j_f, ivar, i_buf)
+       do iv = 1, n_vars
+          do j = 1, half_bx(2)
+             ivar = i_vars(iv)
+             j_f = 2 * j - 1
+
+             i_buf = i_buf0 + (iv-1)*half_bx(2) + j
+             f4%send_buffer(i_buf) = 0.25_dp * ( &
+                  f4%bflux(j_f, face, ivar, i_fine) + &
+                  f4%bflux(j_f+1, face, ivar, i_fine))
+          end do
+       end do
+    end do
+
+    !$acc loop private(i_fine, i_buf0, face)
+    do n = f4%gc_f2c_to_buf_iface(2), f4%gc_f2c_to_buf_iface(3)-1
+       i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
+       i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
+       face   = 2
+
+       !$acc loop collapse(2) private(i_f, ivar, i_buf)
+       do iv = 1, n_vars
+          do i = 1, half_bx(1)
+             ivar = i_vars(iv)
+             i_f = 2 * i - 1
+
+             i_buf = i_buf0 + (iv-1)*half_bx(1) + i
+             f4%send_buffer(i_buf) = 0.25_dp * ( &
+                  f4%bflux(i_f, face, ivar, i_fine) + &
+                  f4%bflux(i_f+1, face, ivar, i_fine))
+          end do
+       end do
+    end do
+
+    !$acc loop private(i_fine, i_buf0, face)
+    do n = f4%gc_f2c_to_buf_iface(3), f4%gc_f2c_to_buf_iface(4)-1
+       i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
+       i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
+       face   = 3
+
+       !$acc loop collapse(2) private(i_f, ivar, i_buf)
+       do iv = 1, n_vars
+          do i = 1, half_bx(1)
+             ivar = i_vars(iv)
+             i_f = 2 * i - 1
+
+             i_buf = i_buf0 + (iv-1)*half_bx(1) + i
+             f4%send_buffer(i_buf) = 0.25_dp * ( &
+                  f4%bflux(i_f, face, ivar, i_fine) + &
+                  f4%bflux(i_f+1, face, ivar, i_fine))
+          end do
+       end do
+    end do
+
+    !$acc end parallel
+
+    ! Update send/recv offsets
+    f4%recv_offset(:) = f4%gc_recv_offset_fluxfix * n_vars
+    f4%send_offset(:) = f4%gc_send_offset_fluxfix * n_vars
+
+    call f4_exchange_buffers(f4)
+
+    ! Correct solution on coarse side of non-local refinement boundaries
+
+    !$acc loop private(i_coarse, offset, i_buf0, oface)
+    do n = f4%gc_c2f_from_buf_iface(0), f4%gc_c2f_from_buf_iface(1)-1
+       i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 ! Coarse block
+       offset   = f4%gc_c2f_from_buf_fluxfix(2, n)
+       i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
+       oface    = 1
+
+       !$acc loop collapse(2) private(j_c, ivar, i_buf, flux_diff)
+       do iv = 1, n_vars
+          do j = 1, half_bx(2)
+             ivar = i_vars(iv)
+             j_c = j + offset * half_bx(2)
+
+             i_buf = i_buf0 + (iv-1)*half_bx(2) + j
+             flux_diff = f4%bflux(j_c, oface, ivar, i_coarse) - &
+                  f4%recv_buffer(i_buf)
+
+             ! Correct solution on coarse side
+             uu(bx(1), j_c, ivar+s_out, i_coarse) = &
+                  uu(bx(1), j_c, ivar+s_out, i_coarse) + flux_diff
+          end do
+       end do
+    end do
+
+    !$acc loop private(i_coarse, offset, i_buf0, oface)
+    do n = f4%gc_c2f_from_buf_iface(1), f4%gc_c2f_from_buf_iface(2)-1
+       i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 ! Coarse block
+       offset   = f4%gc_c2f_from_buf_fluxfix(2, n)
+       i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
+       oface    = 0
+
+       !$acc loop collapse(2) private(j_c, ivar, i_buf, flux_diff)
+       do iv = 1, n_vars
+          do j = 1, half_bx(2)
+             ivar = i_vars(iv)
+             j_c = j + offset * half_bx(2)
+
+             i_buf = i_buf0 + (iv-1)*half_bx(2) + j
+             flux_diff = f4%bflux(j_c, oface, ivar, i_coarse) - &
+                  f4%recv_buffer(i_buf)
+
+             ! Correct solution on coarse side
+             uu(1, j_c, ivar+s_out, i_coarse) = &
+                  uu(1, j_c, ivar+s_out, i_coarse) - flux_diff
+          end do
+       end do
+    end do
+
+    !$acc end parallel
+
+    !$acc parallel
+
+    !$acc loop private(i_coarse, offset, i_buf0, oface)
+    do n = f4%gc_c2f_from_buf_iface(2), f4%gc_c2f_from_buf_iface(3)-1
+       i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 ! Coarse block
+       offset   = f4%gc_c2f_from_buf_fluxfix(2, n)
+       i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
+       oface    = 3
+
+       !$acc loop collapse(2) private(i_c, ivar, i_buf, flux_diff)
+       do iv = 1, n_vars
+          do i = 1, half_bx(1)
+             ivar = i_vars(iv)
+             i_c = i + offset * half_bx(1)
+
+             i_buf = i_buf0 + (iv-1)*half_bx(1) + i
+             flux_diff = f4%bflux(i_c, oface, ivar, i_coarse) - &
+                  f4%recv_buffer(i_buf)
+
+             ! Correct solution on coarse side
+             uu(i_c, bx(2), ivar, i_coarse) = &
+                  uu(i_c, bx(2), ivar, i_coarse) + flux_diff
+          end do
+       end do
+    end do
+
+    !$acc loop private(i_coarse, offset, i_buf0, oface)
+    do n = f4%gc_c2f_from_buf_iface(3), f4%gc_c2f_from_buf_iface(4)-1
+       i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 ! Coarse block
+       offset   = f4%gc_c2f_from_buf_fluxfix(2, n)
+       i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
+       oface    = 2
+
+       !$acc loop collapse(2) private(i_c, ivar, i_buf, flux_diff)
+       do iv = 1, n_vars
+          do i = 1, half_bx(1)
+             ivar = i_vars(iv)
+             i_c = i + offset * half_bx(1)
+
+             i_buf = i_buf0 + (iv-1)*half_bx(1) + i
+             flux_diff = f4%bflux(i_c, oface, ivar, i_coarse) - &
+                  f4%recv_buffer(i_buf)
+
+             ! Correct solution on coarse side
+             uu(i_c, 1, ivar, i_coarse) = &
+                  uu(i_c, 1, ivar, i_coarse) - flux_diff
+          end do
+       end do
+    end do
+
+    !$acc end parallel
+
+    ! Local refinement boundaries
+
+    !$acc parallel
+
+    !$acc loop private(i_coarse, i_fine, offset, face, oface)
     do n = f4%gc_f2c_local_iface(0), f4%gc_f2c_local_iface(1)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset   = f4%gc_f2c_local(3,n)      ! offset
-       level    = f4%block_level(i_coarse)
-       fac      = dt/f4%dr_level(1, level)
        face     = 0
        oface    = 1
 
@@ -2677,26 +2938,24 @@ contains
              j_f = 2 * j - 1
              j_c = j + offset * half_bx(2)
 
-             ! Difference in flux between coarse and fine side
-             flux_diff = f4%bflux(j_c, oface, ivar, i_coarse) - 0.5_dp * ( &
+             ! Difference between coarse and fine side. The 0.25 is because we
+             ! store flux * dt / dx, and dx_fine = 0.5 * dx_coarse.
+             flux_diff = f4%bflux(j_c, oface, ivar, i_coarse) - 0.25_dp * ( &
                   f4%bflux(j_f, face, ivar, i_fine) + &
                   f4%bflux(j_f+1, face, ivar, i_fine))
 
              ! Correct solution on coarse side
              uu(bx(1), j_c, ivar+s_out, i_coarse) = &
-                  uu(bx(1), j_c, ivar+s_out, i_coarse) + &
-                  fac * flux_diff
+                  uu(bx(1), j_c, ivar+s_out, i_coarse) + flux_diff
           end do
        end do
     end do
 
-    !$acc loop private(i_coarse, i_fine, offset, level, fac, face, oface)
+    !$acc loop private(i_coarse, i_fine, offset, face, oface)
     do n = f4%gc_f2c_local_iface(1), f4%gc_f2c_local_iface(2)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset   = f4%gc_f2c_local(3,n)      ! offset
-       level    = f4%block_level(i_coarse)
-       fac      = dt/f4%dr_level(1, level)
        face     = 1
        oface    = 0
 
@@ -2707,15 +2966,14 @@ contains
              j_f = 2 * j - 1
              j_c = j + offset * half_bx(2)
 
-             ! Difference in flux between coarse and fine side
-             flux_diff = f4%bflux(j_c, oface, ivar, i_coarse) - 0.5_dp * ( &
+             ! Difference between coarse and fine side
+             flux_diff = f4%bflux(j_c, oface, ivar, i_coarse) - 0.25_dp * ( &
                   f4%bflux(j_f, face, ivar, i_fine) + &
                   f4%bflux(j_f+1, face, ivar, i_fine))
 
              ! Correct solution on coarse side
              uu(1, j_c, ivar+s_out, i_coarse) = &
-                  uu(1, j_c, ivar+s_out, i_coarse) - &
-                  fac * flux_diff
+                  uu(1, j_c, ivar+s_out, i_coarse) - flux_diff
           end do
        end do
     end do
@@ -2724,13 +2982,11 @@ contains
 
     !$acc parallel
 
-    !$acc loop private(i_coarse, i_fine, offset, level, fac, face, oface)
+    !$acc loop private(i_coarse, i_fine, offset, face, oface)
     do n = f4%gc_f2c_local_iface(2), f4%gc_f2c_local_iface(3)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset   = f4%gc_f2c_local(3,n)      ! offset
-       level    = f4%block_level(i_coarse)
-       fac      = dt/f4%dr_level(2, level)
        face     = 2
        oface    = 3
 
@@ -2741,25 +2997,23 @@ contains
              i_f = 2 * i - 1
              i_c = i + offset * half_bx(1)
 
-             ! Difference in flux between coarse and fine side
-             flux_diff = f4%bflux(i_c, oface, ivar, i_coarse) - 0.5_dp * ( &
+             ! Difference between coarse and fine side
+             flux_diff = f4%bflux(i_c, oface, ivar, i_coarse) - 0.25_dp * ( &
                   f4%bflux(i_f, face, ivar, i_fine) + &
                   f4%bflux(i_f+1, face, ivar, i_fine))
 
              ! Correct solution on coarse side
-             uu(i_c, bx(2), ivar, i_coarse) = uu(i_c, bx(2), ivar, i_coarse) + &
-                  fac * flux_diff
+             uu(i_c, bx(2), ivar, i_coarse) = &
+                  uu(i_c, bx(2), ivar, i_coarse) + flux_diff
           end do
        end do
     end do
 
-    !$acc loop private(i_coarse, i_fine, offset, fac)
+    !$acc loop private(i_coarse, i_fine, offset, face, oface)
     do n = f4%gc_f2c_local_iface(3), f4%gc_f2c_local_iface(4)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset   = f4%gc_f2c_local(3,n)      ! offset
-       level    = f4%block_level(i_coarse)
-       fac      = dt/f4%dr_level(2, level)
        face     = 3
        oface    = 2
 
@@ -2770,14 +3024,14 @@ contains
              i_f = 2 * i - 1
              i_c = i + offset * half_bx(1)
 
-             ! Difference in flux between coarse and fine side
-             flux_diff = f4%bflux(i_c, oface, ivar, i_coarse) - 0.5_dp * ( &
+             ! Difference between coarse and fine side
+             flux_diff = f4%bflux(i_c, oface, ivar, i_coarse) - 0.25_dp * ( &
                   f4%bflux(i_f, face, ivar, i_fine) + &
                   f4%bflux(i_f+1, face, ivar, i_fine))
 
              ! Correct solution on coarse side
-             uu(i_c, 1, ivar, i_coarse) = uu(i_c, 1, ivar, i_coarse) - &
-                  fac * flux_diff
+             uu(i_c, 1, ivar, i_coarse) = &
+                  uu(i_c, 1, ivar, i_coarse) - flux_diff
           end do
        end do
     end do

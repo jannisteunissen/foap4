@@ -161,11 +161,11 @@ contains
     call forward_euler(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
          dt, f4%uu, 0, 1, [0], [1.0_dp], 1)
     call f4_fix_c2f_flux(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
-         f4%uu, dt, 1, [i_rho], 1)
+         f4%uu, 1, [i_rho], 1)
     call forward_euler(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
          0.5_dp*dt, f4%uu, 1, 2, [0, 1], [0.5_dp, 0.5_dp], 0)
     call f4_fix_c2f_flux(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
-         f4%uu, 0.5_dp*dt, 1, [i_rho], 0)
+         f4%uu, 1, [i_rho], 0)
   end subroutine advance_heuns_method
 
   subroutine set_init_cond(f4)
@@ -278,10 +278,10 @@ contains
                   (fy(1) - fy(2)) * inv_dr(2))
 
              ! Store boundary fluxes
-             if (i == 1) f4%bflux(j, 0, i_rho, n) = fx(1)
-             if (i == bx(1)) f4%bflux(j, 1, i_rho, n) = fx(2)
-             if (j == 1) f4%bflux(i, 2, i_rho, n) = fy(1)
-             if (j == bx(2)) f4%bflux(i, 3, i_rho, n) = fy(2)
+             if (i == 1) f4%bflux(j, 0, i_rho, n) = dt * fx(1) * inv_dr(1)
+             if (i == bx(1)) f4%bflux(j, 1, i_rho, n) = dt * fx(2) * inv_dr(1)
+             if (j == 1) f4%bflux(i, 2, i_rho, n) = dt * fy(1) * inv_dr(2)
+             if (j == bx(2)) f4%bflux(i, 3, i_rho, n) = dt * fy(2) * inv_dr(2)
           end do
        end do
 
