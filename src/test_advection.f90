@@ -348,7 +348,7 @@ contains
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_var
     real(dp), intent(out)     :: var_sum
-    integer                   :: level, i, j, n
+    integer                   :: level, i, j, n, ierror
     real(dp)                  :: dvol
 
     var_sum = 0.0_dp
@@ -365,6 +365,9 @@ contains
           end do
        end do
     end do
+
+    call MPI_Allreduce(MPI_IN_PLACE, var_sum, 1, MPI_DOUBLE_PRECISION, &
+         MPI_SUM, f4%mpicomm, ierror)
 
   end subroutine compute_sum
 
