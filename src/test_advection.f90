@@ -126,14 +126,14 @@ contains
           n_output = n_output + 1
        end if
 
-       ! if (do_refinement) then
-       !    call f4_update_ghostcells(f4, 1, [i_rho])
-       !    call set_refinement_flag(f4)
-       !    call f4_adjust_refinement(f4, .true.)
+       if (do_refinement) then
+          call f4_update_ghostcells(f4, 1, [i_rho])
+          call set_refinement_flag(f4)
+          call f4_adjust_refinement(f4, .true.)
 
-       !    call f4_get_global_highest_level(f4, highest_level)
-       !    min_dr = f4%dr_level(:, highest_level)
-       ! end if
+          call f4_get_global_highest_level(f4, highest_level)
+          min_dr = f4%dr_level(:, highest_level)
+       end if
 
        sum_local_blocks = sum_local_blocks + f4_get_num_local_blocks(f4)
     end do
