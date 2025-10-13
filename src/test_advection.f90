@@ -68,7 +68,7 @@ contains
     integer                      :: highest_level, n_iterations, ierr
     integer(int64)               :: sum_local_blocks, sum_global_blocks
     logical                      :: write_this_step
-    real(dp)                     :: dt, dt_output, min_dr(2)
+    real(dp)                     :: dt, dt_lim, dt_output, min_dr(2)
     real(dp)                     :: time, t0, t1
     real(dp)                     :: rho_initial_sum, rho_sum
 
@@ -113,8 +113,7 @@ contains
        write_this_step = (time + dt > n_output * dt_output)
        if (write_this_step) dt = n_output * dt_output - time
 
-       call advance_heuns_method(f4, dt)
-       time = time + dt
+       call f4_advance(f4, dt, dt_lim, time, f4_heuns_method, forward_euler)
 
        if (write_this_step) then
           call f4_write_grid(f4, base_name, n_output, time)
@@ -147,26 +146,12 @@ contains
        print *, "n_iterations:    ", n_iterations
        print *, "n_blocks_global: ", sum_global_blocks/n_iterations
        print *, "block size:      ", bx
-       write(*, "(A,F14.3)") " unknowns/ns:     ", 1e-9_dp * &
+       write(*, "(A,F14.3)") " cell updates/ns: ", 1e-9_dp * &
             sum_global_blocks * (product(f4%bx) * 2 / (t1 - t0))
     end if
 
     call f4_destroy(f4)
   end subroutine test_advection
-
-  subroutine advance_heuns_method(f4, dt)
-    type(foap4_t), intent(inout) :: f4
-    real(dp), intent(in)         :: dt
-
-    call forward_euler(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
-         dt, f4%uu, 0, 1, [0], [1.0_dp], 1)
-    call f4_fix_c2f_flux(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
-         f4%uu, 1, [i_rho], 1)
-    call forward_euler(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
-         0.5_dp*dt, f4%uu, 1, 2, [0, 1], [0.5_dp, 0.5_dp], 0)
-    call f4_fix_c2f_flux(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
-         f4%uu, 1, [i_rho], 0)
-  end subroutine advance_heuns_method
 
   subroutine set_init_cond(f4)
     type(foap4_t), intent(inout) :: f4
@@ -238,39 +223,41 @@ contains
     !$acc update host(f4%refinement_flags(1:f4%n_blocks))
   end subroutine set_refinement_flag
 
-  subroutine forward_euler(f4, bx, lo, hi, n_vars, n_blocks, dt, uu, &
-       s_deriv, n_prev, s_prev, w_prev, s_out)
+  subroutine forward_euler(f4, dt, dt_lim, time, s_deriv, n_prev, s_prev, w_prev, &
+       s_out, i_step, n_steps)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)               :: n_blocks, bx(2), lo(2), hi(2), n_vars
-    real(dp), intent(in)              :: dt
-    real(dp), intent(inout)           :: uu(lo(1):hi(1), lo(2):hi(2), n_vars, n_blocks)
-    integer, intent(in)               :: s_deriv        !< State to compute derivatives from
-    integer, intent(in)               :: n_prev         !< Number of previous states
-    integer, intent(in)               :: s_prev(n_prev) !< Previous states
-    real(dp), intent(in)              :: w_prev(n_prev) !< Weights of previous states
-    integer, intent(in)               :: s_out          !< Output state
-    integer                           :: n, i, j, m, level
-    real(dp)                          :: inv_dr(2)
-    real(dp)                          :: fx(2), fy(2)
-    real(dp)                          :: tmp(5)
-    real(dp)                          :: dvar(bx(1), bx(2))
+    real(dp), intent(in)         :: dt
+    real(dp), intent(inout)      :: dt_lim         !< Time step limit
+    real(dp), intent(in)         :: time           !< Current time
+    integer, intent(in)          :: s_deriv        !< State to compute derivatives from
+    integer, intent(in)          :: n_prev         !< Number of previous states
+    integer, intent(in)          :: s_prev(n_prev) !< Previous states
+    real(dp), intent(in)         :: w_prev(n_prev) !< Weights of previous states
+    integer, intent(in)          :: s_out          !< Output state
+    integer, intent(in)          :: i_step         !< Step of the integrator
+    integer, intent(in)          :: n_steps        !< Total number of steps
+    integer                      :: n, i, j, m, level
+    real(dp)                     :: inv_dr(2)
+    real(dp)                     :: fx(2), fy(2)
+    real(dp)                     :: tmp(5)
+    real(dp)                     :: dvar(bx(1), bx(2))
 
     call f4_update_ghostcells(f4, 1, [i_rho+s_deriv])
 
     !$acc parallel loop private(level, inv_dr, dvar)
-    do n = 1, n_blocks
+    do n = 1, f4%n_blocks
 
        level = f4%block_level(n)
        inv_dr = 1/f4%dr_level(:, level)
 
        !$acc loop collapse(2) private(fx, fy, tmp)
-       do j = 1, bx(2)
-          do i = 1, bx(1)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
              ! Compute x and y fluxes
-             tmp = uu(i-2:i+2, j, i_rho+s_deriv, n)
+             tmp = f4%uu(i-2:i+2, j, i_rho+s_deriv, n)
              call muscl_flux(velocity(1), tmp, fx)
 
-             tmp = uu(i, j-2:j+2, i_rho+s_deriv, n)
+             tmp = f4%uu(i, j-2:j+2, i_rho+s_deriv, n)
              call muscl_flux(velocity(2), tmp, fy)
 
              ! Keep track of changes in variables
@@ -293,12 +280,15 @@ contains
              do m = 1, n_prev
                 ! Add weighted previous states
                 dvar(i, j) = dvar(i, j) + &
-                     uu(i, j, i_rho+s_prev(m), n) * w_prev(m)
+                     f4%uu(i, j, i_rho+s_prev(m), n) * w_prev(m)
              end do
-             uu(i, j, i_rho+s_out, n) = dvar(i, j)
+             f4%uu(i, j, i_rho+s_out, n) = dvar(i, j)
           end do
        end do
     end do
+
+    call f4_fix_c2f_flux(f4, 1, [i_rho], s_out)
+
   end subroutine forward_euler
 
   subroutine muscl_flux(v, u, flux)

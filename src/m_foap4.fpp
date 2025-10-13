@@ -50,6 +50,38 @@ module m_foap4
   !> Value indicating extrapolation boundary condition
   integer, parameter, public :: f4_bc_linear_extrap = 2
 
+  !> Number of time integration schemes
+  integer, parameter, public :: f4_num_integrators  = 6
+
+  !> Forward Euler method
+  integer, parameter, public :: f4_forward_euler    = 1
+  !> Heun's method (AKA modified Euler's method, explicit trapezoidal rule), CFL
+  !> coefficient of 1. See e.g. https://en.wikipedia.org/wiki/Heun%27s_method
+  integer, parameter, public :: f4_heuns_method     = 2
+  !> Midpoint method, see e.g. https://en.wikipedia.org/wiki/Midpoint_method
+  integer, parameter, public :: f4_midpoint_method  = 3
+  !> Optimal 3-stage third-order SSPRK method (Shu & Osher), CFL coefficient of
+  !> 1, see e.g. https://doi.org/10.1137/S0036142902419284
+  integer, parameter, public :: f4_ssprk33_method   = 4
+  !> Optimal 4-stage third-order SSPRK method (Ruuth & Spiteri), CFL coefficient
+  !> of 2, see e.g. https://doi.org/10.1137/S0036142902419284
+  integer, parameter, public :: f4_ssprk43_method   = 5
+  !> Classic 4th order Runge Kutta method, see e.g.
+  !> https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta_methods
+  integer, parameter, public :: f4_rk4_method       = 6
+
+  character(len=20), public :: f4_integrator_names(f4_num_integrators) = &
+       [character(len=20) :: "forward_euler", "heuns_method", &
+       "midpoint_method", "ssprk33", "ssprk43", "rk4"]
+
+  !> How many steps the time integrators take
+  integer, parameter, public :: &
+       f4_advance_num_steps(f4_num_integrators) = [1, 2, 2, 3, 4, 4]
+
+  !> How many variable copies are required for the time integrators
+  integer, parameter, public :: f4_advance_num_copies(f4_num_integrators) = &
+       f4_advance_num_steps
+
   !> Type to store an array of integers
   type int_array_t
      integer, allocatable :: i(:)
@@ -303,6 +335,44 @@ module m_foap4
        type(c_ptr), value                :: dest_data
        integer(c_int), intent(in), value :: data_size
      end subroutine pw_partition_transfer
+
+     !> Interface for a generic forward Euler scheme for time integration
+     !>
+     !> This method should advance the solution over a time dt. The method
+     !> assumes that several copies are stored for the variables to be
+     !> integrated. It should then operate on these different copies, which
+     !> correspond to temporal states. In this way, higher-order time
+     !> integration schemes can be constructed.
+     !>
+     !> The meaning of the temporal states is as follows. For an equation y' =
+     !> f(y), the method should perform:
+     !> y_out = sum(w_prev * y_prev) + dt * f(y_deriv).
+     !>
+     !> If the index of the variable `y` is `i`, then the index of `y_out` is
+     !> `i+s_out`, etc.
+     !>
+     !> In case of IMEX schemes, the time step dt_stiff (which is then not
+     !> always equal to dt) should be used for stiff terms. The equation to be
+     !> solved should be interpreted as:
+     !>
+     !> d/dt y = F0(y) + F1(y)
+     !>
+     !> where F0 is the non-stiff part and F1 is the stiff part
+     subroutine subr_feuler(f4, dt, dt_lim, time, s_deriv, n_prev, &
+          s_prev, w_prev, s_out, i_step, n_steps)
+       import
+       type(foap4_t), intent(inout) :: f4
+       real(dp), intent(in)         :: dt             !< Time step
+       real(dp), intent(inout)      :: dt_lim         !< Computed time step limit
+       real(dp), intent(in)         :: time           !< Current time
+       integer, intent(in)          :: s_deriv        !< State to compute derivatives from
+       integer, intent(in)          :: n_prev         !< Number of previous states
+       integer, intent(in)          :: s_prev(n_prev) !< Previous states
+       real(dp), intent(in)         :: w_prev(n_prev) !< Weights of previous states
+       integer, intent(in)          :: s_out          !< Output state
+       integer, intent(in)          :: i_step         !< Step of the integrator
+       integer, intent(in)          :: n_steps        !< Total number of steps
+     end subroutine subr_feuler
   end interface
 
   public :: f4_initialize
@@ -324,6 +394,7 @@ module m_foap4
   public :: f4_partition
   public :: f4_fix_c2f_flux
   public :: f4_compute_sum
+  public :: f4_advance
 
 contains
 
@@ -2731,29 +2802,19 @@ contains
     error stop "No index found, is the array sorted?"
   end function find_bracket
 
-  !> Correct fluxes at refinement boundaries. Use the average flux from the
-  !> fine side on the coarse side.
-  subroutine f4_fix_c2f_flux(f4, bx, ilo, ihi, max_vars, max_blocks, uu, &
-       n_vars, i_vars, s_out)
+  !> Fill buffers for flux fixing with average flux from fine side
+  subroutine fixflux_to_buf(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: bx(2)
-    integer, intent(in)          :: ilo(2)
-    integer, intent(in)          :: ihi(2)
-    integer, intent(in)          :: max_vars
-    integer, intent(in)          :: max_blocks
-    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer, intent(in)          :: s_out
-    integer                      :: i_coarse, i_fine
-    integer                      :: n, i, j, i_f, i_c
-    integer                      :: iv, ivar, i_buf0, i_buf
-    integer                      :: half_bx(2), offset
-    real(dp)                     :: flux_diff, fac, t0, t1
+
+    integer  :: i_fine, n, i, i_f
+    integer  :: iv, ivar, i_buf0, i_buf
+    integer  :: half_bx(2)
 
     half_bx = f4%bx/2
 
-#:def fyp_fixflux_to_buf(face, ilim)
+    #:def fyp_fixflux_to_buf(face, ilim)
     !$acc loop private(i_fine, i_buf0)
     do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
@@ -2774,6 +2835,38 @@ contains
        end do
     end do
 #:enddef
+
+    !$acc parallel
+    @:fyp_fixflux_to_buf(0, half_bx(2))
+    @:fyp_fixflux_to_buf(1, half_bx(2))
+    @:fyp_fixflux_to_buf(2, half_bx(1))
+    @:fyp_fixflux_to_buf(3, half_bx(1))
+    !$acc end parallel
+
+  end subroutine fixflux_to_buf
+
+  !> Correct solution on coarse side of refinement boundaries, taking into
+  !> account the difference in the fine and coarse flux at this boundary
+  subroutine fixflux_correct(f4, bx, ilo, ihi, max_vars, max_blocks, uu, &
+       n_vars, i_vars, s_out)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: bx(2)
+    integer, intent(in)          :: ilo(2)
+    integer, intent(in)          :: ihi(2)
+    integer, intent(in)          :: max_vars
+    integer, intent(in)          :: max_blocks
+    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer, intent(in)          :: s_out
+
+    integer  :: i_coarse, i_fine
+    integer  :: n, i, j, i_f, i_c
+    integer  :: iv, ivar, i_buf0, i_buf
+    integer  :: half_bx(2), offset
+    real(dp) :: flux_diff, fac
+
+    half_bx = bx/2
 
 #:def fyp_fixflux_from_buf(face, ilim, ix, sign)
     !$acc loop private(i_coarse, offset, i_buf0, fac)
@@ -2833,28 +2926,6 @@ contains
     end do
 #:enddef
 
-    t0 = MPI_Wtime()
-
-    ! Fill buffers with data from fine side
-
-    !$acc parallel
-    @:fyp_fixflux_to_buf(0, half_bx(2))
-    @:fyp_fixflux_to_buf(1, half_bx(2))
-    @:fyp_fixflux_to_buf(2, half_bx(1))
-    @:fyp_fixflux_to_buf(3, half_bx(1))
-    !$acc end parallel
-
-    t1 = MPI_Wtime()
-    f4%wtime_flux_fix = f4%wtime_flux_fix + t1 - t0
-
-    ! Update send/recv offsets
-    f4%recv_offset(:) = f4%gc_recv_offset_fluxfix * n_vars
-    f4%send_offset(:) = f4%gc_send_offset_fluxfix * n_vars
-    call f4_exchange_buffers(f4)
-
-    t0 = MPI_Wtime()
-    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
-
     ! Correct solution on coarse side of non-local refinement boundaries
 
     !$acc parallel
@@ -2878,6 +2949,34 @@ contains
     @:fyp_fixflux_local(2, 3, half_bx(1), {i_c, bx(2)}, 1)
     @:fyp_fixflux_local(3, 2, half_bx(1), {i_c, 1}, -1)
     !$acc end parallel
+
+  end subroutine fixflux_correct
+
+  !> Correct fluxes at refinement boundaries. Use the average flux from the
+  !> fine side on the coarse side.
+  subroutine f4_fix_c2f_flux(f4, n_vars, i_vars, s_out)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    integer, intent(in)          :: s_out
+    real(dp)                     :: t0, t1
+
+    t0 = MPI_Wtime()
+    call fixflux_to_buf(f4, n_vars, i_vars)
+
+    t1 = MPI_Wtime()
+    f4%wtime_flux_fix = f4%wtime_flux_fix + t1 - t0
+
+    ! Update send/recv offsets
+    f4%recv_offset(:) = f4%gc_recv_offset_fluxfix * n_vars
+    f4%send_offset(:) = f4%gc_send_offset_fluxfix * n_vars
+    call f4_exchange_buffers(f4)
+
+    t0 = MPI_Wtime()
+    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
+
+    call fixflux_correct(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, &
+         f4%max_blocks, f4%uu, n_vars, i_vars, s_out)
 
     t1 = MPI_Wtime()
     f4%wtime_flux_fix = f4%wtime_flux_fix + t1 - t0
@@ -2911,5 +3010,78 @@ contains
          MPI_SUM, f4%mpicomm, ierror)
 
   end subroutine f4_compute_sum
+
+  !> Advance solution over dt using time_integrator scheme, which can call
+  !> forward_euler multiple times
+  subroutine f4_advance(f4, dt, dt_lim, time, time_integrator, forward_euler)
+    type(foap4_t), intent(inout) :: f4
+    real(dp), intent(in)         :: dt     !< Current time step
+    real(dp), intent(out)        :: dt_lim !< Time step limit
+    real(dp), intent(inout)      :: time   !< Current time
+    !> One of the pre-defined time integrators (e.g. af_heuns_method)
+    integer, intent(in)          :: time_integrator
+    !> Forward Euler method provided by the user
+    procedure(subr_feuler)       :: forward_euler
+    integer                      :: n_steps
+
+    real(dp), parameter :: third = 1/3.0_dp
+    real(dp), parameter :: sixth = 1/6.0_dp
+
+    if (time_integrator < 1 .or. time_integrator > f4_num_integrators) &
+         error stop "Invalid time integrator"
+
+    n_steps = f4_advance_num_steps(time_integrator)
+    dt_lim = 1e100_dp
+
+    select case (time_integrator)
+    case (f4_forward_euler)
+       call forward_euler(f4, dt, dt_lim, time, 0, &
+            1, [0], [1.0_dp], 0, 1, n_steps)
+    case (f4_midpoint_method)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
+            1, [0], [1.0_dp], 1, 1, n_steps)
+       call forward_euler(f4, dt, dt_lim, time+0.5_dp*dt, 1, &
+            1, [0], [1.0_dp], 0, 2, n_steps)
+    case (f4_heuns_method)
+       call forward_euler(f4, dt, dt_lim, time, 0, &
+            1, [0], [1.0_dp], 1, 1, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+dt, 1, &
+            2, [0, 1], [0.5_dp, 0.5_dp], 0, 2, n_steps)
+    case (f4_ssprk33_method)
+       call forward_euler(f4, dt, dt_lim, time, 0, &
+            1, [0], [1.0_dp], 1, 1, n_steps)
+       call forward_euler(f4, 0.25_dp*dt, dt_lim, time+dt, 1, &
+            2, [0, 1], [0.75_dp, 0.25_dp], 2, 2, n_steps)
+       call forward_euler(f4, 2*third*dt, dt_lim, time+0.5_dp*dt, 2, &
+            2, [0, 2], [third, 2*third], 0, 3, n_steps)
+    case (f4_ssprk43_method)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
+            1, [0], [1.0_dp], 1, 1, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, 1, &
+            1, [1], [1.0_dp], 2, 2, n_steps)
+       call forward_euler(f4, sixth*dt, dt_lim, time+dt, 2, &
+            2, [0, 2], [2*third, third], 3, 3, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, 3, &
+            1, [3], [1.0_dp], 0, 4, n_steps)
+    case (f4_rk4_method)
+       ! This looks different than the standard formulation in most textbooks.
+       ! The idea is to construct the states needed for the derivatives, and
+       ! then take a linear combination. Note the negative coefficient used in
+       ! the last step.
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
+            1, [0], [1.0_dp], 1, 1, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, 1, &
+            1, [0], [1.0_dp], 2, 2, n_steps)
+       call forward_euler(f4, dt, dt_lim, time+0.5_dp*dt, 2, &
+            1, [0], [1.0_dp], 3, 3, n_steps)
+       call forward_euler(f4, sixth*dt, dt_lim, time+dt, 3, &
+            4, [0, 1, 2, 3], [-third, third, 2*third, third], 0, 4, n_steps)
+    case default
+       error stop "Unknown time integrator"
+    end select
+
+    time = time + dt
+  end subroutine f4_advance
+
 
 end module m_foap4
