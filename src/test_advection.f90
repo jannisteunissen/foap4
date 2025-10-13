@@ -96,7 +96,7 @@ contains
        end do
     end if
 
-    call compute_sum(f4, i_rho, rho_initial_sum)
+    call f4_compute_sum(f4, i_rho, rho_initial_sum)
 
     if (dt_output < end_time) call f4_write_grid(f4, base_name, n_output, time)
     n_output = n_output + 1
@@ -118,7 +118,7 @@ contains
 
        if (write_this_step) then
           call f4_write_grid(f4, base_name, n_output, time)
-          call compute_sum(f4, i_rho, rho_sum)
+          call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &
                   rho_sum - rho_initial_sum
@@ -343,32 +343,5 @@ contains
        phi = 0
     end if
   end function vanleer
-
-  subroutine compute_sum(f4, i_var, var_sum)
-    type(foap4_t), intent(in) :: f4
-    integer, intent(in)       :: i_var
-    real(dp), intent(out)     :: var_sum
-    integer                   :: level, i, j, n, ierror
-    real(dp)                  :: dvol
-
-    var_sum = 0.0_dp
-
-    !$acc parallel loop private(level, dvol) reduction(+: var_sum)
-    do n = 1, f4%n_blocks
-       level = f4%block_level(n)
-       dvol = product(f4%dr_level(:, level))
-
-       !$acc loop collapse(2) reduction(+: var_sum)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-            var_sum = var_sum + f4%uu(i, j, i_var, n) * dvol
-          end do
-       end do
-    end do
-
-    call MPI_Allreduce(MPI_IN_PLACE, var_sum, 1, MPI_DOUBLE_PRECISION, &
-         MPI_SUM, f4%mpicomm, ierror)
-
-  end subroutine compute_sum
 
 end program

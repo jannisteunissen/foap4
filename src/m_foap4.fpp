@@ -185,6 +185,7 @@ module m_foap4
      real(dp) :: wtime_write_grid = 0.0_dp
      real(dp) :: wtime_update_gc_pattern = 0.0_dp
      real(dp) :: wtime_exchange_buffers = 0.0_dp
+     real(dp) :: wtime_flux_fix = 0.0_dp
 
   end type foap4_t
 
@@ -322,6 +323,7 @@ module m_foap4
   public :: f4_adjust_refinement
   public :: f4_partition
   public :: f4_fix_c2f_flux
+  public :: f4_compute_sum
 
 contains
 
@@ -443,6 +445,7 @@ contains
     f4%wtime_write_grid = 0.0_dp
     f4%wtime_update_gc_pattern = 0.0_dp
     f4%wtime_exchange_buffers = 0.0_dp
+    f4%wtime_flux_fix = 0.0_dp
   end subroutine f4_reset_wtime
 
   !> Print wall clock time measurements
@@ -473,6 +476,8 @@ contains
          f4%wtime_update_gc_pattern * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "exchange_buffers", &
          f4%wtime_exchange_buffers * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "flux_fix", &
+         f4%wtime_flux_fix * fac
   end subroutine f4_print_wtime
 
   !> Destroy all data for the current mesh
@@ -2732,11 +2737,9 @@ contains
     integer                      :: n, i, j, i_f, i_c
     integer                      :: iv, ivar, i_buf0, i_buf
     integer                      :: half_bx(2), offset
-    real(dp)                     :: flux_diff, fac
+    real(dp)                     :: flux_diff, fac, t0, t1
 
     half_bx = f4%bx/2
-
-    ! Fill buffers with data from fine side
 
 #:def fyp_fixflux_to_buf(face, ilim)
     !$acc loop private(i_fine, i_buf0)
@@ -2759,20 +2762,6 @@ contains
        end do
     end do
 #:enddef
-
-    !$acc parallel
-    @:fyp_fixflux_to_buf(0, half_bx(2))
-    @:fyp_fixflux_to_buf(1, half_bx(2))
-    @:fyp_fixflux_to_buf(2, half_bx(1))
-    @:fyp_fixflux_to_buf(3, half_bx(1))
-    !$acc end parallel
-
-    ! Update send/recv offsets
-    f4%recv_offset(:) = f4%gc_recv_offset_fluxfix * n_vars
-    f4%send_offset(:) = f4%gc_send_offset_fluxfix * n_vars
-    call f4_exchange_buffers(f4)
-
-    ! Correct solution on coarse side of non-local refinement boundaries
 
 #:def fyp_fixflux_from_buf(face, ilim, ix, sign)
     !$acc loop private(i_coarse, offset, i_buf0, fac)
@@ -2801,20 +2790,6 @@ contains
        end do
     end do
 #:enddef
-
-    !$acc parallel
-    @:fyp_fixflux_from_buf(0, half_bx(2), {1, i_c}, -1)
-    @:fyp_fixflux_from_buf(1, half_bx(2), {bx(1), i_c}, 1)
-    !$acc end parallel
-
-    ! Avoid race condition for cells adjacent to two refinement boundaries
-
-    !$acc parallel
-    @:fyp_fixflux_from_buf(2, half_bx(1), {i_c, 1}, -1)
-    @:fyp_fixflux_from_buf(3, half_bx(1), {i_c, bx(2)}, 1)
-    !$acc end parallel
-
-    ! Local refinement boundaries
 
 #:def fyp_fixflux_local(face, oface, ilim, ix, sign)
     !$acc loop private(i_coarse, i_fine, offset, fac)
@@ -2846,18 +2821,83 @@ contains
     end do
 #:enddef
 
+    t0 = MPI_Wtime()
+
+    ! Fill buffers with data from fine side
+
     !$acc parallel
-    @:fyp_fixflux_local(0, 1, half_bx(2), {bx(1), i_c}, 1)
-    @:fyp_fixflux_local(1, 0, half_bx(2), {1, i_c}, -1)
+    @:fyp_fixflux_to_buf(0, half_bx(2))
+    @:fyp_fixflux_to_buf(1, half_bx(2))
+    @:fyp_fixflux_to_buf(2, half_bx(1))
+    @:fyp_fixflux_to_buf(3, half_bx(1))
     !$acc end parallel
 
-    ! Avoid race condition for cells adjacent to two refinement boundaries
+    t1 = MPI_Wtime()
+    f4%wtime_flux_fix = f4%wtime_flux_fix + t1 - t0
+
+    ! Update send/recv offsets
+    f4%recv_offset(:) = f4%gc_recv_offset_fluxfix * n_vars
+    f4%send_offset(:) = f4%gc_send_offset_fluxfix * n_vars
+    call f4_exchange_buffers(f4)
+
+    t0 = MPI_Wtime()
+    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
+
+    ! Correct solution on coarse side of non-local refinement boundaries
 
     !$acc parallel
+    @:fyp_fixflux_from_buf(0, half_bx(2), {1, i_c}, -1)
+    @:fyp_fixflux_from_buf(1, half_bx(2), {bx(1), i_c}, 1)
+
+    ! Avoid race condition for cells adjacent to two refinement boundaries
+    !$acc wait
+
+    @:fyp_fixflux_from_buf(2, half_bx(1), {i_c, 1}, -1)
+    @:fyp_fixflux_from_buf(3, half_bx(1), {i_c, bx(2)}, 1)
+
+    !$acc wait
+
+    ! Local refinement boundaries
+    @:fyp_fixflux_local(0, 1, half_bx(2), {bx(1), i_c}, 1)
+    @:fyp_fixflux_local(1, 0, half_bx(2), {1, i_c}, -1)
+
+    !$acc wait
+
     @:fyp_fixflux_local(2, 3, half_bx(1), {i_c, bx(2)}, 1)
     @:fyp_fixflux_local(3, 2, half_bx(1), {i_c, 1}, -1)
     !$acc end parallel
 
+    t1 = MPI_Wtime()
+    f4%wtime_flux_fix = f4%wtime_flux_fix + t1 - t0
+
   end subroutine f4_fix_c2f_flux
+
+  !> Compute sum of a variable
+  subroutine f4_compute_sum(f4, i_var, var_sum)
+    type(foap4_t), intent(in) :: f4
+    integer, intent(in)       :: i_var
+    real(dp), intent(out)     :: var_sum
+    integer                   :: level, i, j, n, ierror
+    real(dp)                  :: dvol
+
+    var_sum = 0.0_dp
+
+    !$acc parallel loop private(level, dvol) reduction(+: var_sum)
+    do n = 1, f4%n_blocks
+       level = f4%block_level(n)
+       dvol = product(f4%dr_level(:, level))
+
+       !$acc loop collapse(2) reduction(+: var_sum)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
+            var_sum = var_sum + f4%uu(i, j, i_var, n) * dvol
+          end do
+       end do
+    end do
+
+    call MPI_Allreduce(MPI_IN_PLACE, var_sum, 1, MPI_DOUBLE_PRECISION, &
+         MPI_SUM, f4%mpicomm, ierror)
+
+  end subroutine f4_compute_sum
 
 end module m_foap4
