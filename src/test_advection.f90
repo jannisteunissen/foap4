@@ -278,10 +278,10 @@ contains
                   (fy(1) - fy(2)) * inv_dr(2))
 
              ! Store boundary fluxes
-             if (i == 1) f4%bflux(j, 0, i_rho, n) = dt * fx(1) * inv_dr(1)
-             if (i == bx(1)) f4%bflux(j, 1, i_rho, n) = dt * fx(2) * inv_dr(1)
-             if (j == 1) f4%bflux(i, 2, i_rho, n) = dt * fy(1) * inv_dr(2)
-             if (j == bx(2)) f4%bflux(i, 3, i_rho, n) = dt * fy(2) * inv_dr(2)
+             if (i == 1) f4%bflux(j, 0, i_rho, n) = dt * fx(1)
+             if (i == bx(1)) f4%bflux(j, 1, i_rho, n) = dt * fx(2)
+             if (j == 1) f4%bflux(i, 2, i_rho, n) = dt * fy(1)
+             if (j == bx(2)) f4%bflux(i, 3, i_rho, n) = dt * fy(2)
           end do
        end do
 

@@ -22,8 +22,12 @@ module m_foap4
   integer, parameter :: face_swap(0:3) = [1, 0, 3, 2]
 
   !> The offset of the children
-  integer, parameter :: child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
-  !$acc declare create(child_offset)
+  integer, parameter :: f4_child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
+  !$acc declare create(f4_child_offset)
+
+  !> The dimension of faces
+  integer, parameter :: f4_face_dim(0:3) = [1, 1, 2, 2]
+  !$acc declare create(f4_face_dim)
 
   !> Value indicating a physical boundary at a block face
   integer, parameter :: FACE_BOUNDARY = 0
@@ -90,7 +94,7 @@ module m_foap4
      real(dp), allocatable :: block_origin(:, :)
      !> Storage of block data uu(i, j, i_var, i_block)
      real(dp), allocatable :: uu(:, :, :, :)
-     !> Storage of boundary flux * dt / dx, as bflux(i, face, i_var, i_block)
+     !> Storage of boundary flux * dt, as bflux(i, face, i_var, i_block)
      real(dp), allocatable :: bflux(:, :, :, :)
      !> Refinement flag of each block. Negative means coarsen (if possible),
      !> positive means refine, and zero means keep refinement.
@@ -1094,7 +1098,9 @@ contains
             bnd_face(i)%offset, bnd_face(i)%ibuf_send]
     end do
 
-    ! Repeat the above for flux fixing
+    ! Repeat the above once more, but now for flux fixing. The code below
+    ! could be merged with the code above if we could store two buffer indices
+    ! in the bnd_face array.
     do rank = 0, mpisize - 1
        if (rank == mpirank) cycle
 
@@ -2412,9 +2418,9 @@ contains
           do iv = 1, f4%n_vars
              do j = 1, half_bx(2)
                 do i = 1, half_bx(1)
-                   j_c = j + child_offset(2, i_ch) * half_bx(2)
+                   j_c = j + f4_child_offset(2, i_ch) * half_bx(2)
                    j_f = 2 * j - 1
-                   i_c = i + child_offset(1, i_ch) * half_bx(1)
+                   i_c = i + f4_child_offset(1, i_ch) * half_bx(1)
                    i_f = 2 * i - 1
 
                    call prolong_local_5point(f4%uu(i_c, j_c, iv, i_from), &
@@ -2445,9 +2451,9 @@ contains
           do iv = 1, f4%n_vars
              do j = 1, half_bx(2)
                 do i = 1, half_bx(1)
-                   j_c = j + child_offset(2, i_ch) * half_bx(2)
+                   j_c = j + f4_child_offset(2, i_ch) * half_bx(2)
                    j_f = 2 * j - 1
-                   i_c = i + child_offset(1, i_ch) * half_bx(1)
+                   i_c = i + f4_child_offset(1, i_ch) * half_bx(1)
                    i_f = 2 * i - 1
 
                    f4%uu(i_c, j_c, iv, i_to) = 0.25_dp * (&
@@ -2726,7 +2732,7 @@ contains
     integer                      :: n, i, j, i_f, i_c
     integer                      :: iv, ivar, i_buf0, i_buf
     integer                      :: half_bx(2), offset
-    real(dp)                     :: flux_diff
+    real(dp)                     :: flux_diff, fac
 
     half_bx = f4%bx/2
 
@@ -2745,7 +2751,8 @@ contains
              i_f = 2 * i - 1
 
              i_buf = i_buf0 + (iv-1)*${ilim}$ + i
-             f4%send_buffer(i_buf) = 0.25_dp * ( &
+
+             f4%send_buffer(i_buf) = 0.5_dp * ( &
                   f4%bflux(i_f, ${face}$, ivar, i_fine) + &
                   f4%bflux(i_f+1, ${face}$, ivar, i_fine))
           end do
@@ -2768,11 +2775,13 @@ contains
     ! Correct solution on coarse side of non-local refinement boundaries
 
 #:def fyp_fixflux_from_buf(face, ilim, ix, sign)
-    !$acc loop private(i_coarse, offset, i_buf0)
+    !$acc loop private(i_coarse, offset, i_buf0, fac)
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 ! Coarse block
        offset   = f4%gc_c2f_from_buf_fluxfix(2, n)
        i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
+       fac      = ${sign}$ / &
+            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse))
 
        !$acc loop collapse(2) private(i_c, ivar, i_buf, flux_diff)
        do iv = 1, n_vars
@@ -2781,7 +2790,7 @@ contains
              i_c = i + offset * ${ilim}$
 
              i_buf = i_buf0 + (iv-1)*${ilim}$ + i
-             flux_diff = ${sign}$ * ( &
+             flux_diff = fac * ( &
                   f4%bflux(i_c, ${face}$, ivar, i_coarse) - &
                   f4%recv_buffer(i_buf))
 
@@ -2808,11 +2817,13 @@ contains
     ! Local refinement boundaries
 
 #:def fyp_fixflux_local(face, oface, ilim, ix, sign)
-    !$acc loop private(i_coarse, i_fine, offset)
+    !$acc loop private(i_coarse, i_fine, offset, fac)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset   = f4%gc_f2c_local(3,n)      ! offset
+       fac      = ${sign}$ / &
+            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse))
 
        !$acc loop collapse(2) private(i_c, i_f, ivar, flux_diff)
        do iv = 1, n_vars
@@ -2821,10 +2832,9 @@ contains
              i_f = 2 * j - 1
              i_c = j + offset * ${ilim}$
 
-             ! Difference between coarse and fine side. The 0.25 is because we
-             ! store flux * dt / dx, and dx_fine = 0.5 * dx_coarse.
-             flux_diff = ${sign}$ * ( &
-                  f4%bflux(i_c, ${oface}$, ivar, i_coarse) - 0.25_dp * ( &
+             ! Difference between coarse and fine side
+             flux_diff = fac * ( &
+                  f4%bflux(i_c, ${oface}$, ivar, i_coarse) - 0.5_dp * ( &
                   f4%bflux(i_f, ${face}$, ivar, i_fine) + &
                   f4%bflux(i_f+1, ${face}$, ivar, i_fine)))
 
