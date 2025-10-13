@@ -455,7 +455,7 @@ contains
 
     t_total = MPI_Wtime() - f4%wtime_t0
     fac     = 1e2_dp / t_total
-    write(*, "(I6,A25,F9.2,' s')") f4%mpirank, "total_time", t_total
+    write(*, "(I6,A25,F9.2,' s')") f4%mpirank, "total_runtime", t_total
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_round1", &
          f4%wtime_gc_fill_round1 * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_round2", &
@@ -478,6 +478,18 @@ contains
          f4%wtime_exchange_buffers * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "flux_fix", &
          f4%wtime_flux_fix * fac
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "sum_of_above", &
+         fac * (f4%wtime_gc_fill_round1 + &
+         f4%wtime_gc_fill_round2 + &
+         f4%wtime_gc_fill_buff_round1 + &
+         f4%wtime_gc_fill_buff_round2 + &
+         f4%wtime_adjust_ref_p4est + &
+         f4%wtime_adjust_ref_foap4 + &
+         f4%wtime_partition + &
+         f4%wtime_write_grid + &
+         f4%wtime_update_gc_pattern + &
+         f4%wtime_exchange_buffers + &
+         f4%wtime_flux_fix)
   end subroutine f4_print_wtime
 
   !> Destroy all data for the current mesh
