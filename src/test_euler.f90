@@ -12,12 +12,18 @@ program euler
   type(CFG_t)   :: cfg
 
   integer  :: min_level   = 2
+  integer  :: max_level   = 4
   integer  :: max_blocks  = 1000
   integer  :: bx(2)       = [32, 32]
   integer  :: num_outputs = 40
   logical  :: periodic(2) = .true.
+  logical  :: do_refinement = .false.
   integer  :: n_gc        = 2
   real(dp) :: end_time    = 2.0_dp
+  real(dp) :: c_refine = 0.8_dp
+  real(dp) :: c_derefine = 0.2_dp
+  real(dp) :: c_eps = 0.01_dp
+  integer :: n_steps_refinement = 4
   character(len=10) :: test_case = "sod"
   character(len=40) :: integrator_name = "heuns_method"
 
@@ -25,7 +31,14 @@ program euler
 
   call CFG_update_from_arguments(cfg)
   call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
-  call CFG_add_get(cfg, 'min_level', min_level, 'Initial refinement level')
+  call CFG_add_get(cfg, 'min_level', min_level, 'Minimum refinement level')
+  call CFG_add_get(cfg, 'max_level', max_level, 'Maximum refinement level')
+  call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
+  call CFG_add_get(cfg, 'c_refine', c_refine, 'Coefficient for refinement')
+  call CFG_add_get(cfg, 'c_derefine', c_refine, 'Coefficient for derefinement')
+  call CFG_add_get(cfg, 'c_eps', c_refine, 'Used in refinement criterion')
+  call CFG_add_get(cfg, 'n_steps_refinement', n_steps_refinement, &
+       'Perform refinement every N steps')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
   call CFG_add_get(cfg, 'periodic', periodic, 'Whether the domain is periodic')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
@@ -62,12 +75,13 @@ contains
     logical                      :: periodic(2)         = [.true., .true.]
     real(dp), parameter          :: cfl_number          = 0.5_dp
     integer                      :: n_output !n, prev_mesh_revision
-    integer                      :: n_iterations, ierr
+    integer                      :: n, n_iterations, ierr, prev_mesh_revision
     integer(int64)               :: sum_local_blocks, sum_global_blocks
     logical                      :: write_this_step, temporal(n_vars_euler)
     integer                      :: integrator, n_time_states
+    integer                      :: highest_level, prev_highest_level
     real(dp)                     :: dt, dt_lim, dt_output
-    real(dp)                     :: time, t0, t1
+    real(dp)                     :: time, t0, t1, rho_sum, rho_initial_sum
 
     time = 0.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
@@ -93,17 +107,20 @@ contains
 
     call set_initial_conditions(f4, test_case)
 
-    ! if (do_refinement) then
-    !    do n = 1, 10
-    !       prev_mesh_revision = f4_get_mesh_revision(f4)
-    !       call f4_update_ghostcells(f4, 1, [i_rho])
-    !       call set_refinement_flag(f4)
-    !       call f4_adjust_refinement(f4, .true.)
-    !       call set_initial_conditions(f4)
+    if (do_refinement) then
+       do n = 1, 10
+          prev_mesh_revision = f4_get_mesh_revision(f4)
+          call f4_update_ghostcells(f4, n_vars_euler, i_vars_grid)
+          call f4_set_refinement_flags_diff2(f4, min_level, max_level, &
+               1, [i_rho], c_refine, c_derefine, c_eps)
+          call f4_adjust_refinement(f4, .true.)
+          call set_initial_conditions(f4, test_case)
 
-    !       if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
-    !    end do
-    ! end if
+          if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
+       end do
+    end if
+
+    call f4_compute_sum(f4, i_rho, rho_initial_sum)
 
     if (dt_output < end_time) call f4_write_grid(f4, base_name, n_output, time)
     n_output = n_output + 1
@@ -124,17 +141,28 @@ contains
 
        if (write_this_step) then
           call f4_write_grid(f4, base_name, n_output, time)
+          call f4_compute_sum(f4, i_rho, rho_sum)
+          if (f4%mpirank == 0) then
+             write(*, "(A,E12.4)") " Conservation error: ", &
+                  rho_sum - rho_initial_sum
+          end if
           n_output = n_output + 1
        end if
 
-       ! if (do_refinement) then
-       !    call f4_update_ghostcells(f4, 1, [i_rho])
-       !    call set_refinement_flag(f4)
-       !    call f4_adjust_refinement(f4, .true.)
+       if (do_refinement .and. &
+            mod(n_iterations, n_steps_refinement) == 0) then
+          call f4_get_global_highest_level(f4, prev_highest_level)
+          call f4_update_ghostcells(f4, n_vars_euler, i_vars_grid)
+          call f4_set_refinement_flags_diff2(f4, min_level, max_level, &
+               1, [i_rho], c_refine, c_derefine, c_eps)
+          call f4_adjust_refinement(f4, .true.)
 
-       !    call f4_get_global_highest_level(f4, highest_level)
-       ! TODO: reduce dt
-       ! end if
+          call f4_get_global_highest_level(f4, highest_level)
+
+          if (highest_level > prev_highest_level) then
+             dt_lim = 0.5_dp * dt_lim
+          end if
+       end if
 
        sum_local_blocks = sum_local_blocks + f4_get_num_local_blocks(f4)
     end do
@@ -421,6 +449,12 @@ contains
              dvar(:) = dt * ((fx(:, 1) - fx(:, 2)) * inv_dr(1) + &
                   (fy(:, 1) - fy(:, 2)) * inv_dr(2))
 
+             ! Store boundary fluxes
+             if (i == 1) f4%bflux(j, 0, i_rho:i_rho+n_vars_euler-1, n) = dt * fx(:, 1)
+             if (i == bx(1)) f4%bflux(j, 1, i_rho:i_rho+n_vars_euler-1, n) = dt * fx(:, 2)
+             if (j == 1) f4%bflux(i, 2, i_rho:i_rho+n_vars_euler-1, n) = dt * fy(:, 1)
+             if (j == bx(2)) f4%bflux(i, 3, i_rho:i_rho+n_vars_euler-1, n) = dt * fy(:, 2)
+
              ! Change due to source terms
              ! TODO: enable/disable this source term in a nice way
              ! TODO: use variable for source term
@@ -441,6 +475,8 @@ contains
     end do
 
     dt_lim = 1/max_cfl
+
+    call f4_fix_c2f_flux(f4, n_vars_euler, i_vars_grid, s_out)
 
   end subroutine forward_euler
 
