@@ -2934,7 +2934,9 @@ contains
                   f4%bflux(i_c, ${face}$, ivar, i_coarse) - &
                   f4%recv_buffer(i_buf))
 
-             ! Correct solution on coarse side
+             ! Correct solution on coarse side. Prevent a race condition with
+             ! the atomic statement.
+             !$acc atomic
              uu(${ix}$, ivar+s_out, i_coarse) = &
                   uu(${ix}$, ivar+s_out, i_coarse) + flux_diff
           end do
@@ -2964,7 +2966,9 @@ contains
                   f4%bflux(i_f, ${face}$, ivar, i_fine) + &
                   f4%bflux(i_f+1, ${face}$, ivar, i_fine)))
 
-             ! Correct solution on coarse side
+             ! Correct solution on coarse side. Prevent a race condition with
+             ! the atomic statement.
+             !$acc atomic
              uu(${ix}$, ivar+s_out, i_coarse) = &
                   uu(${ix}$, ivar+s_out, i_coarse) + flux_diff
           end do
@@ -2977,21 +2981,12 @@ contains
     !$acc parallel
     @:fyp_fixflux_from_buf(0, half_bx(2), {1, i_c}, -1)
     @:fyp_fixflux_from_buf(1, half_bx(2), {bx(1), i_c}, 1)
-
-    ! Avoid race condition for cells adjacent to two refinement boundaries
-    !$acc wait
-
     @:fyp_fixflux_from_buf(2, half_bx(1), {i_c, 1}, -1)
     @:fyp_fixflux_from_buf(3, half_bx(1), {i_c, bx(2)}, 1)
-
-    !$acc wait
 
     ! Local refinement boundaries
     @:fyp_fixflux_local(0, 1, half_bx(2), {bx(1), i_c}, 1)
     @:fyp_fixflux_local(1, 0, half_bx(2), {1, i_c}, -1)
-
-    !$acc wait
-
     @:fyp_fixflux_local(2, 3, half_bx(1), {i_c, bx(2)}, 1)
     @:fyp_fixflux_local(3, 2, half_bx(1), {i_c, 1}, -1)
     !$acc end parallel
