@@ -105,7 +105,11 @@ module m_foap4
      integer   :: bx(2)                           !< Block size (cells)
      integer   :: n_gc                            !< Number of ghost cells
      integer   :: max_blocks                      !< Maximum number of blocks used
-     integer   :: n_vars                          !< Number of variables
+     integer   :: n_vars_nontemporal !< Number of non-temporal variables
+     integer   :: n_vars_temporal    !< Number of temporal variables
+     integer   :: n_vars             !< Total number of variables (excl. temporal copies)
+     integer   :: n_vars_all         !< Total number of variables (incl. temporal copies)
+     integer   :: n_temporal_states  !< Number of temporal states
      real(dp)  :: tree_length(2)                  !< Length of tree
      integer   :: ilo(2)                          !< Minimum index in a block
      integer   :: ihi(2)                          !< Maximum index in a block
@@ -350,14 +354,6 @@ module m_foap4
      !>
      !> If the index of the variable `y` is `i`, then the index of `y_out` is
      !> `i+s_out`, etc.
-     !>
-     !> In case of IMEX schemes, the time step dt_stiff (which is then not
-     !> always equal to dt) should be used for stiff terms. The equation to be
-     !> solved should be interpreted as:
-     !>
-     !> d/dt y = F0(y) + F1(y)
-     !>
-     !> where F0 is the non-stiff part and F1 is the stiff part
      subroutine subr_feuler(f4, dt, dt_lim, time, s_deriv, n_prev, &
           s_prev, w_prev, s_out, i_step, n_steps)
        import
@@ -394,6 +390,7 @@ module m_foap4
   public :: f4_partition
   public :: f4_fix_c2f_flux
   public :: f4_compute_sum
+  public :: f4_get_time_integrator
   public :: f4_advance
 
 contains
@@ -607,20 +604,27 @@ contains
 
   !> Construct a brick of blocks
   subroutine f4_construct_brick(f4, trees_per_dim, tree_length, bx, n_gc, &
-       n_vars, var_names, periodic, min_level, max_blocks, bc_type, bc_value)
+       n_vars, var_names, var_temporal, n_temporal_states, periodic, &
+       min_level, max_blocks, bc_type, bc_value)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: trees_per_dim(2) !< How many trees per dimension
     real(dp), intent(in)         :: tree_length(2)   !< Length of each tree
     integer, intent(in)          :: bx(2)            !< Number of cells in a block
     integer, intent(in)          :: n_gc !< Number of ghost cells
     integer, intent(in)          :: n_vars !< Number of variables
-    character(len=*), intent(in) :: var_names(n_vars) !< Variable names
+    !< Variable names. Temporal variables should be at the end.
+    character(len=*), intent(in) :: var_names(n_vars)
+    !> Whether the variables requires several temporal states
+    logical, intent(in)          :: var_temporal(n_vars)
+    !> Number of temporal states per variable
+    integer, intent(in)          :: n_temporal_states
     logical, intent(in)          :: periodic(2) !< Periodic flag per dim
     integer, intent(in)          :: min_level   !< Refine up to this level
     integer, intent(in)          :: max_blocks  !< Maximum number of blocks
     integer, intent(in)          :: bc_type !< Default physical boundary type
     real(dp), intent(in)         :: bc_value !< Default physical boundary value
-    integer                      :: i, periodic_as_int(2)
+    integer                      :: i, k, periodic_as_int(2)
+    character(len=3)             :: time_state
 
     if (bx(1) /= bx(2)) error stop "TODO: unequal bx(:) not yet supported"
     if (any(bx < 2 * n_gc)) error stop "Cannot have any(bx < 2 * n_gc)"
@@ -630,9 +634,19 @@ contains
     f4%n_gc        = n_gc
     f4%ilo         = 1 - n_gc
     f4%ihi         = bx + n_gc
-    f4%n_vars      = n_vars
     f4%max_blocks  = max_blocks
     f4%tree_length = tree_length
+
+    f4%n_vars = n_vars
+    f4%n_vars_nontemporal = count(.not. var_temporal)
+    f4%n_vars_temporal = count(var_temporal)
+    f4%n_vars_all = f4%n_vars_nontemporal + &
+         f4%n_vars_temporal * n_temporal_states
+    f4%n_temporal_states = n_temporal_states
+
+    if (any(var_temporal(1:f4%n_vars_nontemporal))) then
+       error stop "Temporal variables should come last"
+    end if
 
     where (periodic)
        periodic_as_int = 1
@@ -640,13 +654,21 @@ contains
        periodic_as_int = 0
     end where
 
-    allocate(f4%var_names(n_vars))
-    do i = 1, n_vars
+    allocate(f4%var_names(f4%n_vars_all))
+    do i = 1, f4%n_vars
        f4%var_names(i) = var_names(i)
     end do
 
-    allocate(f4%bc_type(n_vars, 0:3))
-    allocate(f4%bc_value(n_vars, 0:3))
+    ! Set names for temporal copies
+    do i = f4%n_vars_nontemporal+1, f4%n_vars_nontemporal+f4%n_vars_temporal
+       do k = 1, n_temporal_states-1
+          write(time_state, "(A,I0)") "_t", k
+          f4%var_names(i+k*f4%n_vars_temporal) = trim(var_names(i)) // time_state
+       end do
+    end do
+
+    allocate(f4%bc_type(f4%n_vars_all, 0:3))
+    allocate(f4%bc_value(f4%n_vars_all, 0:3))
     f4%bc_type(:, :) = bc_type
     f4%bc_value(:, :) = bc_value
 
@@ -661,7 +683,7 @@ contains
     allocate(f4%block_origin(2, max_blocks))
     allocate(f4%block_level(max_blocks))
     allocate(f4%refinement_flags(max_blocks))
-    allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, n_vars, max_blocks))
+    allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, f4%n_vars_all, max_blocks))
     f4%uu = 0.0_dp
 
     allocate(f4%bflux(bx(1), 0:2*ndim-1, n_vars, max_blocks))
@@ -698,6 +720,7 @@ contains
     integer, intent(in)          :: iface !< Range 0 - 3
     integer, intent(in)          :: bc_type
     real(dp), intent(in)         :: bc_value
+    integer                      :: k, ix
 
     if (iface < 0 .or. iface > 3) error stop "Must have 0 <= iface <= 3 "
     if (ivar < 1 .or. ivar > f4%n_vars) error stop "Must have 1 <= ivar <= n_vars"
@@ -705,6 +728,17 @@ contains
     f4%bc_type(ivar, iface) = bc_type
     f4%bc_value(ivar, iface) = bc_value
     !$acc update device(f4%bc_type(ivar, iface), f4%bc_value(ivar, iface))
+
+    ! Set for temporal copies
+    if (ivar > f4%n_vars_nontemporal) then
+       do k = 1, f4%n_temporal_states-1
+          ix = ivar + k*f4%n_vars_temporal
+          f4%bc_type(ix, iface) = bc_type
+          f4%bc_value(ix, iface) = bc_value
+          !$acc update device(f4%bc_type(ix, iface), f4%bc_value(ix, iface))
+       end do
+    end if
+
   end subroutine f4_set_physical_boundary
 
   !> Return the mesh revision number
@@ -803,10 +837,21 @@ contains
 
     call xdmf_write_blocks_2DCoRect(f4%mpicomm, trim(full_fname), &
          f4%n_blocks, f4%bx+2*f4%n_gc, f4%n_vars, &
-         f4%var_names, f4%n_gc, f4%block_origin(:, 1:f4%n_blocks), dr, &
-         cc_data=f4%uu(:, :, :, 1:f4%n_blocks), time=time, viewer=viewer)
+         f4%var_names(1:f4%n_vars), f4%n_gc, &
+         f4%block_origin(:, 1:f4%n_blocks), dr, &
+         get_block_cc_data=get_block_data, time=time, viewer=viewer)
     t1 = MPI_Wtime()
     f4%wtime_write_grid = f4%wtime_write_grid + t1 - t0
+
+  contains
+
+    subroutine get_block_data(i_block, cc_data)
+      integer, intent(in)     :: i_block
+      real(dp), intent(inout) :: cc_data(:, :, :)
+
+      cc_data = f4%uu(:, :, 1:f4%n_vars, i_block)
+    end subroutine get_block_data
+
   end subroutine f4_write_grid
 
   !> Return the coordinates at the center of a grid cells
@@ -2386,7 +2431,7 @@ contains
     f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t1 - t0
 
     call fill_ghostcells_round_one(f4, n_vars, i_vars, f4%bx, f4%n_gc, &
-         f4%ilo, f4%ihi, f4%n_vars, f4%max_blocks, f4%uu)
+         f4%ilo, f4%ihi, f4%n_vars_all, f4%max_blocks, f4%uu)
 
     t0 = MPI_Wtime()
     f4%wtime_gc_fill_round1 = f4%wtime_gc_fill_round1 + t0 - t1
@@ -2404,7 +2449,7 @@ contains
     f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
 
     call fill_ghostcells_round_two(f4, n_vars, i_vars, f4%bx, f4%n_gc, &
-         f4%ilo, f4%ihi, f4%n_vars, f4%max_blocks, f4%uu)
+         f4%ilo, f4%ihi, f4%n_vars_all, f4%max_blocks, f4%uu)
 
     t1 = MPI_Wtime()
     f4%wtime_gc_fill_round2 = f4%wtime_gc_fill_round2 + t1 - t0
@@ -2687,7 +2732,8 @@ contains
     call copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
 
     ! Size of a block
-    dsize = product(f4%bx + 2*f4%n_gc) * f4%n_vars
+    ! TODO: use a buffer, so that we do not have to transfer temporal copies
+    dsize = product(f4%bx + 2*f4%n_gc) * f4%n_vars_all
 
     ! First and last block this rank owns after partitioning
     dest_begin = gfq_dest(f4%mpirank)
@@ -2975,7 +3021,7 @@ contains
     t0 = MPI_Wtime()
     f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
 
-    call fixflux_correct(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, &
+    call fixflux_correct(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars_all, &
          f4%max_blocks, f4%uu, n_vars, i_vars, s_out)
 
     t1 = MPI_Wtime()
@@ -3011,6 +3057,23 @@ contains
 
   end subroutine f4_compute_sum
 
+  !> Get the time integrator with a given name
+  integer function f4_get_time_integrator(name) result(n)
+    character(len=*), intent(in) :: name
+
+    do n = 1, f4_num_integrators
+       if (name == f4_integrator_names(n)) exit
+    end do
+
+    if (n == f4_num_integrators + 1) then
+       print *, name, " not in list of available time integrators:"
+       do n = 1, f4_num_integrators
+          print *, n, f4_integrator_names(n)
+       end do
+       error stop "Invalid name for time integrator"
+    end if
+  end function f4_get_time_integrator
+
   !> Advance solution over dt using time_integrator scheme, which can call
   !> forward_euler multiple times
   subroutine f4_advance(f4, dt, dt_lim, time, time_integrator, forward_euler)
@@ -3022,7 +3085,7 @@ contains
     integer, intent(in)          :: time_integrator
     !> Forward Euler method provided by the user
     procedure(subr_feuler)       :: forward_euler
-    integer                      :: n_steps
+    integer                      :: n_steps, n_tvar
 
     real(dp), parameter :: third = 1/3.0_dp
     real(dp), parameter :: sixth = 1/6.0_dp
@@ -3031,6 +3094,7 @@ contains
          error stop "Invalid time integrator"
 
     n_steps = f4_advance_num_steps(time_integrator)
+    n_tvar = f4%n_vars_temporal
     dt_lim = 1e100_dp
 
     select case (time_integrator)
@@ -3039,49 +3103,49 @@ contains
             1, [0], [1.0_dp], 0, 1, n_steps)
     case (f4_midpoint_method)
        call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
-            1, [0], [1.0_dp], 1, 1, n_steps)
-       call forward_euler(f4, dt, dt_lim, time+0.5_dp*dt, 1, &
+            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+       call forward_euler(f4, dt, dt_lim, time+0.5_dp*dt, n_tvar, &
             1, [0], [1.0_dp], 0, 2, n_steps)
     case (f4_heuns_method)
        call forward_euler(f4, dt, dt_lim, time, 0, &
-            1, [0], [1.0_dp], 1, 1, n_steps)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+dt, 1, &
-            2, [0, 1], [0.5_dp, 0.5_dp], 0, 2, n_steps)
+            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+dt, n_tvar, &
+            2, [0, n_tvar], [0.5_dp, 0.5_dp], 0, 2, n_steps)
     case (f4_ssprk33_method)
        call forward_euler(f4, dt, dt_lim, time, 0, &
-            1, [0], [1.0_dp], 1, 1, n_steps)
-       call forward_euler(f4, 0.25_dp*dt, dt_lim, time+dt, 1, &
-            2, [0, 1], [0.75_dp, 0.25_dp], 2, 2, n_steps)
-       call forward_euler(f4, 2*third*dt, dt_lim, time+0.5_dp*dt, 2, &
-            2, [0, 2], [third, 2*third], 0, 3, n_steps)
+            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+       call forward_euler(f4, 0.25_dp*dt, dt_lim, time+dt, n_tvar, &
+            2, [0, n_tvar], [0.75_dp, 0.25_dp], 2*n_tvar, 2, n_steps)
+       call forward_euler(f4, 2*third*dt, dt_lim, time+0.5_dp*dt, 2*n_tvar, &
+            2, [0, 2*n_tvar], [third, 2*third], 0, 3, n_steps)
     case (f4_ssprk43_method)
        call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
-            1, [0], [1.0_dp], 1, 1, n_steps)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, 1, &
-            1, [1], [1.0_dp], 2, 2, n_steps)
-       call forward_euler(f4, sixth*dt, dt_lim, time+dt, 2, &
-            2, [0, 2], [2*third, third], 3, 3, n_steps)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, 3, &
-            1, [3], [1.0_dp], 0, 4, n_steps)
+            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, n_tvar, &
+            1, [n_tvar], [1.0_dp], 2*n_tvar, 2, n_steps)
+       call forward_euler(f4, sixth*dt, dt_lim, time+dt, 2*n_tvar, &
+            2, [0, 2*n_tvar], [2*third, third], 3*n_tvar, 3, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, 3*n_tvar, &
+            1, [3*n_tvar], [1.0_dp], 0, 4, n_steps)
     case (f4_rk4_method)
        ! This looks different than the standard formulation in most textbooks.
        ! The idea is to construct the states needed for the derivatives, and
        ! then take a linear combination. Note the negative coefficient used in
        ! the last step.
        call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
-            1, [0], [1.0_dp], 1, 1, n_steps)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, 1, &
-            1, [0], [1.0_dp], 2, 2, n_steps)
-       call forward_euler(f4, dt, dt_lim, time+0.5_dp*dt, 2, &
-            1, [0], [1.0_dp], 3, 3, n_steps)
-       call forward_euler(f4, sixth*dt, dt_lim, time+dt, 3, &
-            4, [0, 1, 2, 3], [-third, third, 2*third, third], 0, 4, n_steps)
+            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, n_tvar, &
+            1, [0], [1.0_dp], 2*n_tvar, 2, n_steps)
+       call forward_euler(f4, dt, dt_lim, time+0.5_dp*dt, 2*n_tvar, &
+            1, [0], [1.0_dp], 3*n_tvar, 3, n_steps)
+       call forward_euler(f4, sixth*dt, dt_lim, time+dt, 3*n_tvar, &
+            4, [0, n_tvar, 2*n_tvar, 3*n_tvar], &
+            [-third, third, 2*third, third], 0, 4, n_steps)
     case default
        error stop "Unknown time integrator"
     end select
 
     time = time + dt
   end subroutine f4_advance
-
 
 end module m_foap4

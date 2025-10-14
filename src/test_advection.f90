@@ -7,18 +7,20 @@ program test_adv
   implicit none
   integer, parameter :: dp = kind(0.0d0)
 
-  integer, parameter :: n_vars            = 2
+  integer, parameter :: n_vars            = 1
   integer, parameter :: i_rho             = 1
-  character(len=20)  :: var_names(n_vars) = ['rho', 'tmp']
+  character(len=20)  :: var_names(n_vars) = ['rho']
+  logical, parameter :: temporal(n_vars) = .true.
   real(dp)           :: velocity(2)       = [1.0_dp, 1.0_dp]
   real(dp)           :: end_time          = 1.0_dp
 
-  logical            :: do_refinement        = .true.
-  integer            :: max_refinement_level = 5
-  integer            :: min_refinement_level = 2
-  integer            :: max_blocks           = 1000
-  integer            :: bx(2)                = [32, 32]
-  integer            :: num_outputs          = 40
+  logical           :: do_refinement        = .true.
+  integer           :: max_refinement_level = 5
+  integer           :: min_refinement_level = 2
+  integer           :: max_blocks           = 1000
+  integer           :: bx(2)                = [32, 32]
+  integer           :: num_outputs          = 40
+  character(len=40) :: integrator_name      = "heuns_method"
 
   type(foap4_t) :: f4
   type(CFG_t) :: cfg
@@ -36,13 +38,15 @@ program test_adv
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
   call CFG_add_get(cfg, 'velocity', velocity, 'Velocity')
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
+  call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
   call CFG_check(cfg)
 
   if (max_refinement_level < min_refinement_level) &
        error stop "max_refinement_level < min_refinement_level"
 
   call test_advection(f4, bx, min_refinement_level, do_refinement, &
-       max_blocks, num_outputs, "output/test_adv", end_time)
+       max_blocks, num_outputs, "output/test_adv", end_time, &
+       integrator_name)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
@@ -50,7 +54,7 @@ program test_adv
 contains
 
   subroutine test_advection(f4, bx, min_level, do_refinement, &
-       max_blocks, num_outputs, base_name, end_time)
+       max_blocks, num_outputs, base_name, end_time, integrator_name)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: bx(2)
     integer, intent(in)          :: min_level
@@ -59,6 +63,7 @@ contains
     integer, intent(in)          :: num_outputs
     character(len=*), intent(in) :: base_name
     real(dp), intent(in)         :: end_time
+    character(len=40), intent(in) :: integrator_name
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
     integer, parameter           :: n_gc                = 2
@@ -68,6 +73,7 @@ contains
     integer                      :: highest_level, n_iterations, ierr
     integer(int64)               :: sum_local_blocks, sum_global_blocks
     logical                      :: write_this_step
+    integer                      :: integrator, n_time_states
     real(dp)                     :: dt, dt_lim, dt_output, min_dr(2)
     real(dp)                     :: time, t0, t1
     real(dp)                     :: rho_initial_sum, rho_sum
@@ -78,9 +84,12 @@ contains
     n_iterations = 0
     sum_local_blocks = 0
 
+    integrator = f4_get_time_integrator(trim(integrator_name))
+    n_time_states = f4_advance_num_copies(integrator)
+
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
-         n_vars, var_names, periodic, min_level, max_blocks, &
-         f4_bc_dirichlet, 0.0_dp)
+         n_vars, var_names, temporal, n_time_states, periodic, min_level, &
+         max_blocks, f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
 
@@ -113,7 +122,7 @@ contains
        write_this_step = (time + dt > n_output * dt_output)
        if (write_this_step) dt = n_output * dt_output - time
 
-       call f4_advance(f4, dt, dt_lim, time, f4_heuns_method, forward_euler)
+       call f4_advance(f4, dt, dt_lim, time, integrator, forward_euler)
 
        if (write_this_step) then
           call f4_write_grid(f4, base_name, n_output, time)
@@ -243,6 +252,7 @@ contains
     real(dp)                     :: dvar(bx(1), bx(2))
 
     call f4_update_ghostcells(f4, 1, [i_rho+s_deriv])
+    ! print *, s_deriv, s_out
 
     !$acc parallel loop private(level, inv_dr, dvar)
     do n = 1, f4%n_blocks

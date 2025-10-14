@@ -19,6 +19,7 @@ program euler
   integer  :: n_gc        = 2
   real(dp) :: end_time    = 2.0_dp
   character(len=10) :: test_case = "sod"
+  character(len=40) :: integrator_name = "heuns_method"
 
   call f4_initialize(f4, "error")
 
@@ -31,12 +32,13 @@ program euler
   call CFG_add_get(cfg, 'n_gc', n_gc, 'Number of ghost cells')
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_add_get(cfg, 'test_case', test_case, 'Which test case to run')
+  call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
   call CFG_check(cfg)
 
   if (n_gc < 2) error stop "n_gc < 2"
 
   call test_euler(f4, bx, min_level, max_blocks, &
-       num_outputs, "output/test_euler", test_case, end_time)
+       num_outputs, "output/test_euler", test_case, end_time, integrator_name)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
@@ -44,7 +46,7 @@ program euler
 contains
 
   subroutine test_euler(f4, bx, min_level, max_blocks, num_outputs, base_name, &
-       test_case, end_time)
+       test_case, end_time, integrator_name)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: bx(2)
     integer, intent(in)          :: min_level
@@ -52,6 +54,8 @@ contains
     integer, intent(in)          :: num_outputs
     character(len=*), intent(in) :: base_name
     character(len=*), intent(in) :: test_case
+    real(dp), intent(in)         :: end_time
+    character(len=40), intent(in) :: integrator_name
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
     integer, parameter           :: n_gc                = 2
@@ -60,9 +64,10 @@ contains
     integer                      :: n_output !n, prev_mesh_revision
     integer                      :: n_iterations, ierr
     integer(int64)               :: sum_local_blocks, sum_global_blocks
-    logical                      :: write_this_step
+    logical                      :: write_this_step, temporal(n_vars_euler)
+    integer                      :: integrator, n_time_states
     real(dp)                     :: dt, dt_lim, dt_output
-    real(dp)                     :: time, end_time, t0, t1
+    real(dp)                     :: time, t0, t1
 
     time = 0.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
@@ -70,12 +75,16 @@ contains
     n_iterations = 0
     sum_local_blocks = 0
     dt_lim = 0.0_dp
+    temporal(:) = .true.
+
+    integrator = f4_get_time_integrator(trim(integrator_name))
+    n_time_states = f4_advance_num_copies(integrator)
 
     if (test_case == "rt") periodic(2) = .false.
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
-         n_variables, var_names, periodic, min_level, max_blocks, &
-         f4_bc_neumann, 0.0_dp)
+         n_vars_euler, var_names, temporal, n_time_states, periodic, &
+         min_level, max_blocks, f4_bc_neumann, 0.0_dp)
 
     if (test_case == "rt") then
        call f4_set_physical_boundary(f4, i_momy, 2, f4_bc_dirichlet, 0.0_dp)
@@ -108,8 +117,7 @@ contains
        write_this_step = (time + dt > n_output * dt_output)
        if (write_this_step) dt = n_output * dt_output - time
 
-       call advance_heuns_method(f4, dt, dt_lim)
-       time = time + dt
+       call f4_advance(f4, dt, dt_lim, time, integrator, forward_euler)
 
        call MPI_Allreduce(MPI_IN_PLACE, dt_lim, 1, MPI_DOUBLE_PRECISION, &
             MPI_MIN, f4%mpicomm, ierr)
@@ -140,8 +148,8 @@ contains
        print *, "n_iterations:    ", n_iterations
        print *, "n_blocks_global: ", sum_global_blocks/n_iterations
        print *, "block size:      ", bx
-       write(*, "(A,F14.3)") " unknowns/ns:     ", 1e-9_dp * &
-            sum_global_blocks * (product(f4%bx) * 2 / (t1 - t0))
+       write(*, "(A,F14.3)") " cell updates/ns:     ", 1e-9_dp * &
+            sum_global_blocks * (product(f4%bx) * f4%n_temporal_states / (t1 - t0))
     end if
 
     call f4_destroy(f4)
@@ -152,12 +160,12 @@ contains
     real(dp), intent(inout) :: u(n_vars_euler)
     real(dp) :: inv_rho
 
-    inv_rho = 1/u(ix_rho)
-    u(ix_momx) = u(ix_momx) * inv_rho
-    u(ix_momy) = u(ix_momy) * inv_rho
+    inv_rho = 1/u(i_rho)
+    u(i_momx) = u(i_momx) * inv_rho
+    u(i_momy) = u(i_momy) * inv_rho
 
-    u(ix_e) = (euler_gamma-1.0_dp) * (u(ix_e) - &
-         0.5_dp * u(ix_rho)* (u(ix_momx)**2 + u(ix_momy)**2))
+    u(i_e) = (euler_gamma-1.0_dp) * (u(i_e) - &
+         0.5_dp * u(i_rho)* (u(i_momx)**2 + u(i_momy)**2))
 
   end subroutine to_primitive
 
@@ -166,12 +174,12 @@ contains
     real(dp), intent(inout) :: u(n_vars_euler)
 
     ! Compute energy from pressure and kinetic energy
-    u(ix_e) = u(ix_e) * inv_gamma_m1 + &
-         0.5_dp * u(ix_rho) * (u(ix_momx)**2 + u(ix_momy)**2)
+    u(i_e) = u(i_e) * inv_gamma_m1 + &
+         0.5_dp * u(i_rho) * (u(i_momx)**2 + u(i_momy)**2)
 
     ! Compute momentum from density and velocity components
-    u(ix_momx) = u(ix_rho) * u(ix_momx)
-    u(ix_momy) = u(ix_rho) * u(ix_momy)
+    u(i_momx) = u(i_rho) * u(i_momx)
+    u(i_momy) = u(i_rho) * u(i_momy)
   end subroutine to_conservative
 
   subroutine muscl_flux_euler_prim(u, flux_dim, flux, wmax)
@@ -221,31 +229,19 @@ contains
     real(dp), intent(out) :: w
 
     ! Density flux
-    flux(ix_rho) = u(ix_rho) * u(ix_mom(flux_dim))
+    flux(i_rho) = u(i_rho) * u(i_mom(flux_dim))
 
     ! Momentum flux with pressure term
-    flux(ix_momx) = u(ix_rho) * u(ix_momx) * u(ix_mom(flux_dim))
-    flux(ix_momy) = u(ix_rho) * u(ix_momy) * u(ix_mom(flux_dim))
-    flux(ix_mom(flux_dim)) = flux(ix_mom(flux_dim)) + u(ix_e)
+    flux(i_momx) = u(i_rho) * u(i_momx) * u(i_mom(flux_dim))
+    flux(i_momy) = u(i_rho) * u(i_momy) * u(i_mom(flux_dim))
+    flux(i_mom(flux_dim)) = flux(i_mom(flux_dim)) + u(i_e)
 
     ! Energy flux
-    flux(ix_e) = u(ix_mom(flux_dim)) * (u(ix_e) * inv_gamma_m1 + &
-         0.5_dp * u(ix_rho) * (u(ix_momx)**2 + u(ix_momy)**2) + u(ix_e))
+    flux(i_e) = u(i_mom(flux_dim)) * (u(i_e) * inv_gamma_m1 + &
+         0.5_dp * u(i_rho) * (u(i_momx)**2 + u(i_momy)**2) + u(i_e))
 
-    w = sqrt(euler_gamma * u(ix_e) / u(ix_rho)) + abs(u(ix_mom(flux_dim)))
+    w = sqrt(euler_gamma * u(i_e) / u(i_rho)) + abs(u(i_mom(flux_dim)))
   end subroutine euler_flux
-
-  subroutine advance_heuns_method(f4, dt, dt_lim)
-    type(foap4_t), intent(inout) :: f4
-    real(dp), intent(in)         :: dt
-    real(dp), intent(out)        :: dt_lim
-
-    call forward_euler(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
-         dt, dt_lim, f4%uu, 0, 1, [0], [1.0_dp], n_vars_euler)
-    call forward_euler(f4, f4%bx, f4%ilo, f4%ihi, f4%n_vars, f4%n_blocks, &
-         0.5_dp*dt, dt_lim, f4%uu, n_vars_euler, 2, [0, n_vars_euler], &
-         [0.5_dp, 0.5_dp], 0)
-  end subroutine advance_heuns_method
 
   subroutine set_initial_conditions(f4, test_case)
     type(foap4_t), intent(inout) :: f4
@@ -255,20 +251,20 @@ contains
 
     select case (test_case)
     case ("first")
-       u0(ix_e, :)      = [1.0_dp, 0.4_dp, 0.0439_dp, 0.15_dp]
-       u0(ix_rho, :)    = [1.0_dp, 0.5197_dp, 0.1072_dp, 0.2579_dp]
-       u0(ix_momx, :) = [0.0_dp, -0.7259_dp, -0.7259_dp, 0.0_dp]
-       u0(ix_momy, :) = [0.0_dp, 0.0_dp, -1.4045_dp, -1.4045_dp]
+       u0(i_e, :)      = [1.0_dp, 0.4_dp, 0.0439_dp, 0.15_dp]
+       u0(i_rho, :)    = [1.0_dp, 0.5197_dp, 0.1072_dp, 0.2579_dp]
+       u0(i_momx, :) = [0.0_dp, -0.7259_dp, -0.7259_dp, 0.0_dp]
+       u0(i_momy, :) = [0.0_dp, 0.0_dp, -1.4045_dp, -1.4045_dp]
 
        do n = 1, 4
           call to_conservative(u0(:, n))
        end do
        call set_initial_quadrants(f4, u0)
     case ("sixth")
-       u0(ix_e, :)      = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp]
-       u0(ix_rho, :)    = [1.0_dp, 2.0_dp, 1.0_dp, 3.0_dp]
-       u0(ix_momx, :) = [0.75_dp, 0.75_dp, -0.75_dp, -0.75_dp]
-       u0(ix_momy, :) = [-0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp]
+       u0(i_e, :)      = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp]
+       u0(i_rho, :)    = [1.0_dp, 2.0_dp, 1.0_dp, 3.0_dp]
+       u0(i_momx, :) = [0.75_dp, 0.75_dp, -0.75_dp, -0.75_dp]
+       u0(i_momy, :) = [-0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp]
 
        do n = 1, 4
           call to_conservative(u0(:, n))
@@ -276,10 +272,10 @@ contains
        call set_initial_quadrants(f4, u0)
     case ("sod")
        ! 1D Sod shock test case
-       u0(ix_rho, :)    = [0.125_dp, 1.0_dp, 1.0_dp, 0.125_dp]
-       u0(ix_e, :)      = [0.1_dp, 1.0_dp, 1.0_dp, 0.1_dp]
-       u0(ix_momx, :) = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
-       u0(ix_momy, :) = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
+       u0(i_rho, :)    = [0.125_dp, 1.0_dp, 1.0_dp, 0.125_dp]
+       u0(i_e, :)      = [0.1_dp, 1.0_dp, 1.0_dp, 0.1_dp]
+       u0(i_momx, :) = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
+       u0(i_momy, :) = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
 
        do n = 1, 4
           call to_conservative(u0(:, n))
@@ -366,23 +362,24 @@ contains
     end do
   end subroutine set_rayleigh_taylor
 
-  subroutine forward_euler(f4, bx, lo, hi, n_vars, n_blocks, dt, dt_lim, uu, &
-       s_deriv, n_prev, s_prev, w_prev, s_out)
+  subroutine forward_euler(f4, dt, dt_lim, time, s_deriv, n_prev, s_prev, w_prev, &
+       s_out, i_step, n_steps)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: n_blocks, bx(2), lo(2), hi(2), n_vars
     real(dp), intent(in)         :: dt
-    real(dp), intent(out)        :: dt_lim
-    real(dp), intent(inout)      :: uu(lo(1):hi(1), lo(2):hi(2), n_vars, n_blocks)
+    real(dp), intent(inout)      :: dt_lim
+    real(dp), intent(in)         :: time
     integer, intent(in)          :: s_deriv        !< State to compute derivatives from
     integer, intent(in)          :: n_prev         !< Number of previous states
     integer, intent(in)          :: s_prev(n_prev) !< Previous states
     real(dp), intent(in)         :: w_prev(n_prev) !< Weights of previous states
     integer, intent(in)          :: s_out          !< Output state
+    integer, intent(in)          :: i_step         !< Step of the integrator
+    integer, intent(in)          :: n_steps        !< Total number of steps
     integer                      :: n, i, j, m, iv, level
     real(dp)                     :: inv_dr(2), wmax(2), max_cfl
     real(dp)                     :: fx(n_vars_euler, 2), fy(n_vars_euler, 2)
     real(dp)                     :: tmp(5, n_vars_euler), u(n_vars_euler)
-    real(dp)                     :: uprim(lo(1):hi(1), lo(2):hi(2), n_vars_euler)
+    real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), n_vars_euler)
     real(dp)                     :: dvar(n_vars_euler)
 
     call f4_update_ghostcells(f4, n_vars_euler, i_vars_grid+s_deriv)
@@ -391,24 +388,26 @@ contains
 
     !$acc parallel loop private(level, inv_dr, max_cfl, uprim) &
     !$acc &reduction(max:max_cfl)
-    do n = 1, n_blocks
+    do n = 1, f4%n_blocks
        level = f4%block_level(n)
        inv_dr = 1/f4%dr_level(:, level)
 
        !$acc loop collapse(2) private(u)
-       do j = lo(2), hi(2)
-          do i = lo(1), hi(1)
-             ! Convert to primitive
-             u = uu(i, j, i_vars_grid+s_deriv, n)
-             call to_primitive(u)
-             uprim(i, j, :) = u
+       do j = f4%ilo(2), f4%ihi(2)
+          do i = f4%ilo(1), f4%ihi(1)
+             if ((j >= 1 .and. j <= f4%bx(2)) .or. (i >= 1 .and. i <= f4%bx(1))) then
+                ! Convert to primitive
+                u = f4%uu(i, j, i_vars_grid+s_deriv, n)
+                call to_primitive(u)
+                uprim(i, j, :) = u
+             end if
           end do
        end do
 
        !$acc loop collapse(2) private(tmp, fx, fy, dvar, wmax, iv, m) &
        !$acc &reduction(max:max_cfl)
-       do j = 1, bx(2)
-          do i = 1, bx(1)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
              ! Compute x and y fluxes
              tmp = uprim(i-2:i+2, j, :)
              call muscl_flux_euler_prim(tmp, 1, fx, wmax(1))
@@ -425,17 +424,17 @@ contains
              ! Change due to source terms
              ! TODO: enable/disable this source term in a nice way
              ! TODO: use variable for source term
-             dvar(i_momy) = dvar(i_momy) + dt * (-1.0_dp) * uu(i, j, i_rho+s_deriv, n)
-             dvar(i_e) = dvar(i_e) + dt * (-1.0_dp) * uu(i, j, i_momy+s_deriv, n)
+             dvar(i_momy) = dvar(i_momy) + dt * (-1.0_dp) * f4%uu(i, j, i_rho+s_deriv, n)
+             dvar(i_e) = dvar(i_e) + dt * (-1.0_dp) * f4%uu(i, j, i_momy+s_deriv, n)
 
              ! Set output state
              do iv = 1, n_vars_euler
                 do m = 1, n_prev
                    ! Add weighted previous states
                    dvar(iv) = dvar(iv) + &
-                        uu(i, j, i_vars_grid(iv)+s_prev(m), n) * w_prev(m)
+                        f4%uu(i, j, i_vars_grid(iv)+s_prev(m), n) * w_prev(m)
                 end do
-                uu(i, j, i_vars_grid(iv)+s_out, n) = dvar(iv)
+                f4%uu(i, j, i_vars_grid(iv)+s_out, n) = dvar(iv)
              end do
           end do
        end do
