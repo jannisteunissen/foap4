@@ -392,6 +392,7 @@ module m_foap4
   public :: f4_compute_sum
   public :: f4_get_time_integrator
   public :: f4_advance
+  public :: f4_set_refinement_flags_diff2
 
 contains
 
@@ -3142,5 +3143,69 @@ contains
 
     time = time + dt
   end subroutine f4_advance
+
+  !> Set refinement flags based on an estimate of the second derivative. This
+  !> is similar to the FLASH code but not equivalent, since we do not compute
+  !> cross derivatives.
+  subroutine f4_set_refinement_flags_diff2(f4, min_level, max_level, n_vars, &
+       i_vars, c_refine, c_derefine, c_eps)
+    type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: min_level
+    integer, intent(in)          :: max_level
+    integer, intent(in)          :: n_vars
+    integer, intent(in)          :: i_vars(n_vars)
+    real(dp), intent(in)         :: c_refine
+    real(dp), intent(in)         :: c_derefine
+    real(dp), intent(in)         :: c_eps
+
+    integer             :: n, i, j, iq, iv, level
+    real(dp)            :: dr(2), diff(2), diff_norm
+    real(dp), parameter :: small_number = 1e-20_dp
+
+    !$acc parallel loop private(level, dr, diff_norm)
+    do n = 1, f4%n_blocks
+       level = f4%block_level(n)
+       dr = f4%dr_level(:, level)
+       diff_norm = 0.0_dp
+
+       !$acc loop collapse(2) reduction(max: diff_norm)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
+             !$acc loop private(iv, diff) reduction(max: diff_norm)
+             do iq = 1, n_vars
+                iv = i_vars(iq)
+
+                diff(1) = abs(f4%uu(i+1, j, iv, n) - 2 * f4%uu(i, j, iv, n) + &
+                     f4%uu(i-1, j, iv, n)) / (small_number + &
+                     abs(f4%uu(i+1, j, iv, n) - f4%uu(i, j, iv, n)) + &
+                     abs(f4%uu(i, j, iv, n) - f4%uu(i-1, j, iv, n)) + &
+                     c_eps * (abs(f4%uu(i+1, j, iv, n)) + &
+                     2 * abs(f4%uu(i, j, iv, n)) + abs(f4%uu(i-1, j, iv, n))))
+
+                diff(2) = abs(f4%uu(i, j+1, iv, n) - 2 * f4%uu(i, j, iv, n) + &
+                     f4%uu(i, j-1, iv, n)) / (small_number + &
+                     abs(f4%uu(i, j+1, iv, n) - f4%uu(i, j, iv, n)) + &
+                     abs(f4%uu(i, j, iv, n) - f4%uu(i, j-1, iv, n)) + &
+                     c_eps * (abs(f4%uu(i, j+1, iv, n)) + &
+                     2 * abs(f4%uu(i, j, iv, n)) + abs(f4%uu(i, j-1, iv, n))))
+
+                diff_norm = max(diff_norm, sqrt(diff(1)**2 + diff(2)**2))
+             end do
+          end do
+       end do
+
+       if ((diff_norm > c_refine .and. f4%block_level(n) < max_level) .or. &
+            f4%block_level(n) < min_level) then
+          f4%refinement_flags(n) = 1
+       else if ((diff_norm < c_derefine .and. f4%block_level(n) > min_level) .or. &
+            f4%block_level(n) > max_level) then
+          f4%refinement_flags(n) = -1
+       else
+          f4%refinement_flags(n) = 0
+       end if
+    end do
+
+    !$acc update host(f4%refinement_flags(1:f4%n_blocks))
+  end subroutine f4_set_refinement_flags_diff2
 
 end module m_foap4
