@@ -1,7 +1,7 @@
 program test_adv
   use iso_fortran_env, only: int64
   use mpi_f08
-  use m_foap4
+  use m_foap4_2d
   use m_config
 
   implicit none

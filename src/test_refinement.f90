@@ -1,6 +1,6 @@
 program test_ref
 
-  use m_foap4
+  use m_foap4_2d
 
   implicit none
   integer, parameter :: dp = kind(0.0d0)

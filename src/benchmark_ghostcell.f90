@@ -1,7 +1,7 @@
 program benchmark_gc
 
   use mpi_f08
-  use m_foap4
+  use m_foap4_2d
   use m_config
 
   implicit none

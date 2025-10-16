@@ -4,7 +4,7 @@
 !> methods.
 !>
 !> Author(s): Jannis Teunissen
-module m_foap4
+module m_foap4_${NDIM}$d
   use, intrinsic :: iso_c_binding
   use mpi_f08
 
@@ -13,20 +13,35 @@ module m_foap4
 
   integer, parameter, private :: dp = kind(0.0d0)
 
-  integer, parameter :: ndim = 2
+  integer, parameter :: ndim = ${NDIM}$
 
   !> Maximum refinement level in p4est
   integer, parameter :: P4EST_MAXLEVEL = 30
 
   !> The opposite of the faces 0-3
-  integer, parameter :: face_swap(0:3) = [1, 0, 3, 2]
+#:if NDIM == 2
+  integer, parameter :: face_swap(0:2*ndim-1) = [1, 0, 3, 2]
+#:elif NDIM == 3
+  integer, parameter :: face_swap(0:2*ndim-1) = [1, 0, 3, 2, 5, 4]
+#:endif
 
   !> The offset of the children
-  integer, parameter :: f4_child_offset(2, 4) = reshape([0,0,1,0,0,1,1,1], [2,4])
+#:if NDIM == 2
+  integer, parameter :: f4_child_offset(ndim, 4) = reshape(&
+       [0,0, 1,0, 0,1, 1,1], [2,4])
+#:elif NDIM == 3
+  integer, parameter :: f4_child_offset(ndim, 8) = reshape( &
+       [0,0,0, 1,0,0, 0,1,0, 1,1,0, &
+       0,0,1, 1,0,1, 0,1,1, 1,1,1], [3,8])
+#:endif
   !$acc declare create(f4_child_offset)
 
   !> The dimension of faces
-  integer, parameter :: f4_face_dim(0:3) = [1, 1, 2, 2]
+#:if NDIM == 2
+  integer, parameter :: f4_face_dim(0:2*ndim-1) = [1, 1, 2, 2]
+#:elif NDIM == 3
+  integer, parameter :: f4_face_dim(0:2*ndim-1) = [1, 1, 2, 2]
+#:endif
   !$acc declare create(f4_face_dim)
 
   !> Value indicating a physical boundary at a block face
@@ -94,7 +109,11 @@ module m_foap4
      integer(c_int) :: face      !< Direction of the face
      integer(c_int) :: other_proc !< MPI rank that owns quadid(2)
      integer(c_int) :: quadid(2)  !< quadid(1) is always local, (2) can be non-local
+#:if NDIM == 2
      integer(c_int) :: offset     !< Offset for a hanging face
+#:elif NDIM == 3
+     integer(c_int) :: offset(2)  !< Offset for a hanging face
+#:endif
      integer(c_int) :: ibuf_recv  !< Index in receive buffer (not filled here)
      integer(c_int) :: ibuf_send  !< Index in send buffer (not filled here)
   end type bnd_face_t
@@ -102,7 +121,7 @@ module m_foap4
   !> Data structure that contains the whole AMR grid and required information
   !> for ghost cell communication
   type, public :: foap4_t
-     integer   :: bx(2)                           !< Block size (cells)
+     integer   :: bx(ndim)                           !< Block size (cells)
      integer   :: n_gc                            !< Number of ghost cells
      integer   :: max_blocks                      !< Maximum number of blocks used
      integer   :: n_vars_nontemporal !< Number of non-temporal variables
@@ -110,10 +129,10 @@ module m_foap4
      integer   :: n_vars             !< Total number of variables (excl. temporal copies)
      integer   :: n_vars_all         !< Total number of variables (incl. temporal copies)
      integer   :: n_temporal_states  !< Number of temporal states
-     real(dp)  :: tree_length(2)                  !< Length of tree
-     integer   :: ilo(2)                          !< Minimum index in a block
-     integer   :: ihi(2)                          !< Maximum index in a block
-     real(dp)  :: dr_level(2, 0:p4est_maxlevel-1) !< Grid spacing per level
+     real(dp)  :: tree_length(ndim)                  !< Length of tree
+     integer   :: ilo(ndim)                          !< Minimum index in a block
+     integer   :: ihi(ndim)                          !< Maximum index in a block
+     real(dp)  :: dr_level(ndim, 0:p4est_maxlevel-1) !< Grid spacing per level
      character(len=32), allocatable :: var_names(:) !< Names of the variables
 
      integer :: n_blocks              !< Number of blocks used
@@ -128,13 +147,20 @@ module m_foap4
      integer, allocatable  :: block_level(:)
      !> Origin of each block
      real(dp), allocatable :: block_origin(:, :)
+     !> Refinement flag of each block. Negative means coarsen (if possible),
+     !> positive means refine, and zero means keep refinement.
+     integer, allocatable  :: refinement_flags(:)
+#:if NDIM == 2
      !> Storage of block data uu(i, j, i_var, i_block)
      real(dp), allocatable :: uu(:, :, :, :)
      !> Storage of boundary flux * dt, as bflux(i, face, i_var, i_block)
      real(dp), allocatable :: bflux(:, :, :, :)
-     !> Refinement flag of each block. Negative means coarsen (if possible),
-     !> positive means refine, and zero means keep refinement.
-     integer, allocatable  :: refinement_flags(:)
+#:elif NDIM == 3
+     !> Storage of block data uu(i, j, k, i_var, i_block)
+     real(dp), allocatable :: uu(:, :, :, :, :)
+     !> Storage of boundary flux * dt, as bflux(i, j, face, i_var, i_block)
+     real(dp), allocatable :: bflux(:, :, :, :, :)
+#:endif
 
      ! For communication
      type(MPI_comm)        :: mpicomm        !< MPI communicator
@@ -199,15 +225,15 @@ module m_foap4
      ! them per face direction. The arrays below define the start index for each
      ! direction (with the last value being the total number of elements).
 
-     integer :: gc_srl_local_iface(0:4)    !< Start index per face direction
-     integer :: gc_srl_from_buf_iface(0:4) !< Start index per face direction
-     integer :: gc_srl_to_buf_iface(0:4)   !< Start index per face direction
-     integer :: gc_f2c_local_iface(0:4)    !< Start index per face direction
-     integer :: gc_c2f_from_buf_iface(0:4) !< Start index per face direction
-     integer :: gc_c2f_to_buf_iface(0:4)   !< Start index per face direction
-     integer :: gc_f2c_from_buf_iface(0:4) !< Start index per face direction
-     integer :: gc_f2c_to_buf_iface(0:4)   !< Start index per face direction
-     integer :: gc_phys_iface(0:4)         !< Start index per face direction
+     integer :: gc_srl_local_iface(0:2*ndim)
+     integer :: gc_srl_from_buf_iface(0:2*ndim)
+     integer :: gc_srl_to_buf_iface(0:2*ndim)
+     integer :: gc_f2c_local_iface(0:2*ndim)
+     integer :: gc_c2f_from_buf_iface(0:2*ndim)
+     integer :: gc_c2f_to_buf_iface(0:2*ndim)
+     integer :: gc_f2c_from_buf_iface(0:2*ndim)
+     integer :: gc_f2c_to_buf_iface(0:2*ndim)
+     integer :: gc_phys_iface(0:2*ndim)
 
      ! Performance information
      real(dp) :: wtime_t0 = 0.0_dp
@@ -247,14 +273,12 @@ module m_foap4
      end subroutine pw_finalize
 
      !> Create p4est brick
-     subroutine pw_set_connectivity_brick(pw, mi, ni, periodic_a, periodic_b, &
+     subroutine pw_set_connectivity_brick(pw, mi, periodic, &
           min_level, fill_uniform, max_blocks) bind(c)
-       import c_int, c_ptr
+       import c_int, c_ptr, ndim
        type(c_ptr), intent(in), value    :: pw
-       integer(c_int), value, intent(in) :: mi
-       integer(c_int), value, intent(in) :: ni
-       integer(c_int), value, intent(in) :: periodic_a
-       integer(c_int), value, intent(in) :: periodic_b
+       integer(c_int), intent(in) :: mi(ndim)
+       integer(c_int), intent(in) :: periodic(ndim)
        integer(c_int), value, intent(in) :: min_level
        integer(c_int), value, intent(in) :: fill_uniform
        integer(c_int), intent(in), value :: max_blocks
@@ -446,7 +470,7 @@ contains
   !> OpenMPI provides an environment variable, but this is not portable
   subroutine set_openacc_device(f4)
     use openacc
-    type(foap4_t), intent(in)            :: f4
+    type(foap4_t), intent(in) :: f4
 
     interface
        ! Get a unique number to identify the host
@@ -608,9 +632,9 @@ contains
        n_vars, var_names, var_temporal, n_temporal_states, periodic, &
        min_level, max_blocks, bc_type, bc_value)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: trees_per_dim(2) !< How many trees per dimension
-    real(dp), intent(in)         :: tree_length(2)   !< Length of each tree
-    integer, intent(in)          :: bx(2)            !< Number of cells in a block
+    integer, intent(in)          :: trees_per_dim(ndim) !< How many trees per dimension
+    real(dp), intent(in)         :: tree_length(ndim)   !< Length of each tree
+    integer, intent(in)          :: bx(ndim)            !< Number of cells in a block
     integer, intent(in)          :: n_gc !< Number of ghost cells
     integer, intent(in)          :: n_vars !< Number of variables
     !< Variable names. Temporal variables should be at the end.
@@ -619,15 +643,15 @@ contains
     logical, intent(in)          :: var_temporal(n_vars)
     !> Number of temporal states per variable
     integer, intent(in)          :: n_temporal_states
-    logical, intent(in)          :: periodic(2) !< Periodic flag per dim
+    logical, intent(in)          :: periodic(ndim) !< Periodic flag per dim
     integer, intent(in)          :: min_level   !< Refine up to this level
     integer, intent(in)          :: max_blocks  !< Maximum number of blocks
     integer, intent(in)          :: bc_type !< Default physical boundary type
     real(dp), intent(in)         :: bc_value !< Default physical boundary value
-    integer                      :: i, k, periodic_as_int(2)
+    integer                      :: i, k, periodic_as_int(ndim)
     character(len=3)             :: time_state
 
-    if (bx(1) /= bx(2)) error stop "TODO: unequal bx(:) not yet supported"
+    if (any(bx/= bx(1))) error stop "TODO: unequal bx(:) not yet supported"
     if (any(bx < 2 * n_gc)) error stop "Cannot have any(bx < 2 * n_gc)"
     if (any(iand(bx, 1) == 1)) error stop "All bx have to be even"
 
@@ -668,8 +692,8 @@ contains
        end do
     end do
 
-    allocate(f4%bc_type(f4%n_vars_all, 0:3))
-    allocate(f4%bc_value(f4%n_vars_all, 0:3))
+    allocate(f4%bc_type(f4%n_vars_all, 0:2*ndim-1))
+    allocate(f4%bc_value(f4%n_vars_all, 0:2*ndim-1))
     f4%bc_type(:, :) = bc_type
     f4%bc_value(:, :) = bc_value
 
@@ -677,11 +701,10 @@ contains
        f4%dr_level(:, i) = (tree_length/bx) * 0.5**i
     end do
 
-    call pw_set_connectivity_brick(f4%pw, &
-         trees_per_dim(1), trees_per_dim(2), &
-         periodic_as_int(1), periodic_as_int(2), min_level, 1, max_blocks)
+    call pw_set_connectivity_brick(f4%pw, trees_per_dim, periodic_as_int, &
+         min_level, 1, max_blocks)
 
-    allocate(f4%block_origin(2, max_blocks))
+    allocate(f4%block_origin(ndim, max_blocks))
     allocate(f4%block_level(max_blocks))
     allocate(f4%refinement_flags(max_blocks))
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, f4%n_vars_all, max_blocks))
@@ -1294,8 +1317,8 @@ contains
     type(bnd_face_t), intent(in)     :: bnd_face(n_bnd_face)
     !> Start index for each face direction
     integer, intent(out)             :: iface(0:4)
-    integer                          :: face_count(0:3)
-    integer                          :: face_offset(0:3)
+    integer                          :: face_count(0:2*ndim-1)
+    integer                          :: face_offset(0:2*ndim-1)
     type(int_array_t)                :: ix_sorted
     integer                          :: n, face
 
@@ -1327,7 +1350,7 @@ contains
 
   !> Determine start index for each face direction
   subroutine face_count_to_iface(face_count, iface)
-    integer, intent(in)  :: face_count(0:3)
+    integer, intent(in)  :: face_count(0:2*ndim-1)
     integer, intent(out) :: iface(0:4)
     integer              :: n
 
@@ -3208,4 +3231,4 @@ contains
     !$acc update host(f4%refinement_flags(1:f4%n_blocks))
   end subroutine f4_set_refinement_flags_diff2
 
-end module m_foap4
+end module m_foap4_${NDIM}$d

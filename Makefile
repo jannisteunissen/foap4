@@ -18,12 +18,14 @@ compiler_version = $(shell $(FC) --version)
 compiler_brand = $(word 1, $(compiler_version))
 
 ifeq ($(compiler_brand), GNU)
-	FFLAGS ?= -Wall -O2 -g -Jsrc -cpp $(FFLAGS_USER)
+	FFLAGS ?= -Wall -O2 -g -Jsrc -cpp $(FFLAGS_USER)	\
+	-Wno-unused-dummy-argument -Wl,--no-warn-execstack
 	ifeq ($(DEBUG), 1)
-		FFLAGS += -O0 -fcheck=all
+		FFLAGS += -O0 -fcheck=all -ffpe-trap=invalid,zero,overflow	\
+		-finit-real=snan
 	endif
 else ifeq ($(compiler_brand), nvfortran)
-	FFLAGS ?= -Wall -acc=gpu -gpu=ccall -fast -Mpreprocess -static-nvidia	\
+	FFLAGS ?= -Wall -acc=gpu -fast -gpu=ccnative -Mpreprocess -static-nvidia	\
 	-g -module src $(FFLAGS_USER)
 else ifeq ($(compiler_brand), pgfortran)
 	FFLAGS ?= -Wall -acc=gpu -fast -gpu=ccall -Mpreprocess -static-nvidia	\
@@ -31,19 +33,21 @@ else ifeq ($(compiler_brand), pgfortran)
 endif
 
 # Dependencies
-$(TARGETS): src/m_foap4.o src/p4est_wrapper.o src/m_xdmf_writer.o src/m_config.o
-$(addsuffix .o,$(addprefix src/,$(TARGETS))): src/m_foap4.mod
+$(TARGETS): src/m_foap4_2d.o src/p4est_wrapper_2d.o src/m_xdmf_writer.o src/m_config.o
+$(addsuffix .o,$(addprefix src/,$(TARGETS))): src/m_foap4_2d.mod
 src/test_euler.o: src/m_euler.mod
 test_euler: src/m_euler.o
-src/m_foap4.o: src/m_xdmf_writer.mod
+src/m_foap4_2d.o: src/m_xdmf_writer.mod
 
 .PHONY: clean
 clean:
 	$(RM) $(TARGETS) src/*.o src/*.mod src/*.smod
 
 # How to get .o object files from .c source files
-src/%.o: src/%.c
-	$(CC) -c -o $@ $(OBJ) $(CFLAGS) $(addprefix -I,$(INCDIRS)) -o $@ $<
+src/%_2d.o: src/%.c
+	$(CC) -c -o $@ $(OBJ) $(CFLAGS) -DNDIM=2 $(addprefix -I,$(INCDIRS)) -o $@ $<
+src/%_3d.o: src/%.c
+	$(CC) -c -o $@ $(OBJ) $(CFLAGS) -DNDIM=3 $(addprefix -I,$(INCDIRS)) -o $@ $<
 
 # How to get .o object files from .f90 source files
 src/%.o: src/%.f90
@@ -59,5 +63,7 @@ src/%.mod: src/%.f90 src/%.o
 	$(FC) -o $@ $^ $(FFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
 
 .PRECIOUS: src/%.f90
-src/%.f90: src/%.fpp
-	fypp $(FYPPFLAGS) $< $@
+src/m_foap4_2d.f90: src/m_foap4.fpp
+	fypp $(FYPPFLAGS) -D NDIM=2 $< $@
+src/m_foap4_3d.f90: src/m_foap4.fpp
+	fypp $(FYPPFLAGS) -D NDIM=3 $< $@

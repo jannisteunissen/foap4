@@ -1,8 +1,15 @@
-#include <p4est.h>
+#if NDIM == 2
 #include <p4est_extended.h>
 #include <p4est_iterate.h>
 #include <p4est_vtk.h>
 #include <p4est_communication.h>
+#elif NDIM == 3
+#include <p8est_extended.h>
+#include <p8est_iterate.h>
+#include <p8est_vtk.h>
+#include <p8est_communication.h>
+#include <p4est_to_p8est.h>
+#endif
 
 /* This file provides methods to use p4est from Fortran */
 
@@ -17,7 +24,11 @@ typedef struct bnd_face {
   int face;                     /* Direction of the face */
   int other_proc;               /* MPI rank that owns quadid[1] */
   int quadid[2];                /* quadid[0] is always local, [1] can be non-local */
+#if NDIM == 2
   int offset;                   /* Offset for a hanging face */
+#elif NDIM == 3
+  int offset[2];                /* Offset for a hanging face */
+#endif
   int ibuf_recv;                /* Index in receive buffer (not filled here) */
   int ibuf_send;                /* Index in send buffer (not filled here) */
 } bnd_face_t;
@@ -84,16 +95,24 @@ void pw_finalize(pw_state_t *pw) {
 }
 
 /* Set brick connectivity */
-void pw_set_connectivity_brick(pw_state_t *pw, const int mi, const int ni,
-                               const int periodic_a, const int periodic_b,
+void pw_set_connectivity_brick(pw_state_t *pw, const int trees_per_dim[NDIM],
+                               const int periodic[NDIM],
                                const int min_level, const int fill_uniform,
                                const int max_blocks) {
-  pw->conn = p4est_connectivity_new_brick (mi, ni, periodic_a, periodic_b);
+#if NDIM == 2
+  pw->conn = p4est_connectivity_new_brick (trees_per_dim[0], trees_per_dim[1],
+                                           periodic[0], periodic[1]);
+#elif NDIM == 3
+  pw->conn = p4est_connectivity_new_brick (trees_per_dim[0], trees_per_dim[1],
+                                           trees_per_dim[2], periodic[0],
+                                           periodic[1], periodic[2]);
+#endif
+
   pw->p4est = p4est_new_ext (pw->mpicomm, pw->conn, 0, min_level, fill_uniform,
                          0, NULL, NULL);
 
   /* Allocate storage for face boundaries */
-  pw->max_n_faces = max_blocks * 4 + 10;
+  pw->max_n_faces = max_blocks * 2 * NDIM + 10;
   pw->bnd_face = malloc(pw->max_n_faces * sizeof(bnd_face_t));
 }
 
@@ -127,9 +146,15 @@ void pw_get_quadrants(pw_state_t *pw, int n_quadrants,
     for (zz = 0; zz < tquadrants->elem_count; ++zz) {
       quadrant = p4est_quadrant_array_index (tquadrants, zz);
 
+#if NDIM == 2
       p4est_qcoord_to_vertex (pw->conn, tt, quadrant->x, quadrant->y, vxyz);
+#elif NDIM == 3
+      p4est_qcoord_to_vertex (pw->conn, tt, quadrant->x, quadrant->y,
+                              quadrant->z, vxyz);
+#endif
       coord[2*i_quad] = vxyz[0];
       coord[2*i_quad+1] = vxyz[1];
+      coord[2*i_quad+2] = vxyz[2];
       level[i_quad] = quadrant->level;
       i_quad++;
     }
@@ -280,7 +305,11 @@ void pw_get_all_faces (pw_state_t *pw, int *n_faces_arg,
   }
 
   pw->n_faces = 0;
+#if NDIM == 2
   p4est_iterate (pw->p4est, pw->ghost, pw, NULL, callback_get_faces, NULL);
+#elif NDIM == 3
+  p4est_iterate (pw->p4est, pw->ghost, pw, NULL, callback_get_faces, NULL, NULL);
+#endif
 
   *bnd_face_arg = pw->bnd_face;
   *n_faces_arg = pw->n_faces;
