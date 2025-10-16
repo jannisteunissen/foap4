@@ -40,17 +40,20 @@ contains
     integer                              :: rank, n_prev_blocks, coord_ix(2)
     integer, allocatable                 :: blocks_per_rank(:)
     real(dp), allocatable                :: cc_block(:, :, :)
-    character(len=len_trim(filename)+10) :: binary_fname, binary_basename
-    character(len=20)                    :: suffix, for_viewer
+    character(len=len_trim(filename)+20) :: binary_fname, binary_basename
+    character(len=20)                    :: for_viewer
+    integer                              :: tag
+    real(dp), allocatable                :: dr_buf(:, :), origin_buf(:, :)
+    type(mpi_request)                    :: requests(2)
 
     for_viewer = "visit"; if (present(viewer)) for_viewer = viewer
     select case (for_viewer)
-       case ("visit")
-          coord_ix = [1, 2]
-       case ("paraview")
-          coord_ix = [2, 1]
-       case default
-          error stop "viewer can be: visit, paraview"
+    case ("visit")
+       coord_ix = [1, 2]
+    case ("paraview")
+       coord_ix = [2, 1]
+    case default
+       error stop "viewer can be: visit, paraview"
     end select
 
     call MPI_COMM_RANK(mpicomm, mpirank, ierr)
@@ -62,12 +65,8 @@ contains
     call MPI_ALLGATHER(n_blocks, 1, MPI_INTEGER, blocks_per_rank, 1, &
          MPI_INTEGER, mpicomm, ierr)
 
-    write(suffix, '(A,I04.4)') "_", mpirank
-
     ! Write binary file
-    binary_fname = trim(filename) // trim(suffix) // '.bin'
-    call get_basename(binary_fname, binary_basename)
-
+    binary_fname = get_fname_rank(trim(filename), '.bin', mpirank)
     open(newunit=my_unit, file=trim(binary_fname), form='unformatted', &
          access='stream', status='replace')
 
@@ -97,49 +96,68 @@ contains
        write(my_unit, "(a)") '<Grid Name="Mesh" GridType="Collection">'
 
        if (present(time)) then
-          write(my_unit, "(a,E16.8,a)") '  <Time Value="', time, '" />'
+          write(my_unit, *) '  <Time Value="', time, '" />'
        end if
 
        ! if (n_gc > 0) then
        !    write(my_unit, "(a,i0,a)") '  <GhostZones Value="', n_gc, '" />'
        ! end if
-
-       close(my_unit)
     end if
 
+    tag = 0
     n_prev_blocks = 0
 
     do rank = 0, mpisize-1
-       if (mpirank == rank) then
-          open(newunit=my_unit, file=trim(filename) // '.xdmf', action="write", &
-               access="append")
 
-          do n = 1, n_blocks
+       if (mpirank == rank) then
+          call MPI_Isend(origin, 2*n_blocks, &
+               MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(1), ierr)
+          call MPI_Isend(dr, 2*n_blocks, &
+               MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(2), ierr)
+       end if
+
+       if (mpirank == 0) then
+          allocate(origin_buf(2, blocks_per_rank(rank)))
+          allocate(dr_buf(2, blocks_per_rank(rank)))
+
+          call MPI_Recv(origin_buf, 2*blocks_per_rank(rank), &
+               MPI_DOUBLE_PRECISION, rank, tag, mpicomm, MPI_STATUS_IGNORE, ierr)
+          call MPI_Recv(dr_buf, 2*blocks_per_rank(rank), &
+               MPI_DOUBLE_PRECISION, rank, tag, mpicomm, MPI_STATUS_IGNORE, ierr)
+
+          ! Get name corresponding to this rank
+          binary_fname = get_fname_rank(trim(filename), '.bin', rank)
+          call get_basename(binary_fname, binary_basename)
+
+          do n = 1, blocks_per_rank(rank)
              write(my_unit, "(a,I0,a)") &
-                  '  <Grid Name="MeshBlock', n + n_prev_blocks, '" GridType="Uniform">'
+                  '  <Grid Name="MeshBlock', n + n_prev_blocks, &
+                  '" GridType="Uniform">'
              write(my_unit, "(a,I0,' ',I0,a)") &
                   '    <Topology TopologyType="2DCoRectMesh" Dimensions="', &
                   nx(2)+1-2*n_gc, nx(1)+1-2*n_gc, '"/>'
              write(my_unit, "(a)") &
                   '    <Geometry GeometryType="ORIGIN_DXDY">'
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 2, '">'
-             write(my_unit, *) origin(coord_ix, n)
+             write(my_unit, *) origin_buf(coord_ix, n)
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 2, '">'
-             write(my_unit, *) dr(coord_ix, n)
+             write(my_unit, *) dr_buf(coord_ix, n)
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a)") '    </Geometry>'
 
              ! Write cell-centered data
              do iv = 1, n_cc
-                write(my_unit, "(a,a,a)") '    <Attribute Name="', trim(cc_names(iv)), &
-                     '" Center="Cell">'
-                write(my_unit, "(a,I0,a,I0,a)") '      <DataItem ItemType="HyperSlab" Dimensions="',&
+                write(my_unit, "(a,a,a)") '    <Attribute Name="', &
+                     trim(cc_names(iv)), '" Center="Cell">'
+                write(my_unit, "(a,I0,a,I0,a)") &
+                     '      <DataItem ItemType="HyperSlab" Dimensions="',&
                      nx(2)-2*n_gc, ' ', nx(1)-2*n_gc, '">'
-                write(my_unit, "(a, 12(I0,' '),a)") '        <DataItem Dimensions="3 4"> ', &
-                     n-1, iv-1, n_gc, n_gc, &        ! start
-                     1, 1, 1, 1, &             ! stride
-                     1, 1, nx(2)-2*n_gc, nx(1)-2*n_gc, &     ! count
+                write(my_unit, "(a, 12(I0,' '),a)") &
+                     '        <DataItem Dimensions="3 4"> ', &
+                     n-1, iv-1, n_gc, n_gc, &            ! start
+                     1, 1, 1, 1, &                       ! stride
+                     1, 1, nx(2)-2*n_gc, nx(1)-2*n_gc, & ! count
                      '</DataItem>'
 
                 write(my_unit, "(a, 4(I0,' '),a,a,a)") &
@@ -153,17 +171,14 @@ contains
              write(my_unit, "(a)") '  </Grid>'
           end do
 
-          close(my_unit)
+          n_prev_blocks = n_prev_blocks + blocks_per_rank(rank)
+          deallocate(origin_buf)
+          deallocate(dr_buf)
        end if
-
-       call MPI_BARRIER(mpicomm, ierr)
-       n_prev_blocks = n_prev_blocks + blocks_per_rank(rank)
     end do
 
     if (mpirank == 0) then
        ! Complete header
-       open(newunit=my_unit, file=trim(filename) // '.xdmf', action="write", &
-            access="append")
        write(my_unit, "(a)") '</Grid>'
        write(my_unit, "(a)") '</Domain>'
        write(my_unit, "(a)") '</Xdmf>'
@@ -174,8 +189,19 @@ contains
 
   end subroutine xdmf_write_blocks_2DCoRect
 
+  !> Return the name of the binary file for mpirank
+  function get_fname_rank(filename, extension, mpirank) result(fname)
+    character(len=*), intent(in)  :: filename
+    character(len=*), intent(in)  :: extension
+    integer, intent(in)           :: mpirank
+    character(len=20)             :: suffix
+    character(len=:), allocatable :: fname
+
+    write(suffix, '(A,I06.6)') "_", mpirank
+    fname = trim(filename) // trim(suffix) // trim(extension)
+  end function get_fname_rank
+
   subroutine get_basename(fullpath, out_basename)
-    implicit none
     character(len=*), intent(in) :: fullpath
     character(len=*), intent(out) :: out_basename
     integer :: i, last_slash, len_path
