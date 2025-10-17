@@ -4,6 +4,21 @@
 !> methods.
 !>
 !> Author(s): Jannis Teunissen
+#:mute
+#:def DTIMES(text)
+#:if NDIM == 2
+${text}$, ${text}$
+#:elif NDIM == 3
+${text}$, ${text}$, ${text}
+#:endif
+#:enddef
+
+#:if NDIM == 2
+#:set IJK='i, j'
+#:elif NDIM == 3
+#:set IJK='i, j, k'
+#:endif
+#:endmute
 module m_foap4_${NDIM}$d
   use, intrinsic :: iso_c_binding
   use mpi_f08
@@ -40,7 +55,7 @@ module m_foap4_${NDIM}$d
 #:if NDIM == 2
   integer, parameter :: f4_face_dim(0:2*ndim-1) = [1, 1, 2, 2]
 #:elif NDIM == 3
-  integer, parameter :: f4_face_dim(0:2*ndim-1) = [1, 1, 2, 2]
+  integer, parameter :: f4_face_dim(0:2*ndim-1) = [1, 1, 2, 2, 3, 3]
 #:endif
   !$acc declare create(f4_face_dim)
 
@@ -177,9 +192,12 @@ module m_foap4_${NDIM}$d
 
      ! For handling ghost cells on faces
 
-     !> It is required that bx(1) == bx(2). The ghost cell data size per face is
-     !> thus n_gc * bx(1)
+     !> Number of ghost cells on a SRL face boundary
      integer              :: gc_data_size
+     !> Number of ghost cells on a coarse-to-fine face boundary
+     integer              :: gc_data_size_c2f
+     !> Number of cells transmitted for flux fixing
+     integer              :: gc_data_size_fluxfix
 
      !> Receive offset (per MPI rank) in recv_buffer
      integer, allocatable :: gc_recv_offset(:)
@@ -651,7 +669,7 @@ contains
     integer                      :: i, k, periodic_as_int(ndim)
     character(len=3)             :: time_state
 
-    if (any(bx/= bx(1))) error stop "TODO: unequal bx(:) not yet supported"
+    if (any(bx /= bx(1))) error stop "TODO: unequal bx(:) not yet supported"
     if (any(bx < 2 * n_gc)) error stop "Cannot have any(bx < 2 * n_gc)"
     if (any(iand(bx, 1) == 1)) error stop "All bx have to be even"
 
@@ -707,16 +725,28 @@ contains
     allocate(f4%block_origin(ndim, max_blocks))
     allocate(f4%block_level(max_blocks))
     allocate(f4%refinement_flags(max_blocks))
-    allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, f4%n_vars_all, max_blocks))
-    f4%uu = 0.0_dp
 
+#:if NDIM == 2
+    allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
+         f4%n_vars_all, max_blocks))
     allocate(f4%bflux(bx(1), 0:2*ndim-1, n_vars, max_blocks))
+    f4%gc_data_size = f4%bx(1) * f4%n_gc
+    f4%gc_data_size_c2f = (f4%bx(1)/2) * f4%n_gc
+    f4%gc_data_size_fluxfix = f4%bx(1)/2
+#:elif NDIM == 3
+    allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, 1-n_gc:bx(3)+n_gc, &
+         f4%n_vars_all, max_blocks))
+    allocate(f4%bflux(bx(1), bx(2), 0:2*ndim-1, n_vars, max_blocks))
+    f4%gc_data_size = f4%bx(1)**2 * f4%n_gc
+    f4%gc_data_size_c2f = (f4%bx(1)/2)**2 * f4%n_gc
+    f4%gc_data_size_fluxfix = (f4%bx(1)/2)**2
+#:endif
+
+    f4%uu = 0.0_dp
     f4%bflux = 0.0_dp
 
-    f4%gc_data_size = f4%bx(1) * f4%n_gc
-
     ! Maximum size of recv/send buffer
-    i = max_blocks * 4 * f4%gc_data_size
+    i = max_blocks * 2 * NDIM * f4%gc_data_size
     allocate(f4%recv_buffer(i))
     allocate(f4%send_buffer(i))
     allocate(f4%recv_offset(0:f4%mpisize))
@@ -737,7 +767,7 @@ contains
 
   end subroutine f4_construct_brick
 
-  !> Set physical boundary conditions for a variable on all faces
+  !> Set physical boundary conditions for a variable on a face
   subroutine f4_set_physical_boundary(f4, ivar, iface, bc_type, bc_value)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: ivar
@@ -746,8 +776,10 @@ contains
     real(dp), intent(in)         :: bc_value
     integer                      :: k, ix
 
-    if (iface < 0 .or. iface > 3) error stop "Must have 0 <= iface <= 3 "
-    if (ivar < 1 .or. ivar > f4%n_vars) error stop "Must have 1 <= ivar <= n_vars"
+    if (iface < 0 .or. iface > 2*NDIM-1) &
+         error stop "Must have 0 <= iface <= 2*NDIM-1"
+    if (ivar < 1 .or. ivar > f4%n_vars) &
+         error stop "Must have 1 <= ivar <= n_vars"
 
     f4%bc_type(ivar, iface) = bc_type
     f4%bc_value(ivar, iface) = bc_value
@@ -842,8 +874,13 @@ contains
     real(dp)                               :: t0, t1
 
     t0 = MPI_Wtime()
+
     ! OpenACC - get the block data from the device
-    !$acc update self(f4%uu(:, :, :, 1:f4%n_blocks))
+#:if NDIM == 2
+    !$acc update self(:, :, :, 1:f4%n_blocks))
+#:elif NDIM == 3
+    !$acc update self(:, :, :, :, 1:f4%n_blocks))
+#:endif
 
     write(full_fname, "(A,A,I06.6)") trim(fname), "_", n_output
 
@@ -871,22 +908,26 @@ contains
 
     subroutine get_block_data(i_block, cc_data)
       integer, intent(in)     :: i_block
-      real(dp), intent(inout) :: cc_data(:, :, :)
+      real(dp), intent(inout) :: cc_data(@{DTIMES(:)}@, :)
 
-      cc_data = f4%uu(:, :, 1:f4%n_vars, i_block)
+      cc_data = f4%uu(@{DTIMES(:)}@, 1:f4%n_vars, i_block)
     end subroutine get_block_data
 
   end subroutine f4_write_grid
 
   !> Return the coordinates at the center of a grid cells
-  pure function f4_cell_coord(f4, i_block, i, j) result(rr)
+  pure function f4_cell_coord(f4, i_block, ${IJK}$) result(rr)
     !$acc routine seq
     type(foap4_t), intent(in) :: f4
-    integer, intent(in)       :: i_block, i, j
-    real(dp)                  :: rr(2), dr(2)
+    integer, intent(in)       :: i_block, ${IJK}$
+    real(dp)                  :: rr(NDIM), dr(NDIM)
 
     dr = f4%dr_level(:, f4%block_level(i_block))
-    rr = f4%block_origin(:, i_block) + dr * [i-0.5_dp, j-0.5_dp]
+    rr(1) = f4%block_origin(1, i_block) + dr(1) * (i - 0.5_dp)
+    rr(2) = f4%block_origin(2, i_block) + dr(2) * (j - 0.5_dp)
+#:if NDIM == 3
+    rr(3) = f4%block_origin(3, i_block) + dr(3) * (k - 0.5_dp)
+#:endif
   end function f4_cell_coord
 
   !> Update the information required to update ghost cells
@@ -997,10 +1038,10 @@ contains
        else
           f4%gc_recv_offset(rank) = f4%gc_recv_offset(rank-1) + &
                f4%gc_data_size * i_same(rank-1) + &
-               f4%gc_data_size/2 * i_c2f(rank-1)
+               f4%gc_data_size_c2f * i_c2f(rank-1)
           f4%gc_send_offset(rank) = f4%gc_send_offset(rank-1) + &
                f4%gc_data_size * i_same(rank-1) + &
-               f4%gc_data_size/2 * i_f2c(rank-1)
+               f4%gc_data_size_c2f * i_f2c(rank-1)
 
           ! In a second round of communication, handle the fine side of
           ! refinement boundaries
@@ -1010,9 +1051,9 @@ contains
                f4%gc_data_size * i_c2f(rank-1)
 
           f4%gc_recv_offset_fluxfix(rank) = f4%gc_recv_offset_fluxfix(rank-1) + &
-               f4%bx(1)/2 * i_c2f(rank-1)
+               f4%gc_data_size_fluxfix * i_c2f(rank-1)
           f4%gc_send_offset_fluxfix(rank) = f4%gc_send_offset_fluxfix(rank-1) + &
-               f4%bx(1)/2 * i_f2c(rank-1)
+               f4%gc_data_size_fluxfix * i_f2c(rank-1)
        end if
     end do
 
@@ -1034,7 +1075,7 @@ contains
     allocate(f4%gc_srl_local(2, i_same(mpirank)))
 
     ! Local ghost cell exchange at refinement boundaries
-    allocate(f4%gc_f2c_local(3, i_f2c(mpirank)))
+    allocate(f4%gc_f2c_local(2+NDIM-1, i_f2c(mpirank)))
 
     ! Physical boundaries
     allocate(f4%gc_phys(i_phys))
@@ -1090,11 +1131,10 @@ contains
 
     do n = 1, i_f2c(mpirank)
        i = f2c_ix(mpirank)%i(n)
-       f4%gc_f2c_local(:, n) = [bnd_face(i)%quadid(1), &
-            bnd_face(i)%quadid(2), bnd_face(i)%offset]
+       f4%gc_f2c_local(:, n) = [bnd_face(i)%quadid(1:2), bnd_face(i)%offset]
     end do
 
-    ! Convert faces 0 and 2 to 1 and 3, respectively
+    ! Convert faces 0 to 1 and 2 to 3
     do n = f4%gc_srl_local_iface(0), f4%gc_srl_local_iface(1)-1
        f4%gc_srl_local(:, n) = f4%gc_srl_local([2, 1], n)
     end do
@@ -1103,6 +1143,14 @@ contains
     end do
     f4%gc_srl_local_iface(1) = f4%gc_srl_local_iface(0)
     f4%gc_srl_local_iface(3) = f4%gc_srl_local_iface(2)
+
+#:if NDIM == 3
+    ! Convert faces 4 to 5
+    do n = f4%gc_srl_local_iface(4), f4%gc_srl_local_iface(5)-1
+       f4%gc_srl_local(:, n) = f4%gc_srl_local([2, 1], n)
+    end do
+    f4%gc_srl_local_iface(5) = f4%gc_srl_local_iface(4)
+#:endif
 
     ! Non-local ghost cell exchange at the same level
     n = sum(i_same) - i_same(mpirank)
@@ -1121,9 +1169,9 @@ contains
 
     ! Non-local ghost cell exchange from coarse to fine
     n = sum(i_c2f) - i_c2f(mpirank)
-    allocate(f4%gc_c2f_from_buf(3, n))
-    allocate(f4%gc_c2f_from_buf_fluxfix(3, n))
-    allocate(f4%gc_c2f_to_buf(3, n))
+    allocate(f4%gc_c2f_from_buf(2+NDIM-1, n))
+    allocate(f4%gc_c2f_from_buf_fluxfix(2+NDIM-1, n))
+    allocate(f4%gc_c2f_to_buf(2+NDIM-1, n))
     allocate(all_c2f_from_buf%i(n))
     allocate(all_c2f_to_buf%i(n))
 
@@ -1170,7 +1218,7 @@ contains
           all_f2c_to_buf%i(i_f2c_to_buf) = i
 
           bnd_face(i)%ibuf_send = i_buf_send(rank)
-          i_buf_send(rank) = i_buf_send(rank) + f4%gc_data_size / 2
+          i_buf_send(rank) = i_buf_send(rank) + f4%gc_data_size_c2f
        end do
 
        ! Receiving coarse from fine
@@ -1182,7 +1230,7 @@ contains
           all_c2f_from_buf%i(i_c2f_from_buf) = i
 
           bnd_face(i)%ibuf_recv = i_buf_recv(rank)
-          i_buf_recv(rank) = i_buf_recv(rank) + f4%gc_data_size / 2
+          i_buf_recv(rank) = i_buf_recv(rank) + f4%gc_data_size_c2f
        end do
 
        ! After the above ghost cells have been updated, we can handle the fine
@@ -1271,7 +1319,7 @@ contains
        do n = 1, size(f2c_ix(rank)%i)
           i = f2c_ix(rank)%i(n) ! Index in bnd_face array
           bnd_face(i)%ibuf_send = i_buf_send(rank)
-          i_buf_send(rank) = i_buf_send(rank) + f4%bx(1) / 2
+          i_buf_send(rank) = i_buf_send(rank) + f4%gc_data_size_fluxfix
        end do
 
        ! Receiving coarse from fine
@@ -1280,7 +1328,7 @@ contains
        do n = 1, size(c2f_ix(rank)%i)
           i = c2f_ix(rank)%i(n) ! Index in bnd_face array
           bnd_face(i)%ibuf_recv = i_buf_recv(rank)
-          i_buf_recv(rank) = i_buf_recv(rank) + f4%bx(1) / 2
+          i_buf_recv(rank) = i_buf_recv(rank) + f4%gc_data_size_fluxfix
        end do
     end do
 
@@ -1316,9 +1364,9 @@ contains
     integer, intent(in)              :: n_bnd_face
     type(bnd_face_t), intent(in)     :: bnd_face(n_bnd_face)
     !> Start index for each face direction
-    integer, intent(out)             :: iface(0:4)
-    integer                          :: face_count(0:2*ndim-1)
-    integer                          :: face_offset(0:2*ndim-1)
+    integer, intent(out)             :: iface(0:2*NDIM)
+    integer                          :: face_count(0:2*NDIM-1)
+    integer                          :: face_offset(0:2*NDIM-1)
     type(int_array_t)                :: ix_sorted
     integer                          :: n, face
 
@@ -1333,7 +1381,7 @@ contains
 
     ! Determine initial offset in index array
     face_offset(0) = 0
-    do n = 1, 3
+    do n = 1, 2*NDIM-1
        face_offset(n) = face_offset(n-1) + face_count(n-1)
     end do
 
@@ -1350,12 +1398,12 @@ contains
 
   !> Determine start index for each face direction
   subroutine face_count_to_iface(face_count, iface)
-    integer, intent(in)  :: face_count(0:2*ndim-1)
-    integer, intent(out) :: iface(0:4)
+    integer, intent(in)  :: face_count(0:2*NDIM-1)
+    integer, intent(out) :: iface(0:2*NDIM)
     integer              :: n
 
     iface(0) = 1
-    do n = 1, 4
+    do n = 1, 2*NDIM
        iface(n) = iface(n-1) + face_count(n-1)
     end do
   end subroutine face_count_to_iface
@@ -1386,9 +1434,17 @@ contains
             less_than = (bnd_face(a)%face < bnd_face(b)%face)
          else if (bnd_face(a)%quadid(1) /= bnd_face(b)%quadid(1)) then
             less_than = (bnd_face(a)%quadid(1) < bnd_face(b)%quadid(1))
+#:if NDIM == 2
          else
             ! For hanging faces, sort by offset
             less_than = (bnd_face(a)%offset < bnd_face(b)%offset)
+#:elif NDIM == 3
+         else if (bnd_face(a)%offset(1) /= bnd_face(a)%offset(2)) then
+            ! For hanging faces, sort by offset
+            less_than = (bnd_face(a)%offset(1) < bnd_face(b)%offset(1))
+         else
+            less_than = (bnd_face(a)%offset(2) < bnd_face(b)%offset(2))
+#:endif
          end if
       else
          ! Order by face and quadid of 'other' side
@@ -1398,8 +1454,15 @@ contains
                  face_swap(bnd_face(b)%face))
          else if (bnd_face(a)%quadid(2) /= bnd_face(b)%quadid(2)) then
             less_than = (bnd_face(a)%quadid(2) < bnd_face(b)%quadid(2))
+#:if NDIM == 2
          else
             less_than = (bnd_face(a)%offset < bnd_face(b)%offset)
+#:elif NDIM == 3
+         else if (bnd_face(a)%offset(1) /= bnd_face(a)%offset(2)) then
+            less_than = (bnd_face(a)%offset(1) < bnd_face(b)%offset(1))
+         else
+            less_than = (bnd_face(a)%offset(2) < bnd_face(b)%offset(2))
+#:endif
          end if
       end if
     end function less_than
@@ -1430,9 +1493,13 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer                      :: i, j, n, ivar, iv
-    integer                      :: i_f, j_f, half_bx(2)
-    integer                      :: iq, i_buf, i_buf0
+    integer                      :: n, ivar, iv
+    integer                      :: iq, i_buf, i_buf0, half_bx(NDIM)
+#:if NDIM   == 2
+    integer                      :: i, j, i_f, j_f
+#:elif NDIM == 3
+    integer                      :: i, j, k, i_f, j_f, k_f
+#:endif
 
     if (maxval(f4%gc_send_offset) * n_vars > size(f4%send_buffer)) &
          error stop "send buffer too small"
@@ -1442,11 +1509,13 @@ contains
     associate (bx => f4%bx, n_gc => f4%n_gc, uu => f4%uu)
       !$acc parallel
 
-#:def fyp_srl_to_buf(face, jlim, ilim, i0=0, j0=0)
+#:def fyp_srl_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
       !$acc loop private(iq, i_buf0)
       do n = f4%gc_srl_to_buf_iface(${face}$), f4%gc_srl_to_buf_iface(${face}$+1)-1
          iq = f4%gc_srl_to_buf(1, n) + 1
          i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
+
+#:if NDIM == 2
          !$acc loop collapse(3) private(ivar, i_buf)
          do iv = 1, n_vars
             do j = 1, ${jlim}$
@@ -1457,22 +1526,47 @@ contains
                end do
             end do
          end do
+#:elif NDIM == 3
+         !$acc loop collapse(4) private(ivar, i_buf)
+         do iv = 1, n_vars
+            do k = 1, ${klim}$
+               do j = 1, ${jlim}$
+                  do i = 1, ${ilim}$
+                     ivar = i_vars(iv)
+                     i_buf = i_buf0 + (iv - 1) * ${klim}$ * ${jlim}$ * ${ilim}$ + &
+                          (k-1) * ${jlim}$ * ${ilim}$ + (j - 1) * ${ilim}$ + i
+                     f4%send_buffer(i_buf) = uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq)
+                  end do
+               end do
+            end do
+         end do
+#:endif
       end do
 #:enddef
 
-      @:fyp_srl_to_buf(0, bx(2), n_gc)
-      @:fyp_srl_to_buf(1, bx(2), n_gc, i0=bx(1)-n_gc)
-      @:fyp_srl_to_buf(2, n_gc, bx(1))
-      @:fyp_srl_to_buf(3, n_gc, bx(1), j0=bx(2)-n_gc)
+#:if NDIM == 2
+      @:fyp_srl_to_buf(0, n_gc, bx(2))
+      @:fyp_srl_to_buf(1, n_gc, bx(2), i0=bx(1)-n_gc)
+      @:fyp_srl_to_buf(2, bx(1), n_gc)
+      @:fyp_srl_to_buf(3, bx(1), n_gc, j0=bx(2)-n_gc)
+#:elif NDIM == 3
+      @:fyp_srl_to_buf(0, n_gc, bx(2), bx(3))
+      @:fyp_srl_to_buf(1, n_gc, bx(2), bx(3), i0=bx(1)-n_gc)
+      @:fyp_srl_to_buf(2, bx(1), n_gc, bx(3))
+      @:fyp_srl_to_buf(3, bx(1), n_gc, bx(3), j0=bx(2)-n_gc)
+      @:fyp_srl_to_buf(4, bx(1), bx(2), n_gc)
+      @:fyp_srl_to_buf(5, bx(1), bx(2), n_gc, k0=bx(3)-n_gc)
+#:endif
 
       ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
 
-#:def fyp_f2c_to_buf(face, jlim, ilim, i0=0, j0=0)
+#:def fyp_f2c_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
       !$acc loop private(iq, i_buf0)
       do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
          iq = f4%gc_f2c_to_buf(1, n) + 1 ! fine block
          i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
 
+#:if NDIM == 2
          !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
          do iv = 1, n_vars
             do j = 1, ${jlim}$
@@ -1486,13 +1580,41 @@ contains
                end do
             end do
          end do
+#:elif NDIM == 3
+         !$acc loop collapse(4) private(ivar, k_f, j_f, i_f, i_buf)
+         do iv = 1, n_vars
+            do k = 1, ${klim}$
+               do j = 1, ${jlim}$
+                  do i = 1, ${ilim}$
+                     ivar = i_vars(iv)
+                     k_f = ${k0}$ + 2 * k - 1
+                     j_f = ${j0}$ + 2 * j - 1
+                     i_f = ${i0}$ + 2 * i - 1
+                     i_buf = i_buf0 + (iv - 1) * ${klim}$ * ${jlim}$ * ${ilim}$ + &
+                          (k-1) * ${jlim}$ * ${ilim}$ + (j - 1) * ${ilim}$ + i
+                     f4%send_buffer(i_buf) = 0.25_dp * &
+                          sum(uu(i_f:i_f+1, j_f:j_f+1, k_f:k_f+1, ivar, iq))
+                  end do
+               end do
+            end do
+         end do
+#:endif
       end do
 #:enddef
 
-      @:fyp_f2c_to_buf(0, half_bx(2), n_gc)
-      @:fyp_f2c_to_buf(1, half_bx(2), n_gc, i0=bx(1) - 2*n_gc)
-      @:fyp_f2c_to_buf(2, n_gc, half_bx(1))
-      @:fyp_f2c_to_buf(3, n_gc, half_bx(1), j0=bx(2) - 2*n_gc)
+#:if NDIM == 2
+      @:fyp_f2c_to_buf(0, n_gc, half_bx(2))
+      @:fyp_f2c_to_buf(1, n_gc, half_bx(2), i0=bx(1) - 2*n_gc)
+      @:fyp_f2c_to_buf(2, half_bx(1), n_gc)
+      @:fyp_f2c_to_buf(3, half_bx(1), n_gc, j0=bx(2) - 2*n_gc)
+#:elif NDIM == 3
+      @:fyp_f2c_to_buf(0, n_gc, half_bx(2), half_bx(3))
+      @:fyp_f2c_to_buf(1, n_gc, half_bx(2), half_bx(3), i0=bx(1) - 2*n_gc)
+      @:fyp_f2c_to_buf(2, half_bx(1), n_gc, half_bx(3))
+      @:fyp_f2c_to_buf(3, half_bx(1), n_gc, half_bx(3), j0=bx(2) - 2*n_gc)
+      @:fyp_f2c_to_buf(4, half_bx(1), half_bx(2), n_gc)
+      @:fyp_f2c_to_buf(5, half_bx(1), half_bx(2), n_gc, k0=bx(3) - 2*n_gc)
+#:endif
 
       !$acc end parallel
 
@@ -1792,23 +1914,29 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer, intent(in)          :: bx(2)
+    integer, intent(in)          :: bx(NDIM)
     integer, intent(in)          :: n_gc
-    integer, intent(in)          :: ilo(2)
-    integer, intent(in)          :: ihi(2)
+    integer, intent(in)          :: ilo(NDIM)
+    integer, intent(in)          :: ihi(NDIM)
     integer, intent(in)          :: max_vars
     integer, intent(in)          :: max_blocks
+#:if NDIM == 2
     real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
+#:elif NDIM == 3
+    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), ilo(3):ihi(3), &
+         max_vars, max_blocks)
+#:endif
     integer                      :: n, i, j, iq, jq, i_f, j_f, face
     integer                      :: i_buf, i_buf0, iv, ivar
-    integer                      :: half_bx(2), offset, bc_type, level
-    real(dp)                     :: bc_value, dr(2)
+    integer                      :: half_bx(NDIM), offset, bc_type, level
+    real(dp)                     :: bc_value, dr(NDIM)
 
     half_bx = f4%bx/2
 
     !$acc parallel
 
-#:def fyp_srl_local(face, jlim, ilim, i0, j0, i1, j1, i2, j2, i3, j3)
+#:def fyp_srl_local(face, ilim, jlim, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
+    & i2=0, j2=0, k2=0, i3=0, j3=0, k3=0)
     !$acc loop private(iq, jq)
     do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
        iq   = f4%gc_srl_local(1, n) + 1
@@ -1828,8 +1956,14 @@ contains
 #:enddef
 
     ! Fill local boundaries at the same refinement level
-    @:fyp_srl_local(1, bx(2), n_gc, bx(1), 0, 0, 0, -n_gc, 0, bx(1)-n_gc, 0)
-    @:fyp_srl_local(3, n_gc, bx(1), 0, bx(2), 0, 0, 0, -n_gc, 0, bx(2)-n_gc)
+#:if NDIM == 2
+    @:fyp_srl_local(1, n_gc,  bx(2), i0=bx(1), i2=-n_gc, i3=bx(1)-n_gc)
+    @:fyp_srl_local(3, bx(1), n_gc,  j0=bx(2), j2=-n_gc, j3=bx(2)-n_gc)
+#:elif NDIM == 3
+    @:fyp_srl_local(1, n_gc,  bx(2), bx(3), i0=bx(1), i2=-n_gc, i3=bx(1)-n_gc)
+    @:fyp_srl_local(3, bx(1), n_gc,  bx(3), j0=bx(2), j2=-n_gc, j3=bx(2)-n_gc)
+    @:fyp_srl_local(5, bx(1), bx(2), n_gc,  k0=bx(3), k2=-n_gc, k3=bx(3)-n_gc)
+#:endif
 
     ! Fill physical boundaries
 

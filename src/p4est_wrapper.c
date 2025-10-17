@@ -174,7 +174,7 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
   p4est_tree_t           *tree;
   p4est_iter_face_side_t *sides;
   bnd_face_t             *bf;
-  int                     ghost_ix;
+  int                     ghost_ix, n_hanging;
   p4est_quadrant_t       *quad;
   pw_state_t             *pw;
 
@@ -182,6 +182,9 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
   trees = (sc_array_t *) pw->p4est->trees;
   ghost_rank = (int *) pw->ghost_rank;
   sides = (p4est_iter_face_side_t *) (info->sides.array);
+
+  /* Number of hanging faces = 2^(NDIM-1) */
+  n_hanging = (1 << (NDIM-1));
 
   if (pw->n_faces > pw->max_n_faces - 10) {
     SC_ABORT("Too many faces in callback_get_faces()");
@@ -211,7 +214,7 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
     }
 
     /* Handle non-ghost hanging faces */
-    for (int i = 0; i<2; i++) {
+    for (int i = 0; i < n_hanging; i++) {
       if (!face_hanging->is.hanging.is_ghost[i]) {
         /* Hanging face is not a ghost, coarse side can be a ghost */
         bf = &(pw->bnd_face)[pw->n_faces++];
@@ -221,7 +224,13 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
         tree = p4est_tree_array_index (trees, face_hanging->treeid);
         bf->quadid[0] = face_hanging->is.hanging.quadid[i] +
           tree->quadrants_offset;
+
+#if NDIM == 2
         bf->offset = i;
+#elif NDIM == 3
+        bf->offset[0] = (i & 1);
+        bf->offset[1] = (i >> 1);
+#endif
 
         if (face_full->is.full.is_ghost) {
           ghost_ix = face_full->is.full.quadid;
@@ -239,7 +248,7 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
 
     /* Handle 'ghost' hanging faces */
     if (!face_full->is.full.is_ghost) {
-      for (int i = 0; i<2; i++) {
+      for (int i = 0; i < n_hanging; i++) {
         if (face_hanging->is.hanging.is_ghost[i]) {
           bf = &(pw->bnd_face)[pw->n_faces++];
           bf->face_type = FACE_COARSE_TO_FINE;
@@ -247,7 +256,13 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
 
           tree = p4est_tree_array_index (trees, face_full->treeid);
           bf->quadid[0] = face_full->is.full.quadid + tree->quadrants_offset;
+
+#if NDIM == 2
           bf->offset = i;
+#elif NDIM == 3
+          bf->offset[0] = (i & 1);
+          bf->offset[1] = (i >> 1);
+#endif
 
           ghost_ix = face_hanging->is.hanging.quadid[i];
           quad = (p4est_quadrant_t *) (pw->ghost->ghosts.array +
