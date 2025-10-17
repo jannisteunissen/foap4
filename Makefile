@@ -63,6 +63,8 @@ src/%.mod: src/%.f90 src/%.o
 	$(FC) -o $@ $^ $(FFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
 
 .PRECIOUS: src/%.f90
+src/%.f90: src/%.fpp
+	fypp $(FYPPFLAGS) $< $@
 src/m_foap4_2d.f90: src/m_foap4.fpp
 	fypp $(FYPPFLAGS) -D NDIM=2 $< $@
 src/m_foap4_3d.f90: src/m_foap4.fpp
