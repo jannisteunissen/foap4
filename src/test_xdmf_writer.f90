@@ -108,7 +108,8 @@ contains
              do k = lo(3), hi(3)
                 do j = lo(2), hi(2)
                    do i = lo(1), hi(1)
-                      rr = origin(:, i_block) + [i-0.5_dp, j-0.5_dp] * dr(:, i_block)
+                      rr = origin(:, i_block) + &
+                           [i-0.5_dp, j-0.5_dp, k-0.5_dp] * dr(:, i_block)
                       cc_data(i, j, k, 1, i_block) = product(sin(rr * pi))
                       cc_data(i, j, k, 2, i_block) = product(cos(rr * pi))
                    end do
