@@ -162,13 +162,16 @@ contains
              write(my_unit, "(a,I0,a)") &
                   '  <Grid Name="MeshBlock', n + n_prev_blocks, &
                   '" GridType="Uniform">'
+#:if NDIM == 2
              write(my_unit, "(a,I0,a,I0,' ',I0,a)") &
                   '    <Topology TopologyType="', NDIM, 'DCoRectMesh" Dimensions="', &
                   nx(2)+1-2*n_gc, nx(1)+1-2*n_gc, '"/>'
-#:if NDIM == 2
              write(my_unit, "(a)") &
                   '    <Geometry GeometryType="ORIGIN_DXDY">'
 #:elif NDIM == 3
+             write(my_unit, "(a,I0,a,I0,' ',I0,' ',I0,a)") &
+                  '    <Topology TopologyType="', NDIM, 'DCoRectMesh" Dimensions="', &
+                  nx(3)+1-2*n_gc, nx(2)+1-2*n_gc, nx(1)+1-2*n_gc, '"/>'
              write(my_unit, "(a)") &
                   '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
 #:endif
@@ -202,14 +205,14 @@ contains
                 write(my_unit, "(a,I0,a,I0,a,I0,a)") &
                      '      <DataItem ItemType="HyperSlab" Dimensions="',&
                      nx(3)-2*n_gc, ' ', nx(2)-2*n_gc, ' ', nx(1)-2*n_gc, '">'
-                write(my_unit, "(a, 12(I0,' '),a)") &
-                     '        <DataItem Dimensions="3 4"> ', &
+                write(my_unit, "(a, 15(I0,' '),a)") &
+                     '        <DataItem Dimensions="3 5"> ', &
                      n-1, iv-1, n_gc, n_gc, n_gc, & ! start
                      1, 1, 1, 1, 1, &               ! stride
                      1, 1, nx(3)-2*n_gc, nx(2)-2*n_gc, nx(1)-2*n_gc, & ! count
                      '</DataItem>'
 
-                write(my_unit, "(a, 4(I0,' '),a,a,a)") &
+                write(my_unit, "(a, 5(I0,' '),a,a,a)") &
                      '        <DataItem Dimensions="', n_blocks, n_cc, &
                      nx(3), nx(2), nx(1), &
                      '" Format="Binary" NumberType="Float" Precision="8">'
