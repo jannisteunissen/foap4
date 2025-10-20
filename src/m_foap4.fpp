@@ -1926,177 +1926,240 @@ contains
     real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), ilo(3):ihi(3), &
          max_vars, max_blocks)
 #:endif
-    integer                      :: n, i, j, iq, jq, i_f, j_f, face
+    integer                      :: n, i, j, iq, jq, i_f, j_f
     integer                      :: i_buf, i_buf0, iv, ivar
     integer                      :: half_bx(NDIM), offset, bc_type, level
-    real(dp)                     :: bc_value, dr(NDIM)
+    real(dp)                     :: bc_value, dr(NDIM), slope
+#:if NDIM == 3
+    integer                      :: k
+#:endif
 
     half_bx = f4%bx/2
 
     !$acc parallel
 
-#:def fyp_srl_local(face, ilim, jlim, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
-    & i2=0, j2=0, k2=0, i3=0, j3=0, k3=0)
+#:def fyp_srl_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
+    &i2=0, j2=0, k2=0)
     !$acc loop private(iq, jq)
     do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
        iq   = f4%gc_srl_local(1, n) + 1
        jq   = f4%gc_srl_local(2, n) + 1
 
+#:if NDIM == 2
        !$acc loop collapse(3) private(ivar)
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
-                uu(${i0}$+i, ${j0}$+j, ivar, iq) = uu(${i1}$+i, ${j1}$+j, ivar, jq)
-                uu(${i2}$+i, ${j2}$+j, ivar, jq) = uu(${i3}$+i, ${j3}$+j, ivar, iq)
+                uu(${i0}$+i, ${j0}$+j, ivar, iq) = &
+                     uu(i, j, ivar, jq)
+                uu(${i1}$+i, ${j1}$+j, ivar, jq) = &
+                     uu(${i2}$+i, ${j2}$+j, ivar, iq)
              end do
           end do
        end do
+#:elif NDIM == 3
+       !$acc loop collapse(4) private(ivar)
+       do iv = 1, n_vars
+          do k = 1, ${klim}$
+             do j = 1, ${jlim}$
+                do i = 1, ${ilim}$
+                   ivar = i_vars(iv)
+                   uu(${i0}$+i, ${j0}$+j, ${k0}+k, ivar, iq) = &
+                        uu(i, j, k, ivar, jq)
+                   uu(${i1}$+i, ${j1}$+j, ${k1}+k, ivar, jq) = &
+                        uu(${i2}$+i, ${j2}$+j, ${k2}$+k, ivar, iq)
+                end do
+             end do
+          end do
+       end do
+#:endif
     end do
 #:enddef
 
     ! Fill local boundaries at the same refinement level
 #:if NDIM == 2
-    @:fyp_srl_local(1, n_gc,  bx(2), i0=bx(1), i2=-n_gc, i3=bx(1)-n_gc)
-    @:fyp_srl_local(3, bx(1), n_gc,  j0=bx(2), j2=-n_gc, j3=bx(2)-n_gc)
+    @:fyp_srl_local(1, n_gc,  bx(2), i0=bx(1), i1=-n_gc, i2=bx(1)-n_gc)
+    @:fyp_srl_local(3, bx(1), n_gc,  j0=bx(2), j1=-n_gc, j2=bx(2)-n_gc)
 #:elif NDIM == 3
-    @:fyp_srl_local(1, n_gc,  bx(2), bx(3), i0=bx(1), i2=-n_gc, i3=bx(1)-n_gc)
-    @:fyp_srl_local(3, bx(1), n_gc,  bx(3), j0=bx(2), j2=-n_gc, j3=bx(2)-n_gc)
-    @:fyp_srl_local(5, bx(1), bx(2), n_gc,  k0=bx(3), k2=-n_gc, k3=bx(3)-n_gc)
+    @:fyp_srl_local(1, n_gc,  bx(2), bx(3), i0=bx(1), i1=-n_gc, i2=bx(1)-n_gc)
+    @:fyp_srl_local(3, bx(1), n_gc,  bx(3), j0=bx(2), j1=-n_gc, j2=bx(2)-n_gc)
+    @:fyp_srl_local(5, bx(1), bx(2), n_gc,  k0=bx(3), k1=-n_gc, k2=bx(3)-n_gc)
 #:endif
 
     ! Fill physical boundaries
 
-    face = 0
-    !$acc loop private(iq, level, dr)
-    do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
+#:def fyp_phys(face, ilim, jlim, klim=None)
+    !$acc loop private(iq, level, dr, idim)
+    do n = f4%gc_phys_iface(${face}$), f4%gc_phys_iface(${face}$+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(n)
        dr    = f4%dr_level(:, level)
 
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
+#:if NDIM == 2
+       !$acc loop collapse(3) private(ivar, bc_type, bc_value, slope)
        do iv = 1, n_vars
-          do j = 1, bx(2)
-             do i = 1, n_gc
+          do j = 1, ${jlim}$
+             do i = 1, ${ilim}$
                 ivar = i_vars(iv)
-                bc_type = f4%bc_type(ivar, face)
-                bc_value = f4%bc_value(ivar, face)
+                bc_type = f4%bc_type(ivar, ${face}$)
+                bc_value = f4%bc_value(ivar, ${face}$)
 
                 select case (bc_type)
                 case (f4_bc_dirichlet)
-                   uu(1-i, j, ivar, iq) = 2 * bc_value - uu(i, j, ivar, iq)
-                case (f4_bc_neumann)
-                   uu(1-i, j, ivar, iq) = uu(i, j, ivar, iq) - &
-                        (2*i-1) * dr(1) * bc_value
-                case (f4_bc_linear_extrap)
-                   uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * &
-                        (uu(2, j, ivar, iq) - uu(1, j, ivar, iq))
-                end select
-             end do
-          end do
-       end do
-    end do
-
-    face = 1
-    !$acc loop private(iq, level, dr)
-    do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       iq    = f4%gc_phys(n) + 1
-       level = f4%block_level(n)
-       dr    = f4%dr_level(:, level)
-
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
-       do iv = 1, n_vars
-          do j = 1, bx(2)
-             do i = 1, n_gc
-                ivar = i_vars(iv)
-                bc_type = f4%bc_type(ivar, face)
-                bc_value = f4%bc_value(ivar, face)
-
-                select case (bc_type)
-                case (f4_bc_dirichlet)
+#:if face == '0'
+                   uu(1-i, j, ivar, iq) = &
+                        2 * bc_value - uu(i, j, ivar, iq)
+#:elif face == '1'
                    uu(bx(1)+i, j, ivar, iq) = &
                         2 * bc_value - uu(bx(1)+1-i, j, ivar, iq)
-                case (f4_bc_neumann)
-                   uu(bx(1)+i, j, ivar, iq) = uu(bx(1)+1-i, j, ivar, iq) + &
-                        (2*i-1) * dr(1) * bc_value
-                case (f4_bc_linear_extrap)
-                   uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * &
-                     (uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq))
-                end select
-             end do
-          end do
-       end do
-    end do
-
-    face = 2
-    !$acc loop private(iq, level, dr)
-    do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       iq    = f4%gc_phys(n) + 1
-       level = f4%block_level(n)
-       dr    = f4%dr_level(:, level)
-
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
-       do iv = 1, n_vars
-          do j = 1, n_gc
-             do i = 1, bx(1)
-                ivar = i_vars(iv)
-                bc_type = f4%bc_type(ivar, face)
-                bc_value = f4%bc_value(ivar, face)
-
-                select case (bc_type)
-                case (f4_bc_dirichlet)
+#:elif face == '2'
                    uu(i, 1-j, ivar, iq) = &
                         2 * bc_value - uu(i, j, ivar, iq)
-                case (f4_bc_neumann)
-                   uu(i, 1-j, ivar, iq) = uu(i, j, ivar, iq) - &
-                        (2*j-1) * dr(2) * bc_value
-                case (f4_bc_linear_extrap)
-                   uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * &
-                     (uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq))
-                end select
-             end do
-          end do
-       end do
-    end do
-
-    face = 3
-    !$acc loop private(iq, level, dr)
-    do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       iq    = f4%gc_phys(n) + 1
-       level = f4%block_level(n)
-       dr    = f4%dr_level(:, level)
-
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value)
-       do iv = 1, n_vars
-          do j = 1, n_gc
-             do i = 1, bx(1)
-                ivar = i_vars(iv)
-                bc_type = f4%bc_type(ivar, face)
-                bc_value = f4%bc_value(ivar, face)
-
-                select case (bc_type)
-                case (f4_bc_dirichlet)
+#:elif face == '3'
                    uu(i, bx(2)+j, ivar, iq) = &
                         2 * bc_value - uu(i, bx(2)+1-j, ivar, iq)
+#:endif
                 case (f4_bc_neumann)
+#:if face == '0'
+                   uu(1-i, j, ivar, iq) = uu(i, j, ivar, iq) - &
+                        (2*i-1) * dr(1) * bc_value
+#:elif face == '1'
+                   uu(bx(1)+i, j, ivar, iq) = uu(bx(1)+1-i, j, ivar, iq) + &
+                        (2*i-1) * dr(1) * bc_value
+#:elif face == '2'
+                   uu(i, 1-j, ivar, iq) = uu(i, j, ivar, iq) - &
+                        (2*j-1) * dr(2) * bc_value
+#:elif face == '3'
                    uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2)+1-j, ivar, iq) + &
                         (2*j-1) * dr(2) * bc_value
+#:endif
+
                 case (f4_bc_linear_extrap)
-                   uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * &
-                     (uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq))
+#:if face == '0'
+                   slope = (uu(2, j, ivar, iq) - uu(1, j, ivar, iq))
+                   uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * slope
+#:elif face == '1'
+                   slope = (uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq))
+                   uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * slope
+
+#:elif face == '2'
+                   slope = (uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq))
+                   uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * slope
+
+#:elif face == '3'
+                   slope = (uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq))
+                   uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * slope
+#:endif
                 end select
              end do
           end do
        end do
-    end do
+#:elif NDIM == 3
+       !$acc loop collapse(4) private(ivar, bc_type, bc_value, slope)
+       do iv = 1, n_vars
+          do j = 1, ${klim}$
+             do j = 1, ${jlim}$
+                do i = 1, ${ilim}$
+                   ivar = i_vars(iv)
+                   bc_type = f4%bc_type(ivar, ${face}$)
+                   bc_value = f4%bc_value(ivar, ${face}$)
 
-#:def fyp_f2c_local(face, jlim, ilim, i0, j0, if0, jf0)
+                   select case (bc_type)
+                   case (f4_bc_dirichlet)
+#:if face == '0'
+                      uu(1-i, j, k, ivar, iq) = &
+                           2 * bc_value - uu(i, j, k, ivar, iq)
+#:elif face == '1'
+                      uu(bx(1)+i, j, k, ivar, iq) = &
+                           2 * bc_value - uu(bx(1)+1-i, j, k, ivar, iq)
+#:elif face == '2'
+                      uu(i, 1-j, k, ivar, iq) = &
+                           2 * bc_value - uu(i, j, k, ivar, iq)
+#:elif face == '3'
+                      uu(i, bx(2)+j, k, ivar, iq) = &
+                           2 * bc_value - uu(i, bx(2)+1-j, k, ivar, iq)
+#:elif face == '4'
+                      uu(i, j, 1-k, ivar, iq) = &
+                           2 * bc_value - uu(i, j, k, ivar, iq)
+#:elif face == '5'
+                      uu(i, j, bx(3)+k, ivar, iq) = &
+                           2 * bc_value - uu(i, j, bx(3)+1-k, ivar, iq)
+#:endif
+                   case (f4_bc_neumann)
+#:if face == '0'
+                      uu(1-i, j, k, ivar, iq) = uu(i, j, k, ivar, iq) - &
+                           (2*i-1) * dr(1) * bc_value
+#:elif face == '1'
+                      uu(bx(1)+i, j, k, ivar, iq) = uu(bx(1)+1-i, j, k, ivar, iq) + &
+                           (2*i-1) * dr(1) * bc_value
+#:elif face == '2'
+                      uu(i, 1-j, k, ivar, iq) = uu(i, j, k, ivar, iq) - &
+                           (2*j-1) * dr(2) * bc_value
+#:elif face == '3'
+                      uu(i, bx(2)+j, k, ivar, iq) = uu(i, bx(2)+1-j, k, ivar, iq) + &
+                           (2*j-1) * dr(2) * bc_value
+#:elif face == '4'
+                      uu(i, j, 1-k, ivar, iq) = uu(i, j, k, ivar, iq) - &
+                           (2*k-1) * dr(3) * bc_value
+#:elif face == '5'
+                      uu(i, j, bx(3)+k, ivar, iq) = uu(i, j, bx(3)+1-k, ivar, iq) + &
+                           (2*k-1) * dr(3) * bc_value
+#:endif
+
+                   case (f4_bc_linear_extrap)
+#:if face == '0'
+                      slope = (uu(2, j, k, ivar, iq) - uu(1, j, k, ivar, iq))
+                      uu(1-i, j, k, ivar, iq) = uu(1, j, k, ivar, iq) - i * slope
+#:elif face == '1'
+                      slope = (uu(bx(1), j, k, ivar, iq) - uu(bx(1)-1, j, k, ivar, iq))
+                      uu(bx(1)+i, j, k, ivar, iq) = uu(bx(1), j, k, ivar, iq) + i * slope
+
+#:elif face == '2'
+                      slope = (uu(i, 2, k, ivar, iq) - uu(i, 1, k, ivar, iq))
+                      uu(i, 1-j, k, ivar, iq) = uu(i, 1, k, ivar, iq) - j * slope
+
+#:elif face == '3'
+                      slope = (uu(i, bx(2), k, ivar, iq) - uu(i, bx(2)-1, k, ivar, iq))
+                      uu(i, bx(2)+j, k, ivar, iq) = uu(i, bx(2), k, ivar, iq) + j * slope
+#:elif face == '4'
+                      slope = (uu(i, j, 2, ivar, iq) - uu(i, j, 1, ivar, iq))
+                      uu(i, j, 1-k, ivar, iq) = uu(i, j, 1, ivar, iq) - k * slope
+#:elif face == '5'
+                      slope = (uu(i, j, bx(3), ivar, iq) - uu(i, j, bx(3)-1, ivar, iq))
+                      uu(i, j, bx(3)+k, ivar, iq) = uu(i, j, bx(3), ivar, iq) + k * slope
+#:endif
+                   end select
+                end do
+             end do
+          end do
+       end do
+#:endif
+    end do
+#:enddef
+
+#:if NDIM == 2
+    @:fyp_phys(0, n_gc, bx(2))
+    @:fyp_phys(1, n_gc, bx(2))
+    @:fyp_phys(2, bx(1), n_gc)
+    @:fyp_phys(3, bx(1), n_gc)
+#:elif NDIM == 3
+    @:fyp_phys(0, n_gc, bx(2), bx(3))
+    @:fyp_phys(1, n_gc, bx(2), bx(3))
+    @:fyp_phys(2, bx(1), n_gc, bx(3))
+    @:fyp_phys(3, bx(1), n_gc, bx(3))
+    @:fyp_phys(4, bx(1), bx(2), n_gc)
+    @:fyp_phys(5, bx(1), bx(2), n_gc)
+#:endif
+
+#:def fyp_f2c_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, if0=0, jf0=0, kf0=0)
     !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset = f4%gc_f2c_local(3, n)     ! offset
 
+#:if NDIM == 2
        !$acc loop collapse(3) private(i_f, j_f, ivar)
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -2109,20 +2172,54 @@ contains
              end do
           end do
        end do
+#:elif NDIM == 3
+       !$acc loop collapse(4) private(i_f, j_f, ivar)
+       do iv = 1, n_vars
+          do k = 1, ${klim}$
+             do j = 1, ${jlim}$
+                do i = 1, ${ilim}$
+                   ivar = i_vars(iv)
+                   k_f = ${kf0}$ + 2 * k - 1
+                   j_f = ${jf0}$ + 2 * j - 1
+                   i_f = ${if0}$ + 2 * i - 1
+                   uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, jq) = 0.125_dp * &
+                        sum(uu(i_f:i_f+1, j_f:j_f+1, k_f:k_f+1, ivar, iq))
+                end do
+             end do
+          end do
+       end do
+#:endif
     end do
 #:enddef
 
     ! Fill coarse side of local fine-to-coarse refinement boundaries
-    @:fyp_f2c_local(0, half_bx(2), n_gc, bx(1), offset*half_bx(2), 0, 0)
-    @:fyp_f2c_local(1, half_bx(2), n_gc, -n_gc, offset*half_bx(2), bx(1) - 2*n_gc, 0)
-    @:fyp_f2c_local(2, n_gc, half_bx(1), offset*half_bx(1), bx(2), 0, 0)
-    @:fyp_f2c_local(3, n_gc, half_bx(1), offset*half_bx(1), -n_gc, 0, bx(2) -2*n_gc)
+#:if NDIM == 2
+    @:fyp_f2c_local(0, n_gc, half_bx(2), i0=bx(1), j0=offset*half_bx(2))
+    @:fyp_f2c_local(1, n_gc, half_bx(2), i0=-n_gc, j0=offset*half_bx(2), if0=bx(1) - 2*n_gc)
+    @:fyp_f2c_local(2, half_bx(1), n_gc, i0=offset*half_bx(1), j0=bx(2))
+    @:fyp_f2c_local(3, half_bx(1), n_gc, i0=offset*half_bx(1), j0=-n_gc, jf0=bx(2) -2*n_gc)
+#:elif NDIM == 3
+    @:fyp_f2c_local(0, n_gc, half_bx(2), half_bx(3), i0=bx(1), &
+         &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_f2c_local(1, n_gc, half_bx(2), half_bx(3), i0=-n_gc, &
+         &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3), if0=bx(1) - 2*n_gc)
+    @:fyp_f2c_local(2, half_bx(1), n_gc, half_bx(3), &
+         &i0=offset(1)*half_bx(1), j0=bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_f2c_local(3, half_bx(1), n_gc, half_bx(3), &
+         i0=offset(1)*half_bx(1), j0=-n_gc, k0=offset(2)*half_bx(3), jf0=bx(2) -2*n_gc)
+    @:fyp_f2c_local(4, half_bx(1), half_bx(2), n_gc, &
+         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=bx(3))
+    @:fyp_f2c_local(5, half_bx(1), half_bx(2), n_gc, &
+         i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=-n_gc, kf0=bx(3) -2*n_gc)
+#:endif
 
-#:def fyp_srl_from_buf(face, jlim, ilim, i0, j0)
+#:def fyp_srl_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
     !$acc loop private(iq, i_buf0)
     do n = f4%gc_srl_from_buf_iface(${face}$), f4%gc_srl_from_buf_iface(${face}$+1)-1
        iq = f4%gc_srl_from_buf(1, n) + 1
        i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
+
+#:if NDIM == 2
        !$acc loop collapse(3) private(ivar, i_buf)
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -2133,22 +2230,47 @@ contains
              end do
           end do
        end do
+#:elif NDIM == 3
+       !$acc loop collapse(4) private(ivar, i_buf)
+       do iv = 1, n_vars
+          do j = 1, ${klim}$
+             do j = 1, ${jlim}$
+                do i = 1, ${ilim}$
+                   ivar = i_vars(iv)
+                   i_buf = i_buf0 + ((iv - 1) * ${klim}$ * ${jlim}$ * ${ilim}$ + &
+                        (k - 1)) * ${jlim} * ${ilim}$ + (j-1) * ${ilim} + i
+                   uu(${i0}$+i, ${j0}$+j, ivar, iq) = f4%recv_buffer(i_buf)
+                end do
+             end do
+          end do
+       end do
+#:endif
     end do
 #:enddef
 
     ! Fill ghost cells at the same refinement level from the buffer
-    @:fyp_srl_from_buf(0, bx(2), n_gc, -n_gc, 0)
-    @:fyp_srl_from_buf(1, bx(2), n_gc, bx(1), 0)
-    @:fyp_srl_from_buf(2, n_gc, bx(1), 0, -n_gc)
-    @:fyp_srl_from_buf(3, n_gc, bx(1), 0, bx(2))
+#:if NDIM == 2
+    @:fyp_srl_from_buf(0, n_gc, bx(2), i0=-n_gc)
+    @:fyp_srl_from_buf(1, n_gc, bx(2), i0=bx(1))
+    @:fyp_srl_from_buf(2, bx(1), n_gc, j0=-n_gc)
+    @:fyp_srl_from_buf(3, bx(1), n_gc, j0=bx(2))
+#:elif NDIM == 3
+    @:fyp_srl_from_buf(0, n_gc, bx(2), bx(3), i0=-n_gc)
+    @:fyp_srl_from_buf(1, n_gc, bx(2), bx(3), i0=bx(1))
+    @:fyp_srl_from_buf(2, bx(1), n_gc, bx(3), j0=-n_gc)
+    @:fyp_srl_from_buf(3, bx(1), n_gc, bx(3), j0=bx(2))
+    @:fyp_srl_from_buf(4, bx(1), bx(2), n_gc, k0=-n_gc)
+    @:fyp_srl_from_buf(5, bx(1), bx(2), n_gc, k0=bx(3))
+#:endif
 
-#:def fyp_c2f_from_buf(face, jlim, ilim, i0, j0)
+#:def fyp_c2f_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
     !$acc loop private(iq, offset, i_buf0)
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        iq     = f4%gc_c2f_from_buf(1, n) + 1 ! Coarse block
        offset = f4%gc_c2f_from_buf(2, n)     ! Offset
        i_buf0  = f4%gc_c2f_from_buf(3, n) * n_vars
 
+#:if NDIM == 2
        !$acc loop collapse(3) private(ivar, i_buf)
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -2160,14 +2282,45 @@ contains
              end do
           end do
        end do
+#:elif NDIM == 3
+       !$acc loop collapse(4) private(ivar, i_buf)
+       do iv = 1, n_vars
+          do j = 1, ${klim}$
+             do j = 1, ${jlim}$
+                do i = 1, ${ilim}$
+                   ivar = i_vars(iv)
+                   i_buf = i_buf0 + ((iv - 1) * ${klim}$ * ${jlim}$ * ${ilim}$ + &
+                        (k - 1)) * ${jlim} * ${ilim}$ + (j-1) * ${ilim} + i
+                   uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = &
+                        f4%recv_buffer(i_buf)
+                end do
+             end do
+          end do
+       end do
+#:endif
     end do
 #:enddef
 
     ! Update coarse side from buffers at coarse-to-fine buffer
-    @:fyp_c2f_from_buf(0, half_bx(2), n_gc, -n_gc, offset*half_bx(2))
-    @:fyp_c2f_from_buf(1, half_bx(2), n_gc, bx(1), offset*half_bx(2))
-    @:fyp_c2f_from_buf(2, n_gc, half_bx(1), offset*half_bx(1), -n_gc)
-    @:fyp_c2f_from_buf(3, n_gc, half_bx(1), offset*half_bx(1), bx(2))
+#:if NDIM == 2
+    @:fyp_c2f_from_buf(0, n_gc, half_bx(2), i0=-n_gc, j0=offset*half_bx(2))
+    @:fyp_c2f_from_buf(1, n_gc, half_bx(2), i0=bx(1), j0=offset*half_bx(2))
+    @:fyp_c2f_from_buf(2, half_bx(1), n_gc, i0=offset*half_bx(1), j0=-n_gc)
+    @:fyp_c2f_from_buf(3, half_bx(1), n_gc, i0=offset*half_bx(1), j0=bx(2))
+#:elif NDIM == 3
+    @:fyp_c2f_from_buf(0, n_gc, half_bx(2), half_bx(3), &
+         &i0=-n_gc, j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_c2f_from_buf(1, n_gc, half_bx(2), half_bx(3), &
+         &i0=bx(1), j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_c2f_from_buf(2, half_bx(1), n_gc, half_bx(3), &
+         &i0=offset(1)*half_bx(1), j0=-n_gc, k0=offset(2)*half_bx(3))
+    @:fyp_c2f_from_buf(3, half_bx(1), n_gc, half_bx(3), &
+         &i0=offset(1)*half_bx(1), j0=bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_c2f_from_buf(4, half_bx(1), half_bx(2), n_gc, &
+         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=-n_gc)
+    @:fyp_c2f_from_buf(5, half_bx(1), half_bx(2), n_gc, &
+         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=bx(3))
+#:endif
 
     !$acc end parallel
 
@@ -2179,26 +2332,224 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer, intent(in)          :: bx(2)
+    integer, intent(in)          :: bx(NDIM)
     integer, intent(in)          :: n_gc
-    integer, intent(in)          :: ilo(2)
-    integer, intent(in)          :: ihi(2)
+    integer, intent(in)          :: ilo(NDIM)
+    integer, intent(in)          :: ihi(NDIM)
     integer, intent(in)          :: max_vars
     integer, intent(in)          :: max_blocks
+#:if NDIM == 2
     real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
+#:elif NDIM == 3
+    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), ilo(3):ihi(3), &
+         max_vars, max_blocks)
+#:endif
     integer                      :: n, i, j, iq, jq, i_c, j_c, i_f, j_f, face
     integer                      :: i_buf, i_buf0, iv, ivar
-    integer                      :: half_bx(2), half_n_gc, offset
+    integer                      :: half_bx(NDIM), half_n_gc, offset
     logical                      :: odd_n_gc
-    real(dp)                     :: fine(4)
+    real(dp)                     :: fine(2**NDIM)
 
     ! If nothing to do, save time by not starting parallel region
-    if (f4%gc_f2c_local_iface(4) == 1 .and. &
-         f4%gc_f2c_from_buf_iface(4) == 1) return
+    if (f4%gc_f2c_local_iface(2*NDIM) == 1 .and. &
+         f4%gc_f2c_from_buf_iface(2*NDIM) == 1) return
 
     half_bx   = f4%bx/2
     half_n_gc = f4%n_gc/2 ! Round down
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
+
+#:if NDIM == 2
+#:def fyp_f2c_local_fine(face, ilim='half_bx(1)', jlim='half_bx(2)', &
+    &ic0=0, jc0=0, if0=0, jf0=0)
+    !$acc loop private(iq, jq, offset, i, j)
+    do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
+       iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+       jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+       offset = f4%gc_f2c_local(3, n)     ! Offset
+
+       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
+       do iv = 1, n_vars
+          do j = 1, ${jlim}$
+             do i = 1,  ${ilim}$
+                ivar = i_vars(iv)
+                i_f = ${if0}$ + 2 * i - 1
+                j_f = ${jf0}$ + 2 * j - 1
+                i_c = ${ic0}$ + i
+                j_c = ${jc0}$ + j
+                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
+                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
+                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+                uu(i_f  , j_f  , ivar, iq) = fine(1)
+                uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
+             end do
+          end do
+       end do
+
+       if (odd_n_gc) then
+#:if face == '0'
+          i = 0
+#:elif face == '1'
+          i = half_n_gc + 1
+#:elif face == '2'
+          j = 0
+#:elif face == '3'
+          j = half_n_gc + 1
+#:endif
+
+          !$acc loop collapse(2) private(ivar, j_f, j_c, i_f, i_c)
+          do iv = 1, n_vars
+#:if face in ['0', '1']
+             do j = 1, ${jlim}$
+#:elif face in ['2', '3']
+             do i = 1, ${ilim}$
+#:endif
+                ivar = i_vars(iv)
+                i_f = ${if0}$ + 2 * i - 1
+                j_f = ${jf0}$ + 2 * j - 1
+                i_c = ${ic0}$ + i
+                j_c = ${jc0}$ + j
+
+                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
+                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
+                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+
+#:if face == '0'
+                uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
+#:elif face == '1'
+                uu(i_f  , j_f  , ivar, iq) = fine(1)
+                uu(i_f  , j_f+1, ivar, iq) = fine(3)
+#:elif face == '2'
+                uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
+#:elif face == '3'
+                uu(i_f  , j_f  , ivar, iq) = fine(1)
+                uu(i_f+1, j_f  , ivar, iq) = fine(2)
+#:endif
+
+             end do
+          end do
+       end if
+    end do
+#:enddef
+#:elif NDIM == 3
+#:def fyp_f2c_local_fine(face, ilim=half_bx(1), jlim=half_bx(2), klim=half_bx(3), &
+    &ic0=0, jc0=0, kc0, if0=0, jf0=0, kf0)
+    !$acc loop private(iq, jq, offset, i, j, k)
+    do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
+       iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
+       jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
+       offset = f4%gc_f2c_local(3, n)     ! Offset
+
+       !$acc loop collapse(4) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c)
+       do iv = 1, n_vars
+          do k = 1, ${klim}$
+             do j = 1, ${jlim}$
+                do i = 1,  ${ilim}$
+                   ivar = i_vars(iv)
+                   i_f = ${if0}$ + 2 * i - 1
+                   j_f = ${jf0}$ + 2 * j - 1
+                   k_f = ${kf0}$ + 2 * k - 1
+                   i_c = ${ic0}$ + i
+                   j_c = ${jc0}$ + j
+                   k_c = ${kc0}$ + k
+                   call prolong_local_5point(uu(i_c, j_c, k_c, iv, jq), &
+                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
+                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
+                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                        fine)
+                   uu(i_f  , j_f  , k_f,   ivar, iq) = fine(1)
+                   uu(i_f+1, j_f  , k_f,   ivar, iq) = fine(2)
+                   uu(i_f  , j_f+1, k_f,   ivar, iq) = fine(3)
+                   uu(i_f+1, j_f+1, k_f,   ivar, iq) = fine(4)
+                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+                end do
+             end do
+          end do
+       end do
+
+       if (odd_n_gc) then
+#:if face == '0'
+          i = 0
+#:elif face == '1'
+          i = half_n_gc + 1
+#:elif face == '2'
+          j = 0
+#:elif face == '3'
+          j = half_n_gc + 1
+#:elif face == '4'
+          k = 0
+#:elif face == '5'
+          k = half_n_gc + 1
+#:endif
+
+          !$acc loop collapse(3) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c)
+          do iv = 1, n_vars
+#:if face in ['0', '1']
+             do k = 1, ${klim}$
+                do j = 1, ${jlim}$
+#:elif face in ['2', '3']
+             do k = 1, ${klim}$
+                do i = 1, ${ilim}$
+#:elif face in ['4', '5']
+             do j = 1, ${jlim}$
+                do i = 1, ${ilim}$
+#:endif
+                ivar = i_vars(iv)
+                i_f = ${if0}$ + 2 * i - 1
+                j_f = ${jf0}$ + 2 * j - 1
+                k_f = ${kf0}$ + 2 * k - 1
+                i_c = ${ic0}$ + i
+                j_c = ${jc0}$ + j
+                k_c = ${kc0}$ + k
+
+                call prolong_local_5point(uu(i_c, j_c, k_c, iv, jq), &
+                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
+                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
+                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                        fine)
+                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                   uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
+                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                   uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
+                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+
+#:if face == '0'
+                uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
+                uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
+                uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+#:elif face == '1'
+                uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+#:elif face == '2'
+                uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
+                uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+#:elif face == '3'
+                uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
+                uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+#:endif
+
+             end do
+          end do
+       end if
+    end do
+#:enddef
+#:endif
 
     !$acc parallel
 
@@ -2206,194 +2557,29 @@ contains
     ! Fill fine side of local coarse-to-fine boundaries
     ! ----------------------------------------
 
-    face = 0
-    !$acc loop private(iq, jq, offset)
-    do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
-       iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
-       jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
-       offset = f4%gc_f2c_local(3, n)     ! Offset
-
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
-       do iv = 1, n_vars
-          do j = 1, half_bx(2)
-             do i = 1, half_n_gc
-                ivar = i_vars(iv)
-                j_f = 2 * j - 1
-                j_c = j + offset * half_bx(2)
-                i_c = bx(1) - half_n_gc + i
-                i_f = -(2 * half_n_gc) + 2*i - 1
-                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f+1, j_f  , ivar, iq) = fine(2)
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
-                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
-             end do
-          end do
-       end do
-
-       if (odd_n_gc) then
-          i_c = bx(1) - half_n_gc
-          i_f = -n_gc + 1
-
-          !$acc loop collapse(2) private(ivar, j_f, j_c)
-          do iv = 1, n_vars
-             do j = 1, half_bx(2)
-                ivar = i_vars(iv)
-                j_f = 2 * j - 1
-                j_c = j + offset * half_bx(2)
-
-                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f, j_f, ivar, iq) = fine(2)
-                uu(i_f, j_f+1, ivar, iq) = fine(4)
-             end do
-          end do
-       end if
-    end do
-
-    face = 1
-    !$acc loop private(iq, jq, offset)
-    do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
-       iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
-       jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
-       offset = f4%gc_f2c_local(3, n)     ! Offset
-
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
-       do iv = 1, n_vars
-          do j = 1, half_bx(2)
-             do i = 1, half_n_gc
-                ivar = i_vars(iv)
-                j_f = 2 * j - 1
-                j_c = j + offset * half_bx(2)
-                i_c = i
-                i_f = bx(1) + 2*i - 1
-                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f+1, j_f  , ivar, iq) = fine(2)
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
-                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
-             end do
-          end do
-       end do
-
-       if (odd_n_gc) then
-          i_c = 1 + half_n_gc
-          i_f = bx(1) + n_gc
-
-          !$acc loop collapse(2) private(ivar, j_f, j_c)
-          do iv = 1, n_vars
-             do j = 1, half_bx(2)
-                ivar = i_vars(iv)
-                j_f = 2 * j - 1
-                j_c = j + offset * half_bx(2)
-                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f, j_f, ivar, iq) = fine(1)
-                uu(i_f, j_f+1, ivar, iq) = fine(3)
-             end do
-          end do
-       end if
-    end do
-
-    face = 2
-    !$acc loop private(iq, jq, offset)
-    do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
-       iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
-       jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
-       offset = f4%gc_f2c_local(3, n)     ! Offset
-
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
-       do iv = 1, n_vars
-          do j = 1, half_n_gc
-             do i = 1, half_bx(1)
-                ivar = i_vars(iv)
-                j_c = bx(2) - half_n_gc + j
-                j_f = -(2 * half_n_gc) + 2*j - 1
-                i_f = 2 * i - 1
-                i_c = i + offset * half_bx(1)
-                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f+1, j_f  , ivar, iq) = fine(2)
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
-                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
-             end do
-          end do
-       end do
-
-       if (odd_n_gc) then
-          j_c = bx(2) - half_n_gc
-          j_f = -n_gc + 1
-
-          !$acc loop collapse(2) private(ivar, i_f, i_c)
-          do iv = 1, n_vars
-             do i = 1, half_bx(1)
-                ivar = i_vars(iv)
-                i_f = 2 * i - 1
-                i_c = i + offset * half_bx(1)
-                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f, j_f, ivar, iq) = fine(3)
-                uu(i_f+1, j_f, ivar, iq) = fine(4)
-             end do
-          end do
-       end if
-    end do
-
-    face = 3
-    !$acc loop private(iq, jq, offset)
-    do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
-       iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
-       jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
-       offset = f4%gc_f2c_local(3, n)     ! Offset
-
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c)
-       do iv = 1, n_vars
-          do j = 1, half_n_gc
-             do i = 1, half_bx(1)
-                ivar = i_vars(iv)
-                j_c = j
-                j_f = bx(2) + 2*j - 1
-                i_f = 2 * i - 1
-                i_c = i + offset * half_bx(1)
-                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f+1, j_f  , ivar, iq) = fine(2)
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
-                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
-             end do
-          end do
-       end do
-
-       if (odd_n_gc) then
-          j_c = 1 + half_n_gc
-          j_f = bx(2) + n_gc
-
-          !$acc loop collapse(2) private(ivar, i_f, i_c)
-          do iv = 1, n_vars
-             do i = 1, half_bx(1)
-                ivar = i_vars(iv)
-                i_f = 2 * i - 1
-                i_c = i + offset * half_bx(1)
-                call prolong_local_5point(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f, j_f, ivar, iq) = fine(1)
-                uu(i_f+1, j_f, ivar, iq) = fine(2)
-             end do
-          end do
-       end if
-    end do
+#:if NDIM == 2
+    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
+         &jc0=offset*half_bx(2), if0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
+         &jc0=offset*half_bx(2), if0=bx(1))
+    @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset*half_bx(1), &
+         &jc0=bx(2)-half_n_gc, jf0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
+         &ic0=offset*half_bx(1), jf0=bx(2))
+#:elif NDIM == 3
+    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
+         &jc0=offset(1)*half_bx(2), if0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
+         &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3), if0=bx(1))
+    @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
+         &jc0=bx(2)-half_n_gc, kc0=offset(2)*half_bx(3), jf0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
+         &ic0=offset(1)*half_bx(1), kc0=offset(2)*half_bx(3), jf0=bx(2))
+    @:fyp_f2c_local_fine(4, klim=half_n_gc, ic0=offset(1)*half_bx(1), &
+         &jc0=offset(2)*half_bx(2), kc0=bx(3)-half_n_gc, kf0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(5, klim=half_n_gc, &
+         &ic0=offset(1)*half_bx(1), jc0=offset(2)*half_bx(2), kf0=bx(3))
+#:endif
 
     ! ----------------------------------------
     ! Fill fine side of nonlocal coarse-to-fine boundaries
@@ -2622,9 +2808,9 @@ contains
     integer                      :: has_changed, i_srl, i_refine, i_coarsen
     integer, allocatable         :: srl(:, :), refine(:, :), coarsen(:, :)
     integer                      :: n, i, j, i_c, j_c, i_f, j_f, n_old
-    integer                      :: half_bx(2), offset_copy
+    integer                      :: half_bx(NDIM), offset_copy
     integer                      :: i_from, i_to, i_ch
-    real(dp)                     :: fine(4), t0, t1
+    real(dp)                     :: fine(2**NDIM), t0, t1
 
     t0 = MPI_Wtime()
     half_bx = f4%bx / 2
@@ -2688,6 +2874,7 @@ contains
        i_from = srl(1, n)
        i_to = srl(2, n)
 
+#:if NDIM == 2
        !$acc loop collapse(3)
        do iv = 1, f4%n_vars
           do j = f4%ilo(2), f4%ihi(2)
@@ -2696,6 +2883,18 @@ contains
              end do
           end do
        end do
+#:elif NDIM == 3
+       !$acc loop collapse(4)
+       do iv = 1, f4%n_vars
+          do k = f4%ilo(3), f4%ihi(3)
+             do j = f4%ilo(2), f4%ihi(2)
+                do i = f4%ilo(1), f4%ihi(2)
+                   f4%uu(i, j, k, iv, i_to) = f4%uu(i, j, k, iv, i_from)
+                end do
+             end do
+          end do
+       end do
+#:endif
     end do
 
     ! Refine on device
@@ -2704,6 +2903,7 @@ contains
        i_from = refine(1, n)
        i_to = refine(2, n)
 
+#:if NDIM == 2
        !$acc loop collapse(4) private(j_c, j_f, i_c, i_f, fine)
        do i_ch = 1, 4
           do iv = 1, f4%n_vars
@@ -2729,6 +2929,43 @@ contains
              end do
           end do
        end do
+#:elif NDIM == 3
+       !$acc loop collapse(4) private(k_c, k_f, j_c, j_f, i_c, i_f, fine)
+       do i_ch = 1, 4
+          do iv = 1, f4%n_vars
+             do k = 1, half_bx(3)
+                do j = 1, half_bx(2)
+                   do i = 1, half_bx(1)
+                      k_c = k + f4_child_offset(3, i_ch) * half_bx(3)
+                      k_f = 2 * k - 1
+                      j_c = j + f4_child_offset(2, i_ch) * half_bx(2)
+                      j_f = 2 * j - 1
+                      i_c = i + f4_child_offset(1, i_ch) * half_bx(1)
+                      i_f = 2 * i - 1
+
+                      call prolong_local_5point(f4%uu(i_c, j_c, k_c, iv, i_from), &
+                           f4%uu(i_c-1, j_c, k_c, iv, i_from), &
+                           f4%uu(i_c+1, j_c, k_c, iv, i_from), &
+                           f4%uu(i_c, j_c-1, k_c, iv, i_from), &
+                           f4%uu(i_c, j_c+1, k_c, iv, i_from), &
+                           f4%uu(i_c, j_c, k_c-1, iv, i_from), &
+                           f4%uu(i_c, j_c, k_c+1, iv, i_from), &
+                           fine)
+
+                      f4%uu(i_f  , j_f  , k_f,   iv, i_to+i_ch-1) = fine(1)
+                      f4%uu(i_f+1, j_f  , k_f,   iv, i_to+i_ch-1) = fine(2)
+                      f4%uu(i_f  , j_f+1, k_f,   iv, i_to+i_ch-1) = fine(3)
+                      f4%uu(i_f+1, j_f+1, k_f,   iv, i_to+i_ch-1) = fine(4)
+                      f4%uu(i_f  , j_f  , k_f+1, iv, i_to+i_ch-1) = fine(5)
+                      f4%uu(i_f+1, j_f  , k_f+1, iv, i_to+i_ch-1) = fine(6)
+                      f4%uu(i_f  , j_f+1, k_f+1, iv, i_to+i_ch-1) = fine(7)
+                      f4%uu(i_f+1, j_f+1, k_f+1, iv, i_to+i_ch-1) = fine(8)
+                   end do
+                end do
+             end do
+          end do
+       end do
+#:endif
     end do
 
     ! Coarsen on device
@@ -2737,6 +2974,7 @@ contains
        i_from = coarsen(1, n)
        i_to = coarsen(2, n)
 
+#:if NDIM == 2
        !$acc loop collapse(4) private(j_c, j_f, i_c, i_f)
        do i_ch = 1, 4
           do iv = 1, f4%n_vars
@@ -2756,6 +2994,34 @@ contains
              end do
           end do
        end do
+#:elif NDIM == 3
+       !$acc loop collapse(5) private(k_c, k_f, j_c, j_f, i_c, i_f)
+       do i_ch = 1, 4
+          do iv = 1, f4%n_vars
+             do k = 1, half_bx(3)
+                do j = 1, half_bx(2)
+                   do i = 1, half_bx(1)
+                      k_c = k + f4_child_offset(3, i_ch) * half_bx(3)
+                      k_f = 2 * k - 1
+                      j_c = j + f4_child_offset(2, i_ch) * half_bx(2)
+                      j_f = 2 * j - 1
+                      i_c = i + f4_child_offset(1, i_ch) * half_bx(1)
+                      i_f = 2 * i - 1
+
+                      f4%uu(i_c, j_c, k_c, iv, i_to) = 0.125_dp * (&
+                           f4%uu(i_f+1, j_f  , k_f,   iv, i_from+i_ch-1) + &
+                           f4%uu(i_f  , j_f+1, k_f,   iv, i_from+i_ch-1) + &
+                           f4%uu(i_f+1, j_f+1, k_f,   iv, i_from+i_ch-1) + &
+                           f4%uu(i_f  , j_f  , k_f+1, iv, i_from+i_ch-1) + &
+                           f4%uu(i_f+1, j_f  , k_f+1, iv, i_from+i_ch-1) + &
+                           f4%uu(i_f  , j_f+1, k_f+1, iv, i_from+i_ch-1) + &
+                           f4%uu(i_f+1, j_f+1, k_f+1, iv, i_from+i_ch-1))
+                   end do
+                end do
+             end do
+          end do
+       end do
+#:endif
     end do
 
     !$acc wait
@@ -2793,6 +3059,7 @@ contains
     ! Copy block solution data on device
     !$acc parallel loop
     do n = 1, n_blocks_old
+#:if NDIM == 2
        !$acc loop collapse(3)
        do iv = 1, f4%n_vars
           do j = f4%ilo(2), f4%ihi(2)
@@ -2801,30 +3068,75 @@ contains
              end do
           end do
        end do
+#:elif NDIM == 3
+       !$acc loop collapse(4)
+       do iv = 1, f4%n_vars
+          do k = f4%ilo(3), f4%ihi(3)
+             do j = f4%ilo(2), f4%ihi(2)
+                do i = f4%ilo(1), f4%ihi(1)
+                   f4%uu(i, j, k, iv, offset_copy+n) = f4%uu(i, j, k, iv, n)
+                end do
+             end do
+          end do
+       end do
+#:endif
     end do
   end subroutine copy_blocks_to_end
 
   !> Method for prolongation (interpolation) of a coarse block to its children
+#:if NDIM == 2
   subroutine prolong_local_5point(center, xlo, xhi, ylo, yhi, fine)
     !$acc routine seq
     real(dp), intent(in)  :: center ! Center value
     real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
     real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
-    real(dp), intent(out) :: fine(4)
-    real(dp)              :: f(0:2), slopes_a(2), slopes_b(2)
+    real(dp), intent(out) :: fine(2**NDIM)
+    real(dp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
 
     f(0) = center          ! Identical to coarse_y(2)
     slopes_a(1) = center - xlo
     slopes_a(2) = center - ylo
     slopes_b(1) = xhi - center
     slopes_b(2) = yhi - center
-    f(1:2) = 0.25_dp * limiter_minmod(slopes_a, slopes_b)
+
+    f(1:) = 0.25_dp * limiter_minmod(slopes_a, slopes_b)
 
     fine(1) = f(0) - f(1) - f(2)
     fine(2) = f(0) + f(1) - f(2)
     fine(3) = f(0) - f(1) + f(2)
     fine(4) = f(0) + f(1) + f(2)
   end subroutine prolong_local_5point
+#:elif NDIM == 3
+    subroutine prolong_local_5point(center, xlo, xhi, ylo, yhi, zlo, zhi, fine)
+    !$acc routine seq
+    real(dp), intent(in)  :: center ! Center value
+    real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
+    real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
+    real(dp), intent(in)  :: zlo, zhi ! z-neighbors (-1, +1)
+    real(dp), intent(out) :: fine(2**NDIM)
+    real(dp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
+
+    f(0) = center          ! Identical to coarse_y(2)
+    slopes_a(1) = center - xlo
+    slopes_a(2) = center - ylo
+    slopes_a(3) = center - zlo
+    slopes_b(1) = xhi - center
+    slopes_b(2) = yhi - center
+    slopes_b(3) = zhi - center
+
+    ! TODO: this can become negative in 3D
+    f(1:) = 0.25_dp * limiter_minmod(slopes_a, slopes_b)
+
+    fine(1) = f(0) - f(1) - f(2) - f(3)
+    fine(2) = f(0) + f(1) - f(2) - f(3)
+    fine(3) = f(0) - f(1) + f(2) - f(3)
+    fine(4) = f(0) + f(1) + f(2) - f(3)
+    fine(5) = f(0) - f(1) - f(2) + f(3)
+    fine(6) = f(0) + f(1) - f(2) + f(3)
+    fine(7) = f(0) - f(1) + f(2) + f(3)
+    fine(8) = f(0) + f(1) + f(2) + f(3)
+  end subroutine prolong_local_5point
+#:endif
 
   !> Generalized minmod limiter. The parameter theta controls how dissipative
   !> the limiter is, with 1 corresponding to the minmod limiter and 2 to the MC
