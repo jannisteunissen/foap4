@@ -24,15 +24,20 @@ program test_ref
   test_coarsening = .false.
   n = 0
   do n_gc = 1, 4
-     if (f4%mpirank == 0) print *, "Testing with n_gc = ", n_gc
+     if (f4%mpirank == 0) print *, "Using n_gc = ", n_gc
+     if (f4%mpirank == 0) print *, "Refine around [1e-2_dp, 1e-2_dp]"
      call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 1e-2_dp], test_coarsening, &
           write_output, "output/test_ref", n)
+     if (f4%mpirank == 0) print *, "Refine around [0.99_dp, 1e-2_dp]"
      call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 1e-2_dp], test_coarsening, &
           write_output, "output/test_ref", n)
+     if (f4%mpirank == 0) print *, "Refine around [0.5_dp, 0.5_dp]"
      call test_refinement(f4, n_gc, 3, 7, [0.5_dp, 0.5_dp], test_coarsening, &
           write_output, "output/test_ref", n)
+     if (f4%mpirank == 0) print *, "Refine around [1e-2_dp, 0.99_dp]"
      call test_refinement(f4, n_gc, 3, 7, [1e-2_dp, 0.99_dp], test_coarsening, &
           write_output, "output/test_ref", n)
+     if (f4%mpirank == 0) print *, "Refine around [0.99_dp, 0.99_dp]"
      call test_refinement(f4, n_gc, 3, 7, [0.99_dp, 0.99_dp], test_coarsening, &
           write_output, "output/test_ref", n)
   end do
