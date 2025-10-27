@@ -7,11 +7,12 @@ INCDIRS := p4est/build/local/include
 LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
 CFLAGS := -Wall -O2 -g
-TARGETS := test_refinement test_advection test_xdmf_writer test_euler	\
-	benchmark_ghostcell
+TARGETS_2D := test_refinement_2d test_advection_2d test_xdmf_writer_2d test_euler_2d	\
+	benchmark_ghostcell_2d
+TARGETS_3D := test_refinement_3d
 
 .PHONY: all
-all: $(TARGETS)
+all: $(TARGETS_2D) $(TARGETS_3D)
 
 # Determine compiler brand
 compiler_version = $(shell $(FC) --version)
@@ -33,11 +34,18 @@ else ifeq ($(compiler_brand), pgfortran)
 endif
 
 # Dependencies
-$(TARGETS): src/m_foap4_2d.o src/p4est_wrapper_2d.o src/m_xdmf_writer.o src/m_config.o
-$(addsuffix .o,$(addprefix src/,$(TARGETS))): src/m_foap4_2d.mod
-src/test_euler.o: src/m_euler.mod
-test_euler: src/m_euler.o
+$(TARGETS_2D): src/m_foap4_2d.o src/p4est_wrapper_2d.o src/m_xdmf_writer.o src/m_config.o
+$(TARGETS_3D): src/m_foap4_3d.o src/p4est_wrapper_3d.o src/m_xdmf_writer.o src/m_config.o
+
+$(addsuffix .o,$(addprefix src/,$(TARGETS_2D))): src/m_foap4_2d.mod
+$(addsuffix .o,$(addprefix src/,$(TARGETS_3D))): src/m_foap4_3d.mod
+
+src/test_euler_2d.o: src/m_euler.mod
+src/test_euler_3d.o: src/m_euler.mod
+test_euler_2d: src/m_euler.o
+test_euler_3d: src/m_euler.o
 src/m_foap4_2d.o: src/m_xdmf_writer.mod
+src/m_foap4_3d.o: src/m_xdmf_writer.mod
 
 .PHONY: clean
 clean:
@@ -62,10 +70,10 @@ src/%.mod: src/%.f90 src/%.o
 %: src/%.o
 	$(FC) -o $@ $^ $(FFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
 
-.PRECIOUS: src/%.f90
+.PRECIOUS: src/%.f90 src/%_2d.f90 src/%_3d.f90
 src/%.f90: src/%.fpp
 	fypp $(FYPPFLAGS) $< $@
-src/m_foap4_2d.f90: src/m_foap4.fpp
+src/%_2d.f90: src/%.fpp
 	fypp $(FYPPFLAGS) -D NDIM=2 $< $@
-src/m_foap4_3d.f90: src/m_foap4.fpp
+src/%_3d.f90: src/%.fpp
 	fypp $(FYPPFLAGS) -D NDIM=3 $< $@

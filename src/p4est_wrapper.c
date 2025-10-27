@@ -25,7 +25,7 @@ typedef struct bnd_face {
   int other_proc;               /* MPI rank that owns quadid[1] */
   int quadid[2];                /* quadid[0] is always local, [1] can be non-local */
 #if NDIM == 2
-  int offset;                   /* Offset for a hanging face */
+  int offset[1];                /* Offset for a hanging face */
 #elif NDIM == 3
   int offset[2];                /* Offset for a hanging face */
 #endif
@@ -148,13 +148,17 @@ void pw_get_quadrants(pw_state_t *pw, int n_quadrants,
 
 #if NDIM == 2
       p4est_qcoord_to_vertex (pw->conn, tt, quadrant->x, quadrant->y, vxyz);
+
+      coord[NDIM*i_quad] = vxyz[0];
+      coord[NDIM*i_quad+1] = vxyz[1];
 #elif NDIM == 3
       p4est_qcoord_to_vertex (pw->conn, tt, quadrant->x, quadrant->y,
                               quadrant->z, vxyz);
+
+      coord[NDIM*i_quad] = vxyz[0];
+      coord[NDIM*i_quad+1] = vxyz[1];
+      coord[NDIM*i_quad+2] = vxyz[2];
 #endif
-      coord[2*i_quad] = vxyz[0];
-      coord[2*i_quad+1] = vxyz[1];
-      coord[2*i_quad+2] = vxyz[2];
       level[i_quad] = quadrant->level;
       i_quad++;
     }
@@ -200,7 +204,10 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
     bf->quadid[0] = sides[0].is.full.quadid + tree->quadrants_offset;
     bf->other_proc = pw->p4est->mpirank;
     bf->quadid[1] = -2;
-    bf->offset = -2;
+    bf->offset[0] = -2;
+#if NDIM == 3
+    bf->offset[1] = -2;
+#endif
   } else if (sides[0].is_hanging | sides[1].is_hanging) {
     /* A coarse-to-fine interface */
     p4est_iter_face_side_t *face_hanging, *face_full;
@@ -226,7 +233,7 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
           tree->quadrants_offset;
 
 #if NDIM == 2
-        bf->offset = i;
+        bf->offset[0] = i;
 #elif NDIM == 3
         bf->offset[0] = (i & 1);
         bf->offset[1] = (i >> 1);
@@ -258,7 +265,7 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
           bf->quadid[0] = face_full->is.full.quadid + tree->quadrants_offset;
 
 #if NDIM == 2
-          bf->offset = i;
+          bf->offset[0] = i;
 #elif NDIM == 3
           bf->offset[0] = (i & 1);
           bf->offset[1] = (i >> 1);
@@ -300,7 +307,11 @@ void callback_get_faces (p4est_iter_face_info_t * info, void *user_data) {
       tree = p4est_tree_array_index (trees, sides[j].treeid);
       bf->quadid[1] = sides[j].is.full.quadid + tree->quadrants_offset;
     }
-    bf->offset = -2;
+
+    bf->offset[0] = -2;
+#if NDIM == 3
+    bf->offset[1] = -2;
+#endif
   }
 }
 
