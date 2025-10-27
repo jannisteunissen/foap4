@@ -67,7 +67,8 @@ contains
     character(len=len_trim(filename)+20) :: binary_fname, binary_basename
     character(len=20)                    :: for_viewer
     integer                              :: i, tag
-    real(dp), allocatable                :: dr_buf(:, :), origin_buf(:, :)
+    real(dp), allocatable                :: dr_recvbuf(:), origin_recvbuf(:)
+    real(dp), allocatable                :: dr_sendbuf(:), origin_sendbuf(:)
     type(mpi_request)                    :: requests(2)
 
     for_viewer = "visit"; if (present(viewer)) for_viewer = viewer
@@ -139,19 +140,21 @@ contains
     do rank = 0, mpisize-1
 
        if (mpirank == rank) then
-          call MPI_Isend(origin, NDIM*n_blocks, &
+          origin_sendbuf = pack(origin, .true.)
+          dr_sendbuf = pack(dr, .true.)
+          call MPI_Isend(origin_sendbuf, NDIM*n_blocks, &
                MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(1), ierr)
-          call MPI_Isend(dr, NDIM*n_blocks, &
+          call MPI_Isend(dr_sendbuf, NDIM*n_blocks, &
                MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(2), ierr)
        end if
 
        if (mpirank == 0) then
-          allocate(origin_buf(NDIM, blocks_per_rank(rank)))
-          allocate(dr_buf(NDIM, blocks_per_rank(rank)))
+          allocate(origin_recvbuf(NDIM*blocks_per_rank(rank)))
+          allocate(dr_recvbuf(NDIM*blocks_per_rank(rank)))
 
-          call MPI_Recv(origin_buf, NDIM*blocks_per_rank(rank), &
+          call MPI_Recv(origin_recvbuf, NDIM*blocks_per_rank(rank), &
                MPI_DOUBLE_PRECISION, rank, tag, mpicomm, MPI_STATUS_IGNORE, ierr)
-          call MPI_Recv(dr_buf, NDIM*blocks_per_rank(rank), &
+          call MPI_Recv(dr_recvbuf, NDIM*blocks_per_rank(rank), &
                MPI_DOUBLE_PRECISION, rank, tag, mpicomm, MPI_STATUS_IGNORE, ierr)
 
           ! Get name corresponding to this rank
@@ -176,10 +179,10 @@ contains
                   '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
 #:endif
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', NDIM, '">'
-             write(my_unit, *) origin_buf(coord_ix, n)
+             write(my_unit, *) origin_recvbuf((n-1)*NDIM + coord_ix)
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', NDIM, '">'
-             write(my_unit, *) dr_buf(coord_ix, n)
+             write(my_unit, *) dr_recvbuf((n-1)*NDIM + coord_ix)
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a)") '    </Geometry>'
 
@@ -226,8 +229,8 @@ contains
           end do
 
           n_prev_blocks = n_prev_blocks + blocks_per_rank(rank)
-          deallocate(origin_buf)
-          deallocate(dr_buf)
+          deallocate(origin_recvbuf)
+          deallocate(dr_recvbuf)
        end if
     end do
 
@@ -240,6 +243,8 @@ contains
 
        print *, "Wrote ", trim(filename) // '.xdmf'
     end if
+
+    call MPI_Barrier(mpicomm, ierr)
 
   end subroutine xdmf_write_blocks_${NDIM}$DCoRect
 #:endfor

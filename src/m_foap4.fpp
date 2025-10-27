@@ -124,11 +124,7 @@ module m_foap4_${NDIM}$d
      integer(c_int) :: face      !< Direction of the face
      integer(c_int) :: other_proc !< MPI rank that owns quadid(2)
      integer(c_int) :: quadid(2)  !< quadid(1) is always local, (2) can be non-local
-#:if NDIM == 2
-     integer(c_int) :: offset(1)  !< Offset for a hanging face
-#:elif NDIM == 3
-     integer(c_int) :: offset(2)  !< Offset for a hanging face
-#:endif
+     integer(c_int) :: offset(NDIM-1) !< Offset for a hanging face
      integer(c_int) :: ibuf_recv  !< Index in receive buffer (not filled here)
      integer(c_int) :: ibuf_send  !< Index in send buffer (not filled here)
   end type bnd_face_t
@@ -426,6 +422,7 @@ module m_foap4_${NDIM}$d
   public :: f4_partition
   public :: f4_fix_c2f_flux
   public :: f4_compute_sum
+  public :: f4_compute_max
   public :: f4_get_time_integrator
   public :: f4_advance
   public :: f4_set_refinement_flags_diff2
@@ -3733,20 +3730,20 @@ contains
 
     var_sum = 0.0_dp
 
-    !$acc parallel loop private(level, dvol) reduction(+: var_sum)
+    !$acc parallel loop private(level, dvol) reduction(+:var_sum)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        dvol = product(f4%dr_level(:, level))
 
 #:if NDIM == 2
-       !$acc loop collapse(2) reduction(+: var_sum)
+       !$acc loop collapse(2) reduction(+:var_sum)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
             var_sum = var_sum + f4%uu(i, j, i_var, n) * dvol
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(3) reduction(+: var_sum)
+       !$acc loop collapse(3) reduction(+:var_sum)
        do k = 1, f4%bx(3)
           do j = 1, f4%bx(2)
              do i = 1, f4%bx(1)
@@ -3761,6 +3758,45 @@ contains
          MPI_SUM, f4%mpicomm, ierror)
 
   end subroutine f4_compute_sum
+
+  !> Compute max of a variable
+  subroutine f4_compute_max(f4, i_var, var_max)
+    type(foap4_t), intent(in) :: f4
+    integer, intent(in)       :: i_var
+    real(dp), intent(out)     :: var_max
+    integer                   :: level, ${IJK}$, n, ierror
+    real(dp)                  :: dvol
+
+    var_max = -huge(1.0_dp)
+
+    !$acc parallel loop private(level, dvol) reduction(max:var_max)
+    do n = 1, f4%n_blocks
+       level = f4%block_level(n)
+       dvol = product(f4%dr_level(:, level))
+
+#:if NDIM == 2
+       !$acc loop collapse(2) reduction(max:var_max)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
+            var_max = max(var_max, f4%uu(i, j, i_var, n))
+          end do
+       end do
+#:elif NDIM == 3
+       !$acc loop collapse(3) reduction(max:var_max)
+       do k = 1, f4%bx(3)
+          do j = 1, f4%bx(2)
+             do i = 1, f4%bx(1)
+                var_max = max(var_max, f4%uu(i, j, k, i_var, n))
+             end do
+          end do
+       end do
+#:endif
+    end do
+
+    call MPI_Allreduce(MPI_IN_PLACE, var_max, 1, MPI_DOUBLE_PRECISION, &
+         MPI_MAX, f4%mpicomm, ierror)
+
+  end subroutine f4_compute_max
 
   !> Get the time integrator with a given name
   integer function f4_get_time_integrator(name) result(n)

@@ -26,15 +26,16 @@ program test_ref
 #:if NDIM == 2
   min_level = 3
   num_refine_steps = 7
+  max_blocks = 1000
 #:elif NDIM == 3
   min_level = 2
   num_refine_steps = 5
+  max_blocks = 1000
 #:endif
 
   write_output    = .false.
   test_coarsening = .true.
   bx(:)           = 8
-  max_blocks      = 1000
   test_coarsening = .false.
   abort_on_error  = .true.
 
@@ -61,7 +62,16 @@ program test_ref
   do n_gc = 1, 4
      if (f4%mpirank == 0) print *, "Testing uniform grid with n_gc =", n_gc
      r_ref = 0.5_dp
-     call test_refinement(f4, n_gc, min_level, 0, r_ref, &
+     call test_refinement(f4, n_gc, min_level, 0, r_ref, .true., &
+          test_coarsening, write_output, trim(output_name), n)
+  end do
+
+  do n_gc = 1, 4
+     if (f4%mpirank == 0) print *, "Testing uniform refinement with n_gc =", n_gc
+     r_ref = 0.5_dp
+
+     ! Use only two steps of additional refinement
+     call test_refinement(f4, n_gc, min_level, 2, r_ref, .true., &
           test_coarsening, write_output, trim(output_name), n)
   end do
 
@@ -74,7 +84,7 @@ program test_ref
            r_ref = [0.5_dp + i * 0.49_dp, 0.5_dp + j * 0.49_dp]
            if (f4%mpirank == 0) print *, "Refine around", r_ref
            call test_refinement(f4, n_gc, min_level, num_refine_steps, &
-                r_ref, test_coarsening, &
+                r_ref, .false., test_coarsening, &
                 write_output, trim(output_name), n)
         end do
      end do
@@ -86,7 +96,7 @@ program test_ref
                    0.5_dp + k * 0.49_dp]
               if (f4%mpirank == 0) print *, "Refine around", r_ref
               call test_refinement(f4, n_gc, min_level, num_refine_steps, &
-                   r_ref, test_coarsening, &
+                   r_ref, .false., test_coarsening, &
                    write_output, trim(output_name), n)
            end do
         end do
@@ -100,12 +110,14 @@ program test_ref
 contains
 
   subroutine test_refinement(f4, n_gc, min_level, n_refine_steps, &
-       refine_location, test_coarsening, write_output, base_name, n_output)
+       refine_location, refine_everywhere, test_coarsening, &
+       write_output, base_name, n_output)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_gc
     integer, intent(in)          :: min_level
     integer, intent(in)          :: n_refine_steps
     real(dp), intent(in)         :: refine_location(NDIM)
+    logical, intent(in)          :: refine_everywhere
     logical, intent(in)          :: test_coarsening
     logical, intent(in)          :: write_output
     character(len=*), intent(in) :: base_name
@@ -125,22 +137,29 @@ contains
     call set_init_cond(f4)
     call f4_update_ghostcells(f4, 1, [i_phi])
     call local_average(f4)
+    call compute_error(f4)
 
     if (write_output) then
        n_output = n_output + 1
        call f4_write_grid(f4, base_name, n_output)
     end if
 
+    call check_error_magnitude(f4)
+
     do n = 1, n_refine_steps
-       call set_refinement_flag(f4, refine_location)
+       if (f4%mpirank == 0) print *, "refine"
+       call set_refinement_flag(f4, refine_location, refine_everywhere)
        call f4_adjust_refinement(f4, partition)
        call f4_update_ghostcells(f4, 1, [i_phi])
        call local_average(f4)
+       call compute_error(f4)
 
        if (write_output) then
           n_output = n_output + 1
           call f4_write_grid(f4, base_name, n_output)
        end if
+
+       call check_error_magnitude(f4)
     end do
 
     if (test_coarsening) then
@@ -151,12 +170,14 @@ contains
 
           call f4_update_ghostcells(f4, 1, [i_phi])
           call local_average(f4)
+          call compute_error(f4)
 
           if (write_output) then
              n_output = n_output + 1
              call f4_write_grid(f4, base_name, n_output)
           end if
 
+          call check_error_magnitude(f4)
           if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
        end do
     end if
@@ -212,9 +233,10 @@ contains
     end do
   end subroutine set_init_cond
 
-  subroutine set_refinement_flag(f4, r0)
+  subroutine set_refinement_flag(f4, r0, refine_everywhere)
     type(foap4_t), intent(inout) :: f4
     real(dp), intent(in)         :: r0(NDIM)
+    logical, intent(in)          :: refine_everywhere
     integer                      :: n, lvl
     real(dp)                     :: rmin(NDIM), rmax(NDIM)
 
@@ -223,7 +245,7 @@ contains
        rmin = f4%block_origin(:, n)
        rmax = rmin + f4%bx * f4%dr_level(:, lvl)
 
-       if (all(r0 >= rmin .and. r0 <= rmax)) then
+       if (all(r0 >= rmin .and. r0 <= rmax) .or. refine_everywhere) then
           f4%refinement_flags(n) = 1
        else
           f4%refinement_flags(n) = 0
@@ -240,8 +262,6 @@ contains
   subroutine local_average(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, i, j, iv
-    real(dp)                     :: rr(NDIM), err, max_err, sol
-    real(dp), parameter          :: max_difference = 1e-15_dp
 #:if NDIM == 2
     real(dp), allocatable        :: tmp(:, :)
 
@@ -254,24 +274,18 @@ contains
 #:endif
 
     iv = i_phi
-    max_err = 0.0_dp
 
-    !$acc parallel loop private(tmp) reduction(max:max_err)
+    !$acc parallel loop private(tmp)
     do n = 1, f4%n_blocks
 #:if NDIM == 2
-       !$acc loop collapse(2) private(rr, sol, err) reduction(max:max_err)
+       !$acc loop collapse(2)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
-             rr = f4_cell_coord(f4, n, i, j)
              tmp(i, j) = 0.25_dp * ( &
                   f4%uu(i-1, j, iv, n) + &
                   f4%uu(i+1, j, iv, n) + &
                   f4%uu(i, j-1, iv, n) + &
                   f4%uu(i, j+1, iv, n))
-             sol = phi_init(rr(1), rr(2))
-             err = tmp(i, j) - sol
-             f4%uu(i, j, i_err, n) = err
-             max_err = max(abs(err), max_err)
           end do
        end do
 
@@ -282,11 +296,10 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(3) private(rr, sol, err) reduction(max:max_err)
+       !$acc loop collapse(3)
        do k = 1, f4%bx(3)
           do j = 1, f4%bx(2)
              do i = 1, f4%bx(1)
-                rr = f4_cell_coord(f4, n, i, j, k)
                 tmp(i, j, k) = (1/6.0_dp) * ( &
                      f4%uu(i-1, j, k, iv, n) + &
                      f4%uu(i+1, j, k, iv, n) + &
@@ -294,10 +307,6 @@ contains
                      f4%uu(i, j+1, k, iv, n) + &
                      f4%uu(i, j, k-1, iv, n) + &
                      f4%uu(i, j, k+1, iv, n))
-                sol = phi_init(rr(1), rr(2), rr(3))
-                err = tmp(i, j, k) - sol
-                f4%uu(i, j, k, i_err, n) = err
-                max_err = max(abs(err), max_err)
              end do
           end do
        end do
@@ -312,14 +321,59 @@ contains
        end do
 #:endif
     end do
+  end subroutine local_average
+
+  subroutine compute_error(f4)
+    type(foap4_t), intent(inout) :: f4
+    integer                      :: n, i, j, iv
+    real(dp)                     :: rr(NDIM), sol
+#:if NDIM == 3
+    integer                      :: k
+#:endif
+
+    iv = i_phi
+
+    !$acc parallel loop
+    do n = 1, f4%n_blocks
+#:if NDIM == 2
+       !$acc loop collapse(2) private(rr, sol)
+       do j = 1, f4%bx(2)
+          do i = 1, f4%bx(1)
+             rr = f4_cell_coord(f4, n, i, j)
+             sol = phi_init(rr(1), rr(2))
+             f4%uu(i, j, i_err, n) = f4%uu(i, j, i_phi, n) - sol
+          end do
+       end do
+#:elif NDIM == 3
+       !$acc loop collapse(3) private(rr, sol)
+       do k = 1, f4%bx(3)
+          do j = 1, f4%bx(2)
+             do i = 1, f4%bx(1)
+                rr = f4_cell_coord(f4, n, i, j, k)
+                sol = phi_init(rr(1), rr(2), rr(3))
+                f4%uu(i, j, k, i_err, n) = f4%uu(i, j, k, i_phi, n) - sol
+             end do
+          end do
+       end do
+#:endif
+    end do
+  end subroutine compute_error
+
+  subroutine check_error_magnitude(f4)
+    type(foap4_t), intent(in) :: f4
+    real(dp)                  :: max_err
+    real(dp), parameter       :: max_difference = 1e-15_dp
+
+    call f4_compute_max(f4, i_err, max_err)
 
     if (max_err > max_difference) then
-       print *, "Numerical error:", f4%mpirank, max_err
-       if (abort_on_error) then
-          error stop "Too large error"
+       if (f4%mpirank == 0) then
+          print *, "Numerical error:", max_err
+          if (abort_on_error) then
+             error stop "Too large error"
+          end if
        end if
     end if
-
-  end subroutine local_average
+  end subroutine check_error_magnitude
 
 end program test_ref
