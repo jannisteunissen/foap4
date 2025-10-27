@@ -75,7 +75,7 @@ program test_ref
           test_coarsening, write_output, trim(output_name), n)
   end do
 
-  do n_gc = 1, 2
+  do n_gc = 1, 4
      if (f4%mpirank == 0) print *, "Using n_gc = ", n_gc
 
 #:if NDIM == 2
@@ -147,7 +147,6 @@ contains
     call check_error_magnitude(f4)
 
     do n = 1, n_refine_steps
-       if (f4%mpirank == 0) print *, "refine"
        call set_refinement_flag(f4, refine_location, refine_everywhere)
        call f4_adjust_refinement(f4, partition)
        call f4_update_ghostcells(f4, 1, [i_phi])
@@ -189,13 +188,13 @@ contains
   pure real(dp) function phi_init(x, y)
     !$acc routine seq
     real(dp), intent(in) :: x, y
-    phi_init = x + y
+    phi_init = x + 2*y
   end function phi_init
 #:elif NDIM == 3
   pure real(dp) function phi_init(x, y, z)
     !$acc routine seq
     real(dp), intent(in) :: x, y, z
-    phi_init = x + y + z
+    phi_init = x + 2*y + 3*z
   end function phi_init
 #:endif
 
@@ -352,6 +351,9 @@ contains
                 rr = f4_cell_coord(f4, n, i, j, k)
                 sol = phi_init(rr(1), rr(2), rr(3))
                 f4%uu(i, j, k, i_err, n) = f4%uu(i, j, k, i_phi, n) - sol
+                if (abs(f4%uu(i, j, k, i_err, n)) > 1e-10_dp) then
+                   print *, i, j, k, f4%uu(i, j, k, i_err, n), f4%block_level(n)
+                end if
              end do
           end do
        end do

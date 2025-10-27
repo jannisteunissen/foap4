@@ -1507,7 +1507,7 @@ contains
             do j = 1, ${jlim}$
                do i = 1, ${ilim}$
                   ivar = i_vars(iv)
-                  i_buf = i_buf0 + (iv - 1) * ${jlim}$ * ${ilim}$ + (j - 1) * ${ilim}$ + i
+                  i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
                   f4%send_buffer(i_buf) = uu(${i0}$+i, ${j0}$+j, ivar, iq)
                end do
             end do
@@ -1519,8 +1519,8 @@ contains
                do j = 1, ${jlim}$
                   do i = 1, ${ilim}$
                      ivar = i_vars(iv)
-                     i_buf = i_buf0 + (iv - 1) * ${klim}$ * ${jlim}$ * ${ilim}$ + &
-                          (k-1) * ${jlim}$ * ${ilim}$ + (j - 1) * ${ilim}$ + i
+                     i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
+                          ${klim}$, ${jlim}$, ${ilim}$) + 1
                      f4%send_buffer(i_buf) = uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq)
                   end do
                end do
@@ -1560,7 +1560,7 @@ contains
                   ivar = i_vars(iv)
                   j_f = ${j0}$ + 2 * j - 1
                   i_f = ${i0}$ + 2 * i - 1
-                  i_buf = i_buf0 + (iv - 1) * ${ilim}$ * ${jlim}$ + (j - 1) * ${ilim}$ + i
+                  i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
                   f4%send_buffer(i_buf) = 0.25_dp * &
                        sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
                end do
@@ -1576,9 +1576,9 @@ contains
                      k_f = ${k0}$ + 2 * k - 1
                      j_f = ${j0}$ + 2 * j - 1
                      i_f = ${i0}$ + 2 * i - 1
-                     i_buf = i_buf0 + (iv - 1) * ${klim}$ * ${jlim}$ * ${ilim}$ + &
-                          (k-1) * ${jlim}$ * ${ilim}$ + (j - 1) * ${ilim}$ + i
-                     f4%send_buffer(i_buf) = 0.25_dp * &
+                     i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
+                          ${klim}$, ${jlim}$, ${ilim}$) + 1
+                     f4%send_buffer(i_buf) = 0.125_dp * &
                           sum(uu(i_f:i_f+1, j_f:j_f+1, k_f:k_f+1, ivar, iq))
                   end do
                end do
@@ -1661,8 +1661,7 @@ contains
                        f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
                        f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
-                  i_buf = i_buf0 + 4 * (((iv - 1) * ${jlim}$ + &
-                       (j - 1)) * ${ilim}$ + i - 1)
+                  i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, ${jlim}$, ${ilim}$)
                   f4%send_buffer(i_buf+1:i_buf+4) = fine
                end do
             end do
@@ -1697,19 +1696,19 @@ contains
                      uu(i_c, j_c-1, iv, iq), uu(i_c, j_c+1, iv, iq), fine)
 
 #:if face == '0'
-                i_buf = i_buf0 + 2 * ((iv - 1) * ${jlim}$ + (j - 1))
+                i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
                 f4%send_buffer(i_buf+1) = fine(1)
                 f4%send_buffer(i_buf+2) = fine(3)
 #:elif face == '1'
-                i_buf = i_buf0 + 2 * ((iv - 1) * ${jlim}$ + (j - 1))
+                i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
                 f4%send_buffer(i_buf+1) = fine(2)
                 f4%send_buffer(i_buf+2) = fine(4)
 #:elif face == '2'
-                i_buf = i_buf0 + 2 * ((iv - 1) * ${ilim}$ + (i - 1))
+                i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
                 f4%send_buffer(i_buf+1) = fine(1)
                 f4%send_buffer(i_buf+2) = fine(2)
 #:elif face == '3'
-                i_buf = i_buf0 + 2 * ((iv - 1) * ${ilim}$ + (i - 1))
+                i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
                 f4%send_buffer(i_buf+1) = fine(3)
                 f4%send_buffer(i_buf+2) = fine(4)
 #:endif
@@ -1728,7 +1727,7 @@ contains
          offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
          i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars
 
-         !$acc loop collapse(3) private(ivar, j_c, i_c, i_buf, fine)
+         !$acc loop collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine)
          do iv = 1, n_vars
             do k = 1, ${klim}$
                do j = 1, ${jlim}$
@@ -1745,7 +1744,7 @@ contains
                           fine)
 
                      i_buf = i_buf0 + 8 * &
-                          ix_offset4(iv, k, j, i, n_vars, ${klim}$, ${jlim}$)
+                          ix_offset4(iv, k, j, i, ${klim}$, ${jlim}$, ${ilim}$)
                      f4%send_buffer(i_buf+1:i_buf+8) = fine
                   end do
                end do
@@ -2314,7 +2313,7 @@ contains
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
-                i_buf = i_buf0 + ((iv - 1) * ${jlim}$ + (j - 1)) * ${ilim}$ + i
+                i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
                 uu(${i0}$+i, ${j0}$+j, ivar, iq) = &
                      f4%recv_buffer(i_buf)
              end do
@@ -2327,8 +2326,8 @@ contains
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
-                   i_buf = i_buf0 + ((iv - 1) * ${klim}$ * ${jlim}$ * ${ilim}$ + &
-                        (k - 1)) * ${jlim}$ * ${ilim}$ + (j-1) * ${ilim}$ + i
+                   i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
+                        ${klim}$, ${jlim}$, ${ilim}$) + 1
                    uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = &
                         f4%recv_buffer(i_buf)
                 end do
@@ -2641,8 +2640,7 @@ contains
                 i_f = ${if0}$ + 2 * i - 1
                 j_f = ${jf0}$ + 2 * j - 1
 
-                i_buf = i_buf0 + 4 * (((iv - 1) * ${jlim}$ + (j - 1)) &
-                     * ${ilim}$ + i - 1)
+                i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, ${jlim}$, ${ilim}$)
                 uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
                 uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
                 uu(i_f  , j_f+1, ivar, iq) = f4%recv_buffer(i_buf+3)
@@ -2662,7 +2660,7 @@ contains
                 ivar = i_vars(iv)
                 j_f = 2 * j - 1
 
-                i_buf = i_buf0 + 2 * ((iv - 1) * ${jlim}$ + (j - 1))
+                i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
                 uu(i_f, j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
                 uu(i_f, j_f+1, ivar, iq) = f4%recv_buffer(i_buf+2)
              end do
@@ -2676,7 +2674,7 @@ contains
                 ivar = i_vars(iv)
                 j_f = 2 * j - 1
 
-                i_buf = i_buf0 + 2 * ((iv - 1) * ${jlim}$ + (j - 1))
+                i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
                 uu(i_f, j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
                 uu(i_f, j_f+1, ivar, iq) = f4%recv_buffer(i_buf+2)
              end do
@@ -2690,7 +2688,7 @@ contains
                 ivar = i_vars(iv)
                 i_f = 2 * i - 1
 
-                i_buf = i_buf0 + 2 * ((iv - 1) * ${ilim}$ + (i - 1))
+                i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
                 uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
                 uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
              end do
@@ -2704,7 +2702,7 @@ contains
                 ivar = i_vars(iv)
                 i_f = 2 * i - 1
 
-                i_buf = i_buf0 + 2 * ((iv - 1) * ${ilim}$ + (i - 1))
+                i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
                 uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
                 uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
              end do
@@ -2797,7 +2795,7 @@ contains
 #:if face == '4'
           k_f = -n_gc + 1
 #:else
-          k_f = -n_gc + 1
+          k_f = bx(3) + n_gc
 #:endif
           !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
           do iv = 1, n_vars
@@ -3436,7 +3434,7 @@ contains
              ivar = i_vars(iv)
              i_f = 2 * i - 1
 
-             i_buf = i_buf0 + (iv-1)*${ilim}$ + i
+             i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$)
 
              f4%send_buffer(i_buf) = 0.5_dp * ( &
                   f4%bflux(i_f, ${face}$, ivar, i_fine) + &
@@ -3533,7 +3531,7 @@ contains
              ivar = i_vars(iv)
              i_c = i + offset(1) * ${ilim}$
 
-             i_buf = i_buf0 + (iv-1)*${ilim}$ + i
+             i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$)
              flux_diff = fac * ( &
                   f4%bflux(i_c, ${face}$, ivar, i_coarse) - &
                   f4%recv_buffer(i_buf))
@@ -3991,6 +3989,7 @@ contains
     !$acc update host(f4%refinement_flags(1:f4%n_blocks))
   end subroutine f4_set_refinement_flags_diff2
 
+  !> Compute index offset for indexing in 4D array shaped (*, n2, n3, n4)
   pure integer function ix_offset4(i1, i2, i3, i4, n2, n3, n4)
     !$acc routine seq
     integer, intent(in) :: i1, i2, i3, i4, n2, n3, n4
@@ -4001,10 +4000,18 @@ contains
          (i4 - 1)
   end function ix_offset4
 
+  !> Compute index offset for indexing in 3D array shaped (*, n2, n3)
   pure integer function ix_offset3(i1, i2, i3, n2, n3)
     !$acc routine seq
     integer, intent(in) :: i1, i2, i3, n2, n3
     ix_offset3 = (i1 - 1) * n2 * n3 + (i2 - 1) * n3 + (i3 - 1)
   end function ix_offset3
+
+  !> Compute index offset for indexing in 2D array shaped (*, n2)
+  pure integer function ix_offset2(i1, i2, n2)
+    !$acc routine seq
+    integer, intent(in) :: i1, i2, n2
+    ix_offset2 = (i1 - 1) * n2 + (i2 - 1)
+  end function ix_offset2
 
 end module m_foap4_${NDIM}$d

@@ -44,8 +44,8 @@ src/test_euler_2d.o: src/m_euler.mod
 src/test_euler_3d.o: src/m_euler.mod
 test_euler_2d: src/m_euler.o
 test_euler_3d: src/m_euler.o
-src/m_foap4_2d.o: src/m_xdmf_writer.mod
-src/m_foap4_3d.o: src/m_xdmf_writer.mod
+src/m_foap4_2d.o: src/m_xdmf_writer.mod src/p4est_wrapper_2d.o
+src/m_foap4_3d.o: src/m_xdmf_writer.mod src/p4est_wrapper_3d.o
 
 .PHONY: clean
 clean:
