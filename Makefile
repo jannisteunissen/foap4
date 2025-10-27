@@ -9,7 +9,7 @@ LIBS := p4est sc z m
 CFLAGS := -Wall -O2 -g
 TARGETS_2D := test_refinement_2d test_advection_2d test_xdmf_writer_2d test_euler_2d	\
 	benchmark_ghostcell_2d
-TARGETS_3D := test_refinement_3d
+TARGETS_3D := test_refinement_3d test_advection_3d
 
 .PHONY: all
 all: $(TARGETS_2D) $(TARGETS_3D)
@@ -24,6 +24,7 @@ ifeq ($(compiler_brand), GNU)
 	ifeq ($(DEBUG), 1)
 		FFLAGS += -O0 -fcheck=all -ffpe-trap=invalid,zero,overflow	\
 		-finit-real=snan
+		CFLAGS += -O0
 	endif
 else ifeq ($(compiler_brand), nvfortran)
 	FFLAGS ?= -Wall -acc=gpu -fast -gpu=ccnative -Mpreprocess -static-nvidia	\

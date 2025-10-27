@@ -59,7 +59,7 @@ void pw_initialize(pw_state_t **pw_ptr, MPI_Fint *comm_fortran,
   mpiret = sc_MPI_Init (&argc, NULL);
   SC_CHECK_MPI (mpiret);
 
-  sc_init (pw->mpicomm, 1, 1, NULL, log_level);
+  sc_init (pw->mpicomm, 0, 0, NULL, log_level);
   p4est_init (NULL, log_level);
 
   *comm_fortran = MPI_Comm_c2f(pw->mpicomm);

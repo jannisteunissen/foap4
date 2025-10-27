@@ -1,3 +1,4 @@
+#:include 'definitions.fpp'
 program test_ref
   use m_config
   use m_foap4_${NDIM}$d
@@ -12,25 +13,22 @@ program test_ref
   integer           :: min_level
   integer           :: num_refine_steps
   type(foap4_t)     :: f4
-  integer           :: n, n_gc, i, j, bx(NDIM)
+  integer           :: n, n_gc, ${IJK}$, bx(NDIM)
   integer           :: max_blocks
   logical           :: test_coarsening
   logical           :: write_output
   logical           :: abort_on_error
   real(dp)          :: r_ref(NDIM)
   character(len=80) :: output_name
-#:if NDIM == 3
-  integer           :: k
-#:endif
 
 #:if NDIM == 2
   min_level = 3
   num_refine_steps = 7
-  max_blocks = 1000
+  max_blocks = 2000
 #:elif NDIM == 3
   min_level = 2
   num_refine_steps = 5
-  max_blocks = 1000
+  max_blocks = 5000
 #:endif
 
   write_output    = .false.

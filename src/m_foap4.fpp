@@ -4,21 +4,7 @@
 !> methods.
 !>
 !> Author(s): Jannis Teunissen
-#:mute
-#:def DTIMES(text)
-#:if NDIM == 2
-${text}$, ${text}$
-#:elif NDIM == 3
-${text}$, ${text}$, ${text}$
-#:endif
-#:enddef
-
-#:if NDIM == 2
-#:set IJK='i, j'
-#:elif NDIM == 3
-#:set IJK='i, j, k'
-#:endif
-#:endmute
+#:include 'definitions.fpp'
 module m_foap4_${NDIM}$d
   use, intrinsic :: iso_c_binding
   use mpi_f08
@@ -720,14 +706,14 @@ contains
 #:if NDIM == 2
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
          f4%n_vars_all, max_blocks))
-    allocate(f4%bflux(bx(1), 0:2*ndim-1, n_vars, max_blocks))
+    allocate(f4%bflux(bx(1), 0:2*NDIM-1, n_vars, max_blocks))
     f4%gc_data_size = f4%bx(1) * f4%n_gc
     f4%gc_data_size_c2f = (f4%bx(1)/2) * f4%n_gc
     f4%gc_data_size_fluxfix = f4%bx(1)/2
 #:elif NDIM == 3
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, 1-n_gc:bx(3)+n_gc, &
          f4%n_vars_all, max_blocks))
-    allocate(f4%bflux(bx(1), bx(2), 0:2*ndim-1, n_vars, max_blocks))
+    allocate(f4%bflux(bx(1), bx(2), 0:2*NDIM-1, n_vars, max_blocks))
     f4%gc_data_size = f4%bx(1)**2 * f4%n_gc
     f4%gc_data_size_c2f = (f4%bx(1)/2)**2 * f4%n_gc
     f4%gc_data_size_fluxfix = (f4%bx(1)/2)**2
@@ -3434,7 +3420,7 @@ contains
              ivar = i_vars(iv)
              i_f = 2 * i - 1
 
-             i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$)
+             i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$) + 1
 
              f4%send_buffer(i_buf) = 0.5_dp * ( &
                   f4%bflux(i_f, ${face}$, ivar, i_fine) + &
@@ -3450,7 +3436,7 @@ contains
                 i_f = 2 * i - 1
                 j_f = 2 * j - 1
 
-                i_buf = i_buf0 + ix_offset3(iv, j, i, n_vars, ${jlim}$)
+                i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
 
                 f4%send_buffer(i_buf) = 0.25_dp * ( &
                      f4%bflux(i_f, j_f, ${face}$, ivar, i_fine) + &
@@ -3531,7 +3517,7 @@ contains
              ivar = i_vars(iv)
              i_c = i + offset(1) * ${ilim}$
 
-             i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$)
+             i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$) + 1
              flux_diff = fac * ( &
                   f4%bflux(i_c, ${face}$, ivar, i_coarse) - &
                   f4%recv_buffer(i_buf))
@@ -3596,7 +3582,7 @@ contains
                 i_c = i + offset(1) * ${ilim}$
                 j_c = j + offset(2) * ${jlim}$
 
-                i_buf = i_buf0 + ix_offset3(iv, j, i, n_vars, ${jlim}$)
+                i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
                 flux_diff = fac * ( &
                      f4%bflux(i_c, j_c, ${face}$, ivar, i_coarse) - &
                      f4%recv_buffer(i_buf))
