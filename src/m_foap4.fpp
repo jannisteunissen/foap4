@@ -3462,8 +3462,8 @@ contains
     @:fyp_fixflux_to_buf(1, half_bx(2), half_bx(3))
     @:fyp_fixflux_to_buf(2, half_bx(1), half_bx(3))
     @:fyp_fixflux_to_buf(3, half_bx(1), half_bx(3))
-    @:fyp_fixflux_to_buf(2, half_bx(1), half_bx(2))
-    @:fyp_fixflux_to_buf(3, half_bx(1), half_bx(2))
+    @:fyp_fixflux_to_buf(4, half_bx(1), half_bx(2))
+    @:fyp_fixflux_to_buf(5, half_bx(1), half_bx(2))
 #:endif
 
     !$acc end parallel
