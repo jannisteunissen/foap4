@@ -279,7 +279,7 @@ contains
           dvar(${IJK}$) = dt * ( &
                (fx(1) - fx(2)) * inv_dr(1) + &
                (fy(1) - fy(2)) * inv_dr(2) + &
-               (fz(1) - fy(2)) * inv_dr(3))
+               (fz(1) - fz(2)) * inv_dr(3))
 
           ! Store boundary fluxes
           if (i == 1)     f4%bflux(j, k, 0, i_rho, n) = dt * fx(1)
