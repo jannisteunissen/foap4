@@ -198,35 +198,17 @@ contains
 
   subroutine set_init_cond(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n, i, j
+    integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
-#:if NDIM == 3
-    integer                      :: k
-#:endif
 
     !$acc parallel loop
     do n = 1, f4%n_blocks
-#:if NDIM == 2
-       !$acc loop collapse(2) private(rr)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-             rr = f4_cell_coord(f4, n, i, j)
-             f4%uu(i, j, i_phi, n) = phi_init(rr(1), rr(2))
-             f4%uu(i, j, i_err, n) = 0.0_dp
-          end do
-       end do
-#:elif NDIM == 3
-       !$acc loop collapse(3) private(rr)
-       do k = 1, f4%bx(3)
-          do j = 1, f4%bx(2)
-             do i = 1, f4%bx(1)
-                rr = f4_cell_coord(f4, n, i, j, k)
-                f4%uu(i, j, k, i_phi, n) = phi_init(rr(1), rr(2), rr(3))
-                f4%uu(i, j, k, i_err, n) = 0.0_dp
-             end do
-          end do
-       end do
-#:endif
+       !$acc loop collapse(${NDIM}$) private(rr)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          rr = f4_cell_coord(f4, n, ${IJK}$)
+          f4%uu(${IJK}$, i_phi, n) = phi_init(@{DINDEX(rr)}@)
+          f4%uu(${IJK}$, i_err, n) = 0.0_dp
+       end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_init_cond
 
@@ -258,104 +240,55 @@ contains
 
   subroutine local_average(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n, i, j, iv
-#:if NDIM == 2
-    real(dp), allocatable        :: tmp(:, :)
+    integer                      :: n, ${IJK}$, iv
+    real(dp), allocatable        :: tmp(@{DTIMES(:)}@)
 
-    allocate(tmp(f4%bx(1), f4%bx(2)))
-#:elif NDIM == 3
-    integer                      :: k
-    real(dp), allocatable        :: tmp(:, :, :)
-
-    allocate(tmp(f4%bx(1), f4%bx(2), f4%bx(3)))
-#:endif
-
+    allocate(tmp(@{DINDEX(f4%bx)}@))
     iv = i_phi
 
     !$acc parallel loop private(tmp)
     do n = 1, f4%n_blocks
+       !$acc loop collapse(${NDIM}$)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
 #:if NDIM == 2
-       !$acc loop collapse(2)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-             tmp(i, j) = 0.25_dp * ( &
-                  f4%uu(i-1, j, iv, n) + &
-                  f4%uu(i+1, j, iv, n) + &
-                  f4%uu(i, j-1, iv, n) + &
-                  f4%uu(i, j+1, iv, n))
-          end do
-       end do
-
-       !$acc loop collapse(2)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-             f4%uu(i, j, iv, n) = tmp(i, j)
-          end do
-       end do
+          tmp(i, j) = 0.25_dp * ( &
+               f4%uu(i-1, j, iv, n) + &
+               f4%uu(i+1, j, iv, n) + &
+               f4%uu(i, j-1, iv, n) + &
+               f4%uu(i, j+1, iv, n))
 #:elif NDIM == 3
-       !$acc loop collapse(3)
-       do k = 1, f4%bx(3)
-          do j = 1, f4%bx(2)
-             do i = 1, f4%bx(1)
-                tmp(i, j, k) = (1/6.0_dp) * ( &
-                     f4%uu(i-1, j, k, iv, n) + &
-                     f4%uu(i+1, j, k, iv, n) + &
-                     f4%uu(i, j-1, k, iv, n) + &
-                     f4%uu(i, j+1, k, iv, n) + &
-                     f4%uu(i, j, k-1, iv, n) + &
-                     f4%uu(i, j, k+1, iv, n))
-             end do
-          end do
-       end do
-
-       !$acc loop collapse(3)
-       do k = 1, f4%bx(3)
-          do j = 1, f4%bx(2)
-             do i = 1, f4%bx(1)
-                f4%uu(i, j, k, iv, n) = tmp(i, j, k)
-             end do
-          end do
-       end do
+          tmp(i, j, k) = (1/6.0_dp) * ( &
+               f4%uu(i-1, j, k, iv, n) + &
+               f4%uu(i+1, j, k, iv, n) + &
+               f4%uu(i, j-1, k, iv, n) + &
+               f4%uu(i, j+1, k, iv, n) + &
+               f4%uu(i, j, k-1, iv, n) + &
+               f4%uu(i, j, k+1, iv, n))
 #:endif
+       end do; ${KJI_CLOSE_LOOP}$
+
+       !$acc loop collapse(NDIM)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          f4%uu(${IJK}$, iv, n) = tmp(${IJK}$)
+       end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine local_average
 
   subroutine compute_error(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n, i, j, iv
+    integer                      :: n, ${IJK}$, iv
     real(dp)                     :: rr(NDIM), sol
-#:if NDIM == 3
-    integer                      :: k
-#:endif
 
     iv = i_phi
 
     !$acc parallel loop
     do n = 1, f4%n_blocks
-#:if NDIM == 2
-       !$acc loop collapse(2) private(rr, sol)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-             rr = f4_cell_coord(f4, n, i, j)
-             sol = phi_init(rr(1), rr(2))
-             f4%uu(i, j, i_err, n) = f4%uu(i, j, i_phi, n) - sol
-          end do
-       end do
-#:elif NDIM == 3
-       !$acc loop collapse(3) private(rr, sol)
-       do k = 1, f4%bx(3)
-          do j = 1, f4%bx(2)
-             do i = 1, f4%bx(1)
-                rr = f4_cell_coord(f4, n, i, j, k)
-                sol = phi_init(rr(1), rr(2), rr(3))
-                f4%uu(i, j, k, i_err, n) = f4%uu(i, j, k, i_phi, n) - sol
-                if (abs(f4%uu(i, j, k, i_err, n)) > 1e-10_dp) then
-                   print *, i, j, k, f4%uu(i, j, k, i_err, n), f4%block_level(n)
-                end if
-             end do
-          end do
-       end do
-#:endif
+       !$acc loop collapse(${NDIM}$) private(rr, sol)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          rr = f4_cell_coord(f4, n, ${IJK}$)
+          sol = phi_init(@{DINDEX(rr)}@)
+          f4%uu(${IJK}$, i_err, n) = f4%uu(${IJK}$, i_phi, n) - sol
+       end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine compute_error
 
