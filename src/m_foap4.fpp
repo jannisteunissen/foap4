@@ -1629,9 +1629,9 @@ contains
 
 #:if NDIM == 2
 #:def fyp_c2f_to_buf(face, ilim='half_bx(1)', jlim='half_bx(2)', &
-    &ic0=0, jc0=0)
-    !$acc loop private(iq, offset, i_buf0, i, j)
-    do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
+      &ic0=0, jc0=0)
+      !$acc loop private(iq, offset, i_buf0)
+      do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
          iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
          offset(1) = f4%gc_c2f_to_buf(2, n)
          i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars
@@ -1656,200 +1656,278 @@ contains
          i_buf0 = i_buf0 + 4 * n_vars * ${jlim}$ * ${ilim}$
 
          if (odd_n_gc) then
+            !$acc loop collapse(2) private(ivar, i_c, j_c, i_buf, fine)
+            do iv = 1, n_vars
 #:if face == '0'
-          i = half_n_gc + 1
+               do j = 1, ${jlim}$
+                  ! i = half_n_gc + 1
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + half_n_gc + 1
+                  j_c = ${jc0}$ + j
+
+                  call prolong_minmod(uu(i_c, j_c, iv, iq), &
+                       uu(i_c-1, j_c, iv, iq), uu(i_c+1, j_c, iv, iq), &
+                       uu(i_c, j_c-1, iv, iq), uu(i_c, j_c+1, iv, iq), fine)
+
+                  i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
+                  f4%send_buffer(i_buf+1) = fine(1)
+                  f4%send_buffer(i_buf+2) = fine(3)
+               end do
 #:elif face == '1'
-          i = 0
+               do j = 1, ${jlim}$
+                  ! i = 0
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + 0
+                  j_c = ${jc0}$ + j
+
+                  call prolong_minmod(uu(i_c, j_c, iv, iq), &
+                       uu(i_c-1, j_c, iv, iq), uu(i_c+1, j_c, iv, iq), &
+                       uu(i_c, j_c-1, iv, iq), uu(i_c, j_c+1, iv, iq), fine)
+
+                  i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
+                  f4%send_buffer(i_buf+1) = fine(2)
+                  f4%send_buffer(i_buf+2) = fine(4)
+               end do
 #:elif face == '2'
-          j = half_n_gc + 1
+               do i = 1, ${ilim}$
+                  ! j = half_n_gc + 1
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + i
+                  j_c = ${jc0}$ + half_n_gc + 1
+
+                  call prolong_minmod(uu(i_c, j_c, iv, iq), &
+                       uu(i_c-1, j_c, iv, iq), uu(i_c+1, j_c, iv, iq), &
+                       uu(i_c, j_c-1, iv, iq), uu(i_c, j_c+1, iv, iq), fine)
+
+                  i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
+                  f4%send_buffer(i_buf+1) = fine(1)
+                  f4%send_buffer(i_buf+2) = fine(2)
+               end do
 #:elif face == '3'
-          j = 0
+               do i = 1, ${ilim}$
+                  ! j = 0
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + i
+                  j_c = ${jc0}$ + 0
+
+                  call prolong_minmod(uu(i_c, j_c, iv, iq), &
+                       uu(i_c-1, j_c, iv, iq), uu(i_c+1, j_c, iv, iq), &
+                       uu(i_c, j_c-1, iv, iq), uu(i_c, j_c+1, iv, iq), fine)
+
+                  i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
+                  f4%send_buffer(i_buf+1) = fine(3)
+                  f4%send_buffer(i_buf+2) = fine(4)
+               end do
 #:endif
-
-          !$acc loop collapse(2) private(ivar, i_c, j_c)
-          do iv = 1, n_vars
-#:if face in ['0', '1']
-             do j = 1, ${jlim}$
-#:elif face in ['2', '3']
-             do i = 1, ${ilim}$
-#:endif
-                ivar = i_vars(iv)
-                i_c = ${ic0}$ + i
-                j_c = ${jc0}$ + j
-
-                call prolong_minmod(uu(i_c, j_c, iv, iq), &
-                     uu(i_c-1, j_c, iv, iq), uu(i_c+1, j_c, iv, iq), &
-                     uu(i_c, j_c-1, iv, iq), uu(i_c, j_c+1, iv, iq), fine)
-
-#:if face == '0'
-                i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
-                f4%send_buffer(i_buf+1) = fine(1)
-                f4%send_buffer(i_buf+2) = fine(3)
-#:elif face == '1'
-                i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
-                f4%send_buffer(i_buf+1) = fine(2)
-                f4%send_buffer(i_buf+2) = fine(4)
-#:elif face == '2'
-                i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
-                f4%send_buffer(i_buf+1) = fine(1)
-                f4%send_buffer(i_buf+2) = fine(2)
-#:elif face == '3'
-                i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
-                f4%send_buffer(i_buf+1) = fine(3)
-                f4%send_buffer(i_buf+2) = fine(4)
-#:endif
-
-             end do
-          end do
-       end if
-    end do
+         end do
+      end if
+   end do
 #:enddef
 #:elif NDIM == 3
 #:def fyp_c2f_to_buf(face, ilim='half_bx(1)', jlim='half_bx(2)', &
-    klim='half_bx(3)', ic0=0, jc0=0, kc0=0)
-    !$acc loop private(iq, offset, i_buf0, i, j, k)
-    do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
-         iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
-         offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
-         i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars
+   klim='half_bx(3)', ic0=0, jc0=0, kc0=0)
+   !$acc loop private(iq, offset, i_buf0)
+   do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
+      iq = f4%gc_c2f_to_buf(1, n) + 1 ! coarse block
+      offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
+      i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars
 
-         !$acc loop collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine)
-         do iv = 1, n_vars
-            do k = 1, ${klim}$
-               do j = 1, ${jlim}$
-                  do i = 1,  ${ilim}$
-                     ivar = i_vars(iv)
-                     i_c = ${ic0}$ + i
-                     j_c = ${jc0}$ + j
-                     k_c = ${kc0}$ + k
+      !$acc loop collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine)
+      do iv = 1, n_vars
+         do k = 1, ${klim}$
+            do j = 1, ${jlim}$
+               do i = 1,  ${ilim}$
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + i
+                  j_c = ${jc0}$ + j
+                  k_c = ${kc0}$ + k
 
-                     call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
-                          uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
-                          uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
-                          uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
-                          fine)
+                  call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
+                       uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
+                       uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
+                       uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
+                       fine)
 
-                     i_buf = i_buf0 + 8 * &
-                          ix_offset4(iv, k, j, i, ${klim}$, ${jlim}$, ${ilim}$)
-                     f4%send_buffer(i_buf+1:i_buf+8) = fine
-                  end do
+                  i_buf = i_buf0 + 8 * &
+                       ix_offset4(iv, k, j, i, ${klim}$, ${jlim}$, ${ilim}$)
+                  f4%send_buffer(i_buf+1:i_buf+8) = fine
                end do
             end do
          end do
+      end do
 
-         i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+      i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
 
-         if (odd_n_gc) then
+      if (odd_n_gc) then
+         !$acc loop collapse(3) private(ivar, i_c, j_c, k_c, i_buf, fine)
+         do iv = 1, n_vars
 #:if face == '0'
-          i = half_n_gc + 1
+            do k = 1, ${klim}$
+               do j = 1, ${jlim}$
+                  ! i = half_n_gc + 1
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + half_n_gc + 1
+                  j_c = ${jc0}$ + j
+                  k_c = ${kc0}$ + k
+
+                  call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
+                       uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
+                       uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
+                       uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
+                       fine)
+                  i_buf = i_buf0 + 4 * ix_offset3(iv, k, j, n_vars, ${klim}$)
+                  f4%send_buffer(i_buf+1) = fine(1)
+                  f4%send_buffer(i_buf+2) = fine(3)
+                  f4%send_buffer(i_buf+3) = fine(5)
+                  f4%send_buffer(i_buf+4) = fine(7)
+               end do
+            end do
 #:elif face == '1'
-          i = 0
+            do k = 1, ${klim}$
+               do j = 1, ${jlim}$
+                  ! i = 0
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + 0
+                  j_c = ${jc0}$ + j
+                  k_c = ${kc0}$ + k
+
+                  call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
+                       uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
+                       uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
+                       uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
+                       fine)
+
+                  i_buf = i_buf0 + 4 * ix_offset3(iv, k, j, n_vars, ${klim}$)
+                  f4%send_buffer(i_buf+1) = fine(2)
+                  f4%send_buffer(i_buf+2) = fine(4)
+                  f4%send_buffer(i_buf+3) = fine(6)
+                  f4%send_buffer(i_buf+4) = fine(8)
+               end do
+            end do
 #:elif face == '2'
-          j = half_n_gc + 1
+            do k = 1, ${klim}$
+               do i = 1, ${ilim}$
+                  ! j = half_n_gc + 1
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + i
+                  j_c = ${jc0}$ + half_n_gc + 1
+                  k_c = ${kc0}$ + k
+
+                  call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
+                       uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
+                       uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
+                       uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
+                       fine)
+
+                  i_buf = i_buf0 + 4 * ix_offset3(iv, k, i, n_vars, ${klim}$)
+                  f4%send_buffer(i_buf+1) = fine(1)
+                  f4%send_buffer(i_buf+2) = fine(2)
+                  f4%send_buffer(i_buf+3) = fine(5)
+                  f4%send_buffer(i_buf+4) = fine(6)
+               end do
+            end do
 #:elif face == '3'
-          j = 0
+            do k = 1, ${klim}$
+               do i = 1, ${ilim}$
+                  ! j = 0
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + i
+                  j_c = ${jc0}$ + 0
+                  k_c = ${kc0}$ + k
+
+                  call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
+                       uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
+                       uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
+                       uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
+                       fine)
+
+                  i_buf = i_buf0 + 4 * ix_offset3(iv, k, i, n_vars, ${klim}$)
+                  f4%send_buffer(i_buf+1) = fine(3)
+                  f4%send_buffer(i_buf+2) = fine(4)
+                  f4%send_buffer(i_buf+3) = fine(7)
+                  f4%send_buffer(i_buf+4) = fine(8)
+               end do
+            end do
 #:elif face == '4'
-          k = half_n_gc + 1
+            do j = 1, ${jlim}$
+               do i = 1, ${ilim}$
+                  ! k = half_n_gc + 1
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + i
+                  j_c = ${jc0}$ + j
+                  k_c = ${kc0}$ + half_n_gc + 1
+
+                  call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
+                       uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
+                       uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
+                       uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
+                       fine)
+
+                  i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, n_vars, ${jlim}$)
+                  f4%send_buffer(i_buf+1) = fine(1)
+                  f4%send_buffer(i_buf+2) = fine(2)
+                  f4%send_buffer(i_buf+3) = fine(3)
+                  f4%send_buffer(i_buf+4) = fine(4)
+               end do
+            end do
+
 #:elif face == '5'
-          k = 0
-#:endif
+            do j = 1, ${jlim}$
+               do i = 1, ${ilim}$
+                  ! k = 0
+                  ivar = i_vars(iv)
+                  i_c = ${ic0}$ + i
+                  j_c = ${jc0}$ + j
+                  k_c = ${kc0}$ + 0
 
-          !$acc loop collapse(2) private(ivar, i_c, j_c, k_c)
-          do iv = 1, n_vars
-#:if face in ['0', '1']
-             do k = 1, ${klim}$
-                do j = 1, ${jlim}$
-#:elif face in ['2', '3']
-             do k = 1, ${klim}$
-                do i = 1, ${ilim}$
-#:elif face in ['4', '5']
-             do j = 1, ${jlim}$
-                do i = 1, ${ilim}$
-#:endif
-                   ivar = i_vars(iv)
-                   i_c = ${ic0}$ + i
-                   j_c = ${jc0}$ + j
-                   k_c = ${kc0}$ + k
+                  call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
+                       uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
+                       uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
+                       uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
+                       fine)
 
-                   call prolong_minmod(uu(i_c, j_c, k_c, iv, iq), &
-                        uu(i_c-1, j_c, k_c, iv, iq), uu(i_c+1, j_c, k_c, iv, iq), &
-                        uu(i_c, j_c-1, k_c, iv, iq), uu(i_c, j_c+1, k_c, iv, iq), &
-                        uu(i_c, j_c, k_c-1, iv, iq), uu(i_c, j_c, k_c+1, iv, iq), &
-                        fine)
-
-#:if face == '0'
-                   i_buf = i_buf0 + 4 * ix_offset3(iv, k, j, n_vars, ${klim}$)
-                   f4%send_buffer(i_buf+1) = fine(1)
-                   f4%send_buffer(i_buf+2) = fine(3)
-                   f4%send_buffer(i_buf+3) = fine(5)
-                   f4%send_buffer(i_buf+4) = fine(7)
-#:elif face == '1'
-                   i_buf = i_buf0 + 4 * ix_offset3(iv, k, j, n_vars, ${klim}$)
-                   f4%send_buffer(i_buf+1) = fine(2)
-                   f4%send_buffer(i_buf+2) = fine(4)
-                   f4%send_buffer(i_buf+3) = fine(6)
-                   f4%send_buffer(i_buf+4) = fine(8)
-#:elif face == '2'
-                   i_buf = i_buf0 + 4 * ix_offset3(iv, k, i, n_vars, ${klim}$)
-                   f4%send_buffer(i_buf+1) = fine(1)
-                   f4%send_buffer(i_buf+2) = fine(2)
-                   f4%send_buffer(i_buf+3) = fine(5)
-                   f4%send_buffer(i_buf+4) = fine(6)
-#:elif face == '3'
-                   i_buf = i_buf0 + 4 * ix_offset3(iv, k, i, n_vars, ${klim}$)
-                   f4%send_buffer(i_buf+1) = fine(3)
-                   f4%send_buffer(i_buf+2) = fine(4)
-                   f4%send_buffer(i_buf+3) = fine(7)
-                   f4%send_buffer(i_buf+4) = fine(8)
-#:elif face == '4'
-                   i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, n_vars, ${jlim}$)
-                   f4%send_buffer(i_buf+1) = fine(1)
-                   f4%send_buffer(i_buf+2) = fine(2)
-                   f4%send_buffer(i_buf+3) = fine(3)
-                   f4%send_buffer(i_buf+4) = fine(4)
-#:elif face == '5'
-                   i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, n_vars, ${jlim}$)
-                   f4%send_buffer(i_buf+1) = fine(5)
-                   f4%send_buffer(i_buf+2) = fine(6)
-                   f4%send_buffer(i_buf+3) = fine(7)
-                   f4%send_buffer(i_buf+4) = fine(8)
+                  i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, n_vars, ${jlim}$)
+                  f4%send_buffer(i_buf+1) = fine(5)
+                  f4%send_buffer(i_buf+2) = fine(6)
+                  f4%send_buffer(i_buf+3) = fine(7)
+                  f4%send_buffer(i_buf+4) = fine(8)
+               end do
+            end do
 #:endif
-                end do
-             end do
-          end do
-       end if
-    end do
+         end do
+      end if
+   end do
 #:enddef
 #:endif
 
-      !$acc parallel
+   !$acc parallel
 
 #:if NDIM == 2
-    @:fyp_c2f_to_buf(0, ilim=half_n_gc, jc0=offset(1)*half_bx(2))
-    @:fyp_c2f_to_buf(1, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
-         &jc0=offset(1)*half_bx(2))
-    @:fyp_c2f_to_buf(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1))
-    @:fyp_c2f_to_buf(3, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=bx(2)-half_n_gc)
+   @:fyp_c2f_to_buf(0, ilim=half_n_gc, jc0=offset(1)*half_bx(2))
+   @:fyp_c2f_to_buf(1, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
+        &jc0=offset(1)*half_bx(2))
+   @:fyp_c2f_to_buf(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1))
+   @:fyp_c2f_to_buf(3, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
+        &jc0=bx(2)-half_n_gc)
 #:elif NDIM == 3
-    @:fyp_c2f_to_buf(0, ilim=half_n_gc, jc0=offset(1)*half_bx(2), &
-         &kc0=offset(2)*half_bx(3))
-    @:fyp_c2f_to_buf(1, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
-         &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3))
-    @:fyp_c2f_to_buf(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &kc0=offset(2)*half_bx(3))
-    @:fyp_c2f_to_buf(3, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=bx(2)-half_n_gc, kc0=offset(2)*half_bx(3))
-    @:fyp_c2f_to_buf(4, klim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=offset(2)*half_bx(2))
-    @:fyp_c2f_to_buf(5, klim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=offset(2)*half_bx(2), kc0=bx(3)-half_n_gc)
+   @:fyp_c2f_to_buf(0, ilim=half_n_gc, jc0=offset(1)*half_bx(2), &
+        &kc0=offset(2)*half_bx(3))
+   @:fyp_c2f_to_buf(1, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
+        &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3))
+   @:fyp_c2f_to_buf(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
+        &kc0=offset(2)*half_bx(3))
+   @:fyp_c2f_to_buf(3, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
+        &jc0=bx(2)-half_n_gc, kc0=offset(2)*half_bx(3))
+   @:fyp_c2f_to_buf(4, klim=half_n_gc, ic0=offset(1)*half_bx(1), &
+        &jc0=offset(2)*half_bx(2))
+   @:fyp_c2f_to_buf(5, klim=half_n_gc, ic0=offset(1)*half_bx(1), &
+        &jc0=offset(2)*half_bx(2), kc0=bx(3)-half_n_gc)
 #:endif
 
-      !$acc end parallel
-    end associate
+   !$acc end parallel
+ end associate
 
-  end subroutine fill_ghostcell_buffers_round_two
+end subroutine fill_ghostcell_buffers_round_two
 
   !> Exchange the receive and send buffers according to the specified offsets
   !> per MPI rank
@@ -2191,7 +2269,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(4) private(i_f, j_f, ivar)
+       !$acc loop collapse(4) private(i_f, j_f, k_f, ivar)
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -2369,7 +2447,7 @@ contains
     integer                      :: k, k_c, k_f
 #:endif
     integer                      :: n, i, j, iq, jq, i_c, j_c, i_f, j_f
-    integer                      :: i_buf, i_buf0, iv, ivar
+    integer                      :: i_buf, i_buf0, iv, ivar, face
     integer                      :: half_bx(NDIM), half_n_gc, offset(NDIM-1)
     logical                      :: odd_n_gc
     real(dp)                     :: fine(2**NDIM)
@@ -2385,7 +2463,7 @@ contains
 #:if NDIM == 2
 #:def fyp_f2c_local_fine(face, ilim='half_bx(1)', jlim='half_bx(2)', &
     &ic0=0, jc0=0, if0=0, jf0=0)
-    !$acc loop private(iq, jq, offset, i, j)
+    !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -2412,48 +2490,73 @@ contains
        end do
 
        if (odd_n_gc) then
-#:if face == '0'
-          i = 0
-#:elif face == '1'
-          i = half_n_gc + 1
-#:elif face == '2'
-          j = 0
-#:elif face == '3'
-          j = half_n_gc + 1
-#:endif
-
           !$acc loop collapse(2) private(ivar, j_f, j_c, i_f, i_c, fine)
           do iv = 1, n_vars
-#:if face in ['0', '1']
+#:if face == '0'
              do j = 1, ${jlim}$
-#:elif face in ['2', '3']
-             do i = 1, ${ilim}$
-#:endif
+                ! i = 0
                 ivar = i_vars(iv)
-                i_f = ${if0}$ + 2 * i - 1
+                i_f = ${if0}$ + 2 * 0 - 1
                 j_f = ${jf0}$ + 2 * j - 1
-                i_c = ${ic0}$ + i
+                i_c = ${ic0}$ + 0
                 j_c = ${jc0}$ + j
 
                 call prolong_minmod(uu(i_c, j_c, iv, jq), &
                      uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
                      uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
 
-#:if face == '0'
                 uu(i_f+1, j_f  , ivar, iq) = fine(2)
                 uu(i_f+1, j_f+1, ivar, iq) = fine(4)
-#:elif face == '1'
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
-#:elif face == '2'
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
-                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
-#:elif face == '3'
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f+1, j_f  , ivar, iq) = fine(2)
-#:endif
-
              end do
+#:elif face == '1'
+             do j = 1, ${jlim}$
+                ! i = half_n_gc + 1
+                ivar = i_vars(iv)
+                i_f = ${if0}$ + 2 * (half_n_gc + 1) - 1
+                j_f = ${jf0}$ + 2 * j - 1
+                i_c = ${ic0}$ + (half_n_gc + 1)
+                j_c = ${jc0}$ + j
+
+                call prolong_minmod(uu(i_c, j_c, iv, jq), &
+                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
+                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+
+                uu(i_f  , j_f  , ivar, iq) = fine(1)
+                uu(i_f  , j_f+1, ivar, iq) = fine(3)
+             end do
+#:elif face == '2'
+             do i = 1, ${ilim}$
+                ! j = 0
+                ivar = i_vars(iv)
+                i_f = ${if0}$ + 2 * i - 1
+                j_f = ${jf0}$ + 2 * 0 - 1
+                i_c = ${ic0}$ + i
+                j_c = ${jc0}$ + 0
+
+                call prolong_minmod(uu(i_c, j_c, iv, jq), &
+                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
+                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+
+                uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
+             end do
+#:elif face == '3'
+             do i = 1, ${ilim}$
+                ! j = half_n_gc + 1
+                ivar = i_vars(iv)
+                i_f = ${if0}$ + 2 * i - 1
+                j_f = ${jf0}$ + 2 * (half_n_gc + 1) - 1
+                i_c = ${ic0}$ + i
+                j_c = ${jc0}$ + (half_n_gc + 1)
+
+                call prolong_minmod(uu(i_c, j_c, iv, jq), &
+                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
+                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+
+                uu(i_f  , j_f  , ivar, iq) = fine(1)
+                uu(i_f+1, j_f  , ivar, iq) = fine(2)
+             end do
+#:endif
           end do
        end if
     end do
@@ -2461,7 +2564,7 @@ contains
 #:elif NDIM == 3
 #:def fyp_f2c_local_fine(face, ilim='half_bx(1)', jlim='half_bx(2)', &
     &klim='half_bx(3)', ic0=0, jc0=0, kc0=0, if0=0, jf0=0, kf0=0)
-    !$acc loop private(iq, jq, offset, i, j, k)
+    !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 ! coarse block
@@ -2498,37 +2601,17 @@ contains
        end do
 
        if (odd_n_gc) then
-#:if face == '0'
-          i = 0
-#:elif face == '1'
-          i = half_n_gc + 1
-#:elif face == '2'
-          j = 0
-#:elif face == '3'
-          j = half_n_gc + 1
-#:elif face == '4'
-          k = 0
-#:elif face == '5'
-          k = half_n_gc + 1
-#:endif
-
-          !$acc loop collapse(3) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c)
+          !$acc loop collapse(3) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine)
           do iv = 1, n_vars
-#:if face in ['0', '1']
+#:if face == '0'
              do k = 1, ${klim}$
                 do j = 1, ${jlim}$
-#:elif face in ['2', '3']
-             do k = 1, ${klim}$
-                do i = 1, ${ilim}$
-#:elif face in ['4', '5']
-             do j = 1, ${jlim}$
-                do i = 1, ${ilim}$
-#:endif
+                   ! i = 0
                    ivar = i_vars(iv)
-                   i_f = ${if0}$ + 2 * i - 1
+                   i_f = ${if0}$ + 2 * 0 - 1
                    j_f = ${jf0}$ + 2 * j - 1
                    k_f = ${kf0}$ + 2 * k - 1
-                   i_c = ${ic0}$ + i
+                   i_c = ${ic0}$ + 0
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
@@ -2538,39 +2621,133 @@ contains
                         uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
                         fine)
 
-#:if face == '0'
                    uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
                    uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
                    uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
                    uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
-#:elif face == '1'
-                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
-                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
-                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
-#:elif face == '2'
-                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
-                   uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
-                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
-                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
-#:elif face == '3'
-                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
-                   uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
-                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
-#:elif face == '4'
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
-                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
-                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
-                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
-#:elif face == '5'
-                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
-                   uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
-                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
-                   uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
-#:endif
                 end do
              end do
+#:elif face == '1'
+             do k = 1, ${klim}$
+                do j = 1, ${jlim}$
+                   ! i = half_n_gc + 1
+                   ivar = i_vars(iv)
+                   i_f = ${if0}$ + 2 * (half_n_gc + 1) - 1
+                   j_f = ${jf0}$ + 2 * j - 1
+                   k_f = ${kf0}$ + 2 * k - 1
+                   i_c = ${ic0}$ + (half_n_gc + 1)
+                   j_c = ${jc0}$ + j
+                   k_c = ${kc0}$ + k
+
+                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
+                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
+                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
+                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                        fine)
+
+                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                end do
+             end do
+#:elif face == '2'
+             do k = 1, ${klim}$
+                do i = 1, ${ilim}$
+                   ! j = 0
+                   ivar = i_vars(iv)
+                   i_f = ${if0}$ + 2 * i - 1
+                   j_f = ${jf0}$ + 2 * 0 - 1
+                   k_f = ${kf0}$ + 2 * k - 1
+                   i_c = ${ic0}$ + i
+                   j_c = ${jc0}$ + 0
+                   k_c = ${kc0}$ + k
+
+                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
+                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
+                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
+                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                        fine)
+
+                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                   uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
+                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+                end do
+             end do
+#:elif face == '3'
+             do k = 1, ${klim}$
+                do i = 1, ${ilim}$
+                   ! j = half_n_gc + 1
+                   ivar = i_vars(iv)
+                   i_f = ${if0}$ + 2 * i - 1
+                   j_f = ${jf0}$ + 2 * (half_n_gc + 1) - 1
+                   k_f = ${kf0}$ + 2 * k - 1
+                   i_c = ${ic0}$ + i
+                   j_c = ${jc0}$ + (half_n_gc + 1)
+                   k_c = ${kc0}$ + k
+
+                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
+                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
+                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
+                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                        fine)
+
+                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                   uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
+                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                end do
+             end do
+#:elif face == '4'
+             do j = 1, ${jlim}$
+                do i = 1, ${ilim}$
+                   ! k = 0
+                   ivar = i_vars(iv)
+                   i_f = ${if0}$ + 2 * i - 1
+                   j_f = ${jf0}$ + 2 * j - 1
+                   k_f = ${kf0}$ + 2 * 0 - 1
+                   i_c = ${ic0}$ + i
+                   j_c = ${jc0}$ + j
+                   k_c = ${kc0}$ + 0
+
+                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
+                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
+                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
+                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                        fine)
+
+                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+                end do
+             end do
+#:elif face == '5'
+             do j = 1, ${jlim}$
+                do i = 1, ${ilim}$
+                   ! k = half_n_gc + 1
+                   ivar = i_vars(iv)
+                   i_f = ${if0}$ + 2 * i - 1
+                   j_f = ${jf0}$ + 2 * j - 1
+                   k_f = ${kf0}$ + 2 * (half_n_gc + 1) - 1
+                   i_c = ${ic0}$ + i
+                   j_c = ${jc0}$ + j
+                   k_c = ${kc0}$ + (half_n_gc + 1)
+
+                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
+                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
+                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
+                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                        fine)
+
+                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                   uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
+                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                   uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
+                end do
+             end do
+#:endif
           end do
        end if
     end do
@@ -2613,7 +2790,7 @@ contains
 
 #:if NDIM == 2
 #:def fyp_f2c_from_buf(face, ilim='half_bx(1)', jlim='half_bx(2)', if0=0, jf0=0)
-    !$acc loop private(iq, i_buf0, i, j)
+    !$acc loop private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2638,12 +2815,11 @@ contains
        if (odd_n_gc) then
           i_buf0 = i_buf0 + 4 * n_vars * ${jlim}$ * ${ilim}$
 #:if face == '0'
-          i_f = -n_gc + 1
-
-          !$acc loop collapse(2) private(ivar, j_f, i_buf)
+          !$acc loop collapse(2) private(ivar, i_f, j_f, i_buf)
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 ivar = i_vars(iv)
+                i_f = -n_gc + 1
                 j_f = 2 * j - 1
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
@@ -2652,12 +2828,11 @@ contains
              end do
           end do
 #:elif face == '1'
-          i_f = bx(1) + n_gc
-
-          !$acc loop collapse(2) private(ivar, j_f, i_buf)
+          !$acc loop collapse(2) private(ivar, i_f, j_f, i_buf)
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 ivar = i_vars(iv)
+                i_f = bx(1) + n_gc
                 j_f = 2 * j - 1
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
@@ -2666,13 +2841,12 @@ contains
              end do
           end do
 #:elif face == '2'
-          j_f = -n_gc + 1
-
-          !$acc loop collapse(2) private(ivar, i_f, i_buf)
+          !$acc loop collapse(2) private(ivar, i_f, j_f, i_buf)
           do iv = 1, n_vars
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
                 i_f = 2 * i - 1
+                j_f = -n_gc + 1
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
                 uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
@@ -2680,13 +2854,12 @@ contains
              end do
           end do
 #:elif face == '3'
-          j_f = bx(2) + n_gc
-
-          !$acc loop collapse(2) private(ivar, i_f, i_buf)
+          !$acc loop collapse(2) private(ivar, i_f, j_f, i_buf)
           do iv = 1, n_vars
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
                 i_f = 2 * i - 1
+                j_f = bx(2) + n_gc
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
                 uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
@@ -2700,7 +2873,7 @@ contains
 #:elif NDIM == 3
 #:def fyp_f2c_from_buf(face, ilim='half_bx(1)', jlim='half_bx(2)', &
     & klim='half_bx(3)', if0=0, jf0=0, kf0=0)
-    !$acc loop private(iq, i_buf0, i, j, k)
+    !$acc loop private(iq, i_buf0)
     do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
@@ -2733,17 +2906,16 @@ contains
        if (odd_n_gc) then
           i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
 #:if face in ['0', '1']
-#:if face == '0'
-          i_f = -n_gc + 1
-#:else
-          i_f = bx(1) + n_gc
-#:endif
-
-          !$acc loop collapse(3) private(ivar, k_f, j_f, i_buf)
+          !$acc loop collapse(3) private(ivar, k_f, j_f, i_f, i_buf)
           do iv = 1, n_vars
              do k = 1, ${klim}$
                 do j = 1, ${jlim}$
                    ivar = i_vars(iv)
+#:if face == '0'
+                   i_f = -n_gc + 1
+#:else
+                   i_f = bx(1) + n_gc
+#:endif
                    j_f = 2 * j - 1
                    k_f = 2 * k - 1
 
@@ -2756,17 +2928,17 @@ contains
              end do
           end do
 #:elif face in ['2', '3']
-#:if face == '2'
-          j_f = -n_gc + 1
-#:else
-          j_f = bx(2) + n_gc
-#:endif
-          !$acc loop collapse(3) private(ivar, k_f, i_f, i_buf)
+          !$acc loop collapse(3) private(ivar, k_f, j_f, i_f, i_buf)
           do iv = 1, n_vars
              do k = 1, ${klim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
                    i_f = 2 * i - 1
+#:if face == '2'
+                   j_f = -n_gc + 1
+#:else
+                   j_f = bx(2) + n_gc
+#:endif
                    k_f = 2 * k - 1
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, k, i, ${klim}$, ${ilim}$)
@@ -2778,18 +2950,18 @@ contains
              end do
           end do
 #:elif face in ['4', '5']
-#:if face == '4'
-          k_f = -n_gc + 1
-#:else
-          k_f = bx(3) + n_gc
-#:endif
-          !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
+          !$acc loop collapse(3) private(ivar, k_f, j_f, i_f, i_buf)
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
                    i_f = 2 * i - 1
                    j_f = 2 * j - 1
+#:if face == '4'
+                   k_f = -n_gc + 1
+#:else
+                   k_f = bx(3) + n_gc
+#:endif
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, ${jlim}$, ${ilim}$)
                    uu(i_f  , j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
