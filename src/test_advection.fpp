@@ -9,15 +9,16 @@ program test_adv
   integer, parameter :: dp = kind(0.0d0)
   integer, parameter :: NDIM = ${NDIM}$
 
-  integer, parameter :: n_vars            = 1
-  integer, parameter :: i_rho             = 1
-  character(len=20)  :: var_names(n_vars) = ['rho']
-  logical, parameter :: temporal(n_vars)  = .true.
-  real(dp)           :: velocity(NDIM)    = 1.0_dp
-  real(dp)           :: end_time          = 1.0_dp
-  real(dp)           :: c_refine          = 0.8_dp
-  real(dp)           :: c_derefine        = 0.2_dp
-  real(dp)           :: c_eps             = 0.01_dp
+  integer, parameter :: n_gc = 2
+  integer, parameter :: n_flux_vars            = 1
+  integer, parameter :: i_rho                  = 1
+  character(len=20)  :: var_names(n_flux_vars) = ['rho']
+  logical, parameter :: temporal(n_flux_vars)  = .true.
+  real(dp)           :: velocity(NDIM)         = 1.0_dp
+  real(dp)           :: end_time               = 1.0_dp
+  real(dp)           :: c_refine               = 0.8_dp
+  real(dp)           :: c_derefine             = 0.2_dp
+  real(dp)           :: c_eps                  = 0.01_dp
 
   logical           :: do_refinement        = .true.
   integer           :: max_refinement_level = 5
@@ -72,7 +73,6 @@ contains
     character(len=40), intent(in) :: integrator_name
     integer, parameter           :: n_blocks_per_dim(NDIM) = 1
     real(dp), parameter          :: block_length(NDIM) = 1.0_dp
-    integer, parameter           :: n_gc = 2
     logical, parameter           :: periodic(NDIM) = .true.
     real(dp), parameter          :: cfl_number = 0.5_dp
     integer                      :: n, prev_mesh_revision, n_output
@@ -94,7 +94,7 @@ contains
     n_time_states = f4_advance_num_copies(integrator)
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
-         n_vars, var_names, temporal, n_time_states, periodic, &
+         n_flux_vars, var_names, temporal, n_time_states, periodic, &
          min_refinement_level, max_blocks, f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
@@ -249,10 +249,10 @@ contains
 #:if NDIM == 2
           ! Compute fluxes
           tmp = f4%uu(i-2:i+2, j, i_rho+s_deriv, n)
-          call muscl_flux(velocity(1), tmp, fx)
+          call flux_two_sides(1, n_gc, n_flux_vars, tmp, fx)
 
           tmp = f4%uu(i, j-2:j+2, i_rho+s_deriv, n)
-          call muscl_flux(velocity(2), tmp, fy)
+          call flux_two_sides(2, n_gc, n_flux_vars, tmp, fy)
 
           ! Keep track of changes in variables
           dvar(i, j) = dt * ( &
@@ -267,13 +267,13 @@ contains
 #:elif NDIM == 3
           ! Compute fluxes
           tmp = f4%uu(i-2:i+2, j, k, i_rho+s_deriv, n)
-          call muscl_flux(velocity(1), tmp, fx)
+          call flux_two_sides(1, n_gc, n_flux_vars, tmp, fx)
 
           tmp = f4%uu(i, j-2:j+2, k, i_rho+s_deriv, n)
-          call muscl_flux(velocity(2), tmp, fy)
+          call flux_two_sides(2, n_gc, n_flux_vars, tmp, fy)
 
           tmp = f4%uu(i, j, k-2:k+2, i_rho+s_deriv, n)
-          call muscl_flux(velocity(3), tmp, fz)
+          call flux_two_sides(3, n_gc, n_flux_vars, tmp, fz)
 
           ! Keep track of changes in variables
           dvar(${IJK}$) = dt * ( &
@@ -308,24 +308,57 @@ contains
 
   end subroutine forward_euler
 
-  subroutine muscl_flux(v, u, flux)
+  subroutine flux_two_sides(flux_dim, n_gc, n_var, u, flux)
     !$acc routine seq
-    real(dp), intent(in)  :: v
-    real(dp), intent(in)  :: u(5)
-    real(dp), intent(out) :: flux(2)
-    real(dp)              :: u_diff(4), uL, uR
+    integer, intent(in)   :: flux_dim
+    integer, intent(in)   :: n_gc
+    integer, intent(in)   :: n_var
+    real(dp), intent(in)  :: u(1+2*n_gc, n_var)
+    real(dp), intent(out) :: flux(n_var, 2)
 
-    u_diff = u(2:5) - u(1:4)
+    call flux_one_side(flux_dim, n_var, n_gc, 0, u, flux(:, 1))
+    call flux_one_side(flux_dim, n_var, n_gc, 1, u, flux(:, 2))
+  end subroutine flux_two_sides
 
-    uL = u(2) + 0.5_dp * vanleer(u_diff(1), u_diff(2))
-    uR = u(3) - 0.5_dp * vanleer(u_diff(2), u_diff(3))
-    flux(1) = 0.5 * (v*uL + v*uR - abs(v) * (uR-uL))
+  subroutine flux_one_side(flux_dim, n_var, n_gc, i0, u, flux)
+    !$acc routine seq
+    integer, intent(in)   :: flux_dim
+    integer, intent(in)   :: n_var
+    integer, intent(in)   :: n_gc
+    integer, intent(in)   :: i0
+    real(dp), intent(in)  :: u(2*n_gc, n_var)
+    real(dp), intent(out) :: flux(n_var)
+    real(dp)              :: u_LR(n_var, 2)
+    real(dp)              :: flux_LR(n_var, 2)
+    real(dp)              :: cmax_LR(2)
 
-    uL = u(3) + 0.5_dp * vanleer(u_diff(2), u_diff(3))
-    uR = u(4) - 0.5_dp * vanleer(u_diff(3), u_diff(4))
-    flux(2) = 0.5 * (v*uL + v*uR - abs(v) * (uR-uL))
+    call reconstruct_vanleer(n_var, i0, u, u_LR)
+    call get_flux(flux_dim, n_var, u_LR(:, 1), flux_LR(:, 1), cmax_LR(1))
+    call get_flux(flux_dim, n_var, u_LR(:, 2), flux_LR(:, 2), cmax_LR(2))
 
-  end subroutine muscl_flux
+    flux = 0.5 * (flux_LR(:, 1) + flux_LR(:, 2) - maxval(cmax_LR) * (u_LR(:, 2) - u_LR(:, 1)))
+  end subroutine flux_one_side
+
+  subroutine get_flux(flux_dim, n_var, u, flux, max_wavespeed)
+    integer, intent(in)   :: flux_dim
+    integer, intent(in)   :: n_var
+    real(dp), intent(in)  :: u(n_var)
+    real(dp), intent(out) :: flux(n_var)
+    real(dp), intent(out) :: max_wavespeed
+
+    flux(1) = velocity(flux_dim) * u(1)
+    max_wavespeed = abs(velocity(flux_dim))
+  end subroutine get_flux
+
+  pure subroutine reconstruct_minmod(u, uL, uR)
+    real(dp), intent(in)  :: u(4)
+    real(dp), intent(out) :: uL
+    real(dp), intent(out) :: uR
+    real(dp)              :: u_diff(3)
+    u_diff = u(2:4) - u(1:3)
+    uL = u(2) + 0.5_dp * minmod(u_diff(1), u_diff(2))
+    uR = u(3) - 0.5_dp * minmod(u_diff(2), u_diff(3))
+  end subroutine reconstruct_minmod
 
   elemental pure real(dp) function minmod(a, b)
     real(dp), intent(in) :: a, b
@@ -338,6 +371,22 @@ contains
        minmod = b
     end if
   end function minmod
+
+  pure subroutine reconstruct_vanleer(n_vars, i0, u, u_LR)
+    !$acc routine seq
+    integer, intent(in)   :: n_vars
+    integer, intent(in)   :: i0
+    real(dp), intent(in)  :: u(5, n_vars)
+    real(dp), intent(out) :: u_LR(n_vars, 2)
+    real(dp)              :: u_diff(3)
+    integer               :: n
+
+    do n = 1, n_vars
+       u_diff = u(i0+2:i0+4, n) - u(i0+1:i0+3, n)
+       u_LR(n, 1)  = u(i0+2, n) + 0.5_dp * vanleer(u_diff(1), u_diff(2))
+       u_LR(n, 2)  = u(i0+3, n) - 0.5_dp * vanleer(u_diff(2), u_diff(3))
+    end do
+  end subroutine reconstruct_vanleer
 
   elemental pure real(dp) function vanleer(a, b) result(phi)
     real(dp), intent(in) :: a, b
