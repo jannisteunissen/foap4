@@ -38,13 +38,19 @@ endif
 $(TARGETS_2D): src/m_foap4_2d.o src/p4est_wrapper_2d.o src/m_xdmf_writer.o src/m_config.o
 $(TARGETS_3D): src/m_foap4_3d.o src/p4est_wrapper_3d.o src/m_xdmf_writer.o src/m_config.o
 
-$(addsuffix .o,$(addprefix src/,$(TARGETS_2D))): src/m_foap4_2d.mod
-$(addsuffix .o,$(addprefix src/,$(TARGETS_3D))): src/m_foap4_3d.mod
+$(addsuffix .o,$(addprefix src/,$(TARGETS_2D))): src/m_foap4_2d.mod src/m_config.mod
+$(addsuffix .o,$(addprefix src/,$(TARGETS_3D))): src/m_foap4_3d.mod src/m_config.mod
 
 src/test_euler_2d.o: src/m_euler.mod
 src/test_euler_3d.o: src/m_euler.mod
 test_euler_2d: src/m_euler.o
 test_euler_3d: src/m_euler.o
+
+src/test_advection_2d.o: src/m_advection.mod
+src/test_advection_3d.o: src/m_advection.mod
+test_advection_2d: src/m_advection.o
+test_advection_3d: src/m_advection.o
+
 src/m_foap4_2d.o: src/m_xdmf_writer.mod src/p4est_wrapper_2d.o
 src/m_foap4_3d.o: src/m_xdmf_writer.mod src/p4est_wrapper_3d.o
 

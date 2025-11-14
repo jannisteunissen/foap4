@@ -112,7 +112,7 @@ contains
           prev_mesh_revision = f4_get_mesh_revision(f4)
           call f4_update_ghostcells(f4, n_vars_euler, i_vars_grid)
           call f4_set_refinement_flags_diff2(f4, min_level, max_level, &
-               1, [i_rho], c_refine, c_derefine, c_eps)
+               i_rho, c_refine, c_derefine, c_eps)
           call f4_adjust_refinement(f4, .true.)
           call set_initial_conditions(f4, test_case)
 
@@ -154,7 +154,7 @@ contains
           call f4_get_global_highest_level(f4, prev_highest_level)
           call f4_update_ghostcells(f4, n_vars_euler, i_vars_grid)
           call f4_set_refinement_flags_diff2(f4, min_level, max_level, &
-               1, [i_rho], c_refine, c_derefine, c_eps)
+               i_rho, c_refine, c_derefine, c_eps)
           call f4_adjust_refinement(f4, .true.)
 
           call f4_get_global_highest_level(f4, highest_level)

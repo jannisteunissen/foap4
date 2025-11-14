@@ -1,24 +1,28 @@
 #:include 'definitions.fpp'
+
+#:set LIMITER = getvar('LIMITER', 'vanleer')
+#:set FLUX_SCHEME = getvar('FLUX_SCHEME', 'tvdlf')
+
 program test_adv
   use iso_fortran_env, only: int64
   use mpi_f08
   use m_foap4_${NDIM}$d
   use m_config
+  use m_advection
 
   implicit none
-  integer, parameter :: dp = kind(0.0d0)
-  integer, parameter :: NDIM = ${NDIM}$
 
-  integer, parameter :: n_gc = 2
-  integer, parameter :: n_flux_vars            = 1
-  integer, parameter :: i_rho                  = 1
-  character(len=20)  :: var_names(n_flux_vars) = ['rho']
-  logical, parameter :: temporal(n_flux_vars)  = .true.
-  real(dp)           :: velocity(NDIM)         = 1.0_dp
-  real(dp)           :: end_time               = 1.0_dp
-  real(dp)           :: c_refine               = 0.8_dp
-  real(dp)           :: c_derefine             = 0.2_dp
-  real(dp)           :: c_eps                  = 0.01_dp
+  include 'limiters/${LIMITER}$_num_ghostcells.f90'
+  integer, parameter :: dp   = kind(0.0d0)
+  integer, parameter :: NDIM = ${NDIM}$
+  integer, parameter :: n_gc = limiter_num_ghostcells
+
+  logical, parameter :: temporal(n_vars) = .true.
+  real(dp)           :: cfl_number       = 0.5_dp
+  real(dp)           :: end_time         = 1.0_dp
+  real(dp)           :: c_refine         = 0.8_dp
+  real(dp)           :: c_derefine       = 0.2_dp
+  real(dp)           :: c_eps            = 0.01_dp
 
   logical           :: do_refinement        = .true.
   integer           :: max_refinement_level = 5
@@ -45,9 +49,11 @@ program test_adv
   call CFG_add_get(cfg, 'c_eps', c_refine, 'Used in refinement criterion')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
-  call CFG_add_get(cfg, 'velocity', velocity, 'Velocity')
+  call CFG_add_get(cfg, 'velocity', velocity(1:NDIM), 'Velocity')
+  !$acc update device(velocity(1:NDIM))
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
+  call CFG_add_get(cfg, 'cfl_number', cfl_number, 'CFL number')
   call CFG_check(cfg)
 
   if (max_refinement_level < min_refinement_level) &
@@ -76,15 +82,16 @@ contains
     logical, parameter           :: periodic(NDIM) = .true.
     real(dp), parameter          :: cfl_number = 0.5_dp
     integer                      :: n, prev_mesh_revision, n_output
-    integer                      :: highest_level, n_iterations, ierr
+    integer                      :: highest_level, prev_highest_level, n_iterations, ierr
     integer(int64)               :: sum_local_blocks, sum_global_blocks
     logical                      :: write_this_step
     integer                      :: integrator, n_time_states
-    real(dp)                     :: dt, dt_lim, dt_output, min_dr(NDIM)
+    real(dp)                     :: dt, dt_lim, dt_output
     real(dp)                     :: time, t0, t1
     real(dp)                     :: rho_initial_sum, rho_sum
 
     time = 0.0_dp
+    dt_lim = 0.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
     n_output = 0
     n_iterations = 0
@@ -94,7 +101,7 @@ contains
     n_time_states = f4_advance_num_copies(integrator)
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
-         n_flux_vars, var_names, temporal, n_time_states, periodic, &
+         n_vars, var_names, temporal, n_time_states, periodic, &
          min_refinement_level, max_blocks, f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
@@ -102,9 +109,9 @@ contains
     if (do_refinement) then
        do n = 1, 10
           prev_mesh_revision = f4_get_mesh_revision(f4)
-          call f4_update_ghostcells(f4, 1, [i_rho])
+          call f4_update_ghostcells(f4, 1, i_vars)
           call f4_set_refinement_flags_diff2(f4, min_refinement_level, &
-               max_refinement_level, 1, [i_rho], c_refine, c_derefine, c_eps)
+               max_refinement_level, i_rho, c_refine, c_derefine, c_eps)
           call f4_adjust_refinement(f4, .true.)
           call set_init_cond(f4)
 
@@ -113,20 +120,18 @@ contains
     end if
 
     call f4_compute_sum(f4, i_rho, rho_initial_sum)
+    call f4_get_global_highest_level(f4, prev_highest_level)
 
-    if (dt_output < end_time) call f4_write_grid(f4, base_name, n_output, time)
+    if (dt_output <= end_time) call f4_write_grid(f4, base_name, n_output, time)
     n_output = n_output + 1
-
-    call f4_get_global_highest_level(f4, highest_level)
-    min_dr = f4%dr_level(:, highest_level)
 
     t0 = MPI_Wtime()
 
-    do while (time < end_time)
+    do while (time <= end_time)
        n_iterations = n_iterations + 1
+       dt = cfl_number * dt_lim
 
-       dt = cfl_number / (sum(abs(velocity)/min_dr) + epsilon(1.0_dp))
-       write_this_step = (time + dt > n_output * dt_output)
+       write_this_step = (time + dt >= n_output * dt_output)
        if (write_this_step) dt = n_output * dt_output - time
 
        call f4_advance(f4, dt, dt_lim, time, integrator, forward_euler)
@@ -142,13 +147,16 @@ contains
        end if
 
        if (do_refinement) then
-          call f4_update_ghostcells(f4, 1, [i_rho])
+          call f4_update_ghostcells(f4, 1, i_vars)
           call f4_set_refinement_flags_diff2(f4, min_refinement_level, &
-               max_refinement_level, 1, [i_rho], c_refine, c_derefine, c_eps)
+               max_refinement_level, i_rho, c_refine, c_derefine, c_eps)
           call f4_adjust_refinement(f4, .true.)
-
           call f4_get_global_highest_level(f4, highest_level)
-          min_dr = f4%dr_level(:, highest_level)
+
+          if (highest_level > prev_highest_level) then
+             dt_lim = 0.5_dp * dt_lim
+          end if
+          prev_highest_level = highest_level
        end if
 
        sum_local_blocks = sum_local_blocks + f4_get_num_local_blocks(f4)
@@ -209,8 +217,8 @@ contains
   end function rho_init
 #:endif
 
-  subroutine forward_euler(f4, dt, dt_lim, time, s_deriv, n_prev, s_prev, w_prev, &
-       s_out, i_step, n_steps)
+  subroutine forward_euler(f4, dt, dt_lim, time, s_deriv, &
+       n_prev, s_prev, w_prev, s_out, i_step, n_steps)
     type(foap4_t), intent(inout) :: f4
     real(dp), intent(in)         :: dt
     real(dp), intent(inout)      :: dt_lim         !< Time step limit
@@ -222,182 +230,228 @@ contains
     integer, intent(in)          :: s_out          !< Output state
     integer, intent(in)          :: i_step         !< Step of the integrator
     integer, intent(in)          :: n_steps        !< Total number of steps
-    integer                      :: n, ${IJK}$, m, level
-    real(dp)                     :: inv_dr(NDIM)
-    real(dp)                     :: fx(2), fy(2)
-    real(dp)                     :: tmp(5)
-    real(dp)                     :: dvar(@{DINDEX(bx)}@)
-#:if NDIM == 3
-    real(dp)                     :: fz(2)
+    integer                      :: n, ${IJK}$, m, level, iv, ix(NDIM), ierr
+    real(dp)                     :: inv_dr(NDIM), cmax(NDIM), max_cfl
+    real(dp)                     :: flux(n_vars, 2, NDIM)
+    real(dp)                     :: tmp(1+2*n_gc, n_vars)
+    real(dp)                     :: dvar(n_vars), u(n_vars)
+#:if NDIM == 2
+    real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), n_vars)
+#:elif NDIM == 3
+    real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), &
+         f4%ilo(3):f4%ihi(3), n_vars)
 #:endif
 
-    call f4_update_ghostcells(f4, 1, [i_rho+s_deriv])
+    call f4_update_ghostcells(f4, 1, i_vars+s_deriv)
 
-    !$acc parallel loop private(level, inv_dr, dvar)
+    max_cfl = 0.0_dp
+
+    !$acc parallel loop private(level, inv_dr, max_cfl, uprim) &
+    !$acc &reduction(max:max_cfl)
     do n = 1, f4%n_blocks
 
        level = f4%block_level(n)
        inv_dr = 1/f4%dr_level(:, level)
 
-#:if NDIM == 2
-       !$acc loop collapse(NDIM) private(fx, fy, tmp)
-#:elif NDIM == 3
-       !$acc loop collapse(NDIM) private(fx, fy, fz, tmp)
-#:endif
-       do @{KJI_LOOP_1_to_array(f4%bx)}@
-
-#:if NDIM == 2
-          ! Compute fluxes
-          tmp = f4%uu(i-2:i+2, j, i_rho+s_deriv, n)
-          call flux_two_sides(1, n_gc, n_flux_vars, tmp, fx)
-
-          tmp = f4%uu(i, j-2:j+2, i_rho+s_deriv, n)
-          call flux_two_sides(2, n_gc, n_flux_vars, tmp, fy)
-
-          ! Keep track of changes in variables
-          dvar(i, j) = dt * ( &
-               (fx(1) - fx(2)) * inv_dr(1) + &
-               (fy(1) - fy(2)) * inv_dr(2))
-
-          ! Store boundary fluxes
-          if (i == 1) f4%bflux(j, 0, i_rho, n) = dt * fx(1)
-          if (i == bx(1)) f4%bflux(j, 1, i_rho, n) = dt * fx(2)
-          if (j == 1) f4%bflux(i, 2, i_rho, n) = dt * fy(1)
-          if (j == bx(2)) f4%bflux(i, 3, i_rho, n) = dt * fy(2)
-#:elif NDIM == 3
-          ! Compute fluxes
-          tmp = f4%uu(i-2:i+2, j, k, i_rho+s_deriv, n)
-          call flux_two_sides(1, n_gc, n_flux_vars, tmp, fx)
-
-          tmp = f4%uu(i, j-2:j+2, k, i_rho+s_deriv, n)
-          call flux_two_sides(2, n_gc, n_flux_vars, tmp, fy)
-
-          tmp = f4%uu(i, j, k-2:k+2, i_rho+s_deriv, n)
-          call flux_two_sides(3, n_gc, n_flux_vars, tmp, fz)
-
-          ! Keep track of changes in variables
-          dvar(${IJK}$) = dt * ( &
-               (fx(1) - fx(2)) * inv_dr(1) + &
-               (fy(1) - fy(2)) * inv_dr(2) + &
-               (fz(1) - fz(2)) * inv_dr(3))
-
-          ! Store boundary fluxes
-          if (i == 1)     f4%bflux(j, k, 0, i_rho, n) = dt * fx(1)
-          if (i == bx(1)) f4%bflux(j, k, 1, i_rho, n) = dt * fx(2)
-          if (j == 1)     f4%bflux(i, k, 2, i_rho, n) = dt * fy(1)
-          if (j == bx(2)) f4%bflux(i, k, 3, i_rho, n) = dt * fy(2)
-          if (k == 1)     f4%bflux(i, j, 4, i_rho, n) = dt * fz(1)
-          if (k == bx(3)) f4%bflux(i, j, 5, i_rho, n) = dt * fz(2)
-#:endif
+       !$acc loop collapse(NDIM) private(ix, u)
+       do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
+          ix = [${IJK}$]
+          if (any(ix >= 1 .and. ix <= f4%bx)) then
+             ! Convert to primitive
+             u = f4%uu(${IJK}$, i_vars+s_deriv, n)
+             call to_primitive(u)
+             uprim(${IJK}$, :) = u
+          end if
        end do; ${KJI_CLOSE_LOOP}$
 
-       ! Set output state after computations are done, since s_out can be
-       ! equal to s_deriv and s_prev
-       !$acc loop collapse(NDIM) private(m)
+       !$acc loop collapse(NDIM) private(tmp, flux, dvar, cmax, iv, m) &
+       !$acc &reduction(max:max_cfl)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          do m = 1, n_prev
-             ! Add weighted previous states
-             dvar(${IJK}$) = dvar(${IJK}$) + &
-                  f4%uu(${IJK}$, i_rho+s_prev(m), n) * w_prev(m)
+
+#:if NDIM == 2
+          ! Compute fluxes
+          tmp = uprim(i-2:i+2, j, :)
+          call flux_cell_faces(1, tmp, flux(:, :, 1), cmax(1))
+
+          tmp = uprim(i, j-2:j+2, :)
+          call flux_cell_faces(2, tmp, flux(:, :, 2), cmax(2))
+
+          ! Keep track of changes in variables
+          dvar = dt * ( &
+               (flux(:, 1, 1) - flux(:, 2, 1)) * inv_dr(1) + &
+               (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2))
+
+          ! Store boundary fluxes
+          if (i == 1) f4%bflux(j, 0, i_vars, n) = dt * flux(:, 1, 1)
+          if (i == bx(1)) f4%bflux(j, 1, i_vars, n) = dt * flux(:, 2, 1)
+          if (j == 1) f4%bflux(i, 2, i_vars, n) = dt * flux(:, 1, 2)
+          if (j == bx(2)) f4%bflux(i, 3, i_vars, n) = dt * flux(:, 2, 2)
+#:elif NDIM == 3
+          ! Compute fluxes
+          tmp = uprim(i-2:i+2, j, k, :)
+          call flux_cell_faces(1, tmp, flux(:, :, 1), cmax(1))
+
+          tmp = uprim(i, j-2:j+2, k, :)
+          call flux_cell_faces(2, tmp, flux(:, :, 2), cmax(2))
+
+          tmp = uprim(i, j, k-2:k+2, :)
+          call flux_cell_faces(3, tmp, flux(:, :, 3), cmax(3))
+
+          ! Keep track of changes in variables
+          dvar = dt * ( &
+               (flux(:, 1, 1) - flux(:, 2, 1)) * inv_dr(1) + &
+               (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2) + &
+               (flux(:, 1, 3) - flux(:, 2, 3)) * inv_dr(3))
+
+          ! Store boundary fluxes
+          if (i == 1)     f4%bflux(j, k, 0, i_vars, n) = dt * flux(:, 1, 1)
+          if (i == bx(1)) f4%bflux(j, k, 1, i_vars, n) = dt * flux(:, 2, 1)
+          if (j == 1)     f4%bflux(i, k, 2, i_vars, n) = dt * flux(:, 1, 2)
+          if (j == bx(2)) f4%bflux(i, k, 3, i_vars, n) = dt * flux(:, 2, 2)
+          if (k == 1)     f4%bflux(i, j, 4, i_vars, n) = dt * flux(:, 1, 3)
+          if (k == bx(3)) f4%bflux(i, j, 5, i_vars, n) = dt * flux(:, 2, 3)
+#:endif
+
+          max_cfl = max(max_cfl, sum(cmax * inv_dr))
+
+          ! Set output state
+          do iv = 1, n_vars
+             do m = 1, n_prev
+                ! Add weighted previous states
+                dvar(iv) = dvar(iv) + &
+                     f4%uu(${IJK}$, i_vars(iv)+s_prev(m), n) * w_prev(m)
+             end do
+             f4%uu(${IJK}$, i_vars(iv)+s_out, n) = dvar(iv)
           end do
-          f4%uu(${IJK}$, i_rho+s_out, n) = dvar(${IJK}$)
        end do; ${KJI_CLOSE_LOOP}$
     end do
 
-    call f4_fix_c2f_flux(f4, 1, [i_rho], s_out)
+    call f4_fix_c2f_flux(f4, 1, i_vars, s_out)
+
+    dt_lim = 1/max_cfl
+    call MPI_Allreduce(MPI_IN_PLACE, dt_lim, 1, MPI_DOUBLE_PRECISION, &
+         MPI_MIN, f4%mpicomm, ierr)
 
   end subroutine forward_euler
 
-  subroutine flux_two_sides(flux_dim, n_gc, n_var, u, flux)
+  subroutine flux_cell_faces(flux_dim, u, flux, max_wavespeed)
     !$acc routine seq
     integer, intent(in)   :: flux_dim
-    integer, intent(in)   :: n_gc
-    integer, intent(in)   :: n_var
-    real(dp), intent(in)  :: u(1+2*n_gc, n_var)
-    real(dp), intent(out) :: flux(n_var, 2)
-
-    call flux_one_side(flux_dim, n_var, n_gc, 0, u, flux(:, 1))
-    call flux_one_side(flux_dim, n_var, n_gc, 1, u, flux(:, 2))
-  end subroutine flux_two_sides
-
-  subroutine flux_one_side(flux_dim, n_var, n_gc, i0, u, flux)
-    !$acc routine seq
-    integer, intent(in)   :: flux_dim
-    integer, intent(in)   :: n_var
-    integer, intent(in)   :: n_gc
-    integer, intent(in)   :: i0
-    real(dp), intent(in)  :: u(2*n_gc, n_var)
-    real(dp), intent(out) :: flux(n_var)
-    real(dp)              :: u_LR(n_var, 2)
-    real(dp)              :: flux_LR(n_var, 2)
-    real(dp)              :: cmax_LR(2)
-
-    call reconstruct_vanleer(n_var, i0, u, u_LR)
-    call get_flux(flux_dim, n_var, u_LR(:, 1), flux_LR(:, 1), cmax_LR(1))
-    call get_flux(flux_dim, n_var, u_LR(:, 2), flux_LR(:, 2), cmax_LR(2))
-
-    flux = 0.5 * (flux_LR(:, 1) + flux_LR(:, 2) - maxval(cmax_LR) * (u_LR(:, 2) - u_LR(:, 1)))
-  end subroutine flux_one_side
-
-  subroutine get_flux(flux_dim, n_var, u, flux, max_wavespeed)
-    integer, intent(in)   :: flux_dim
-    integer, intent(in)   :: n_var
-    real(dp), intent(in)  :: u(n_var)
-    real(dp), intent(out) :: flux(n_var)
+    real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
+    real(dp), intent(out) :: flux(n_vars, 2)
     real(dp), intent(out) :: max_wavespeed
+    real(dp)              :: cmax(2)
 
+    call flux_tvdlf_one_side(flux_dim, 0, u, flux(:, 1), cmax(1))
+    call flux_tvdlf_one_side(flux_dim, 1, u, flux(:, 2), cmax(2))
+    max_wavespeed = max(cmax(1), cmax(2))
+  end subroutine flux_cell_faces
+
+  subroutine flux_tvdlf_one_side(flux_dim, i0, u, flux, max_wavespeed)
+    !$acc routine seq
+    integer, intent(in)   :: flux_dim
+    integer, intent(in)   :: i0
+    real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
+    real(dp), intent(out) :: flux(n_vars)
+    real(dp), intent(out) :: max_wavespeed
+    real(dp)              :: u_LR(n_vars, 2)
+    real(dp)              :: flux_LR(n_vars, 2)
+
+    call reconstruct_${LIMITER}$(u, i0, u_LR)
+
+    call get_flux(flux_dim, u_LR(:, 1), flux_LR(:, 1))
+    call get_flux(flux_dim, u_LR(:, 2), flux_LR(:, 2))
+    call get_max_wavespeed(flux_dim, u_LR, max_wavespeed)
+
+    flux = 0.5_dp * (flux_LR(:, 1) + flux_LR(:, 2) - &
+         max_wavespeed * (u_LR(:, 2) - u_LR(:, 1)))
+  end subroutine flux_tvdlf_one_side
+
+  ! subroutine flux_hll_one_side(flux_dim, n_gc, i0, u, flux, max_wavespeed)
+  !   !$acc routine seq
+  !   integer, intent(in)   :: flux_dim
+  !   integer, intent(in)   :: n_gc
+  !   integer, intent(in)   :: i0
+  !   real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
+  !   real(dp), intent(out) :: flux(n_vars)
+  !   real(dp), intent(out) :: max_wavespeed
+  !   real(dp)              :: u_LR(n_vars, 2)
+  !   real(dp)              :: flux_LR(n_vars, 2)
+  !   real(dp)              :: cmin, cmax
+
+  !   call reconstruct_${LIMITER}$(n_vars, i0, u, u_LR)
+
+  !   call get_flux(flux_dim, n_vars, u_LR(:, 1), flux_LR(:, 1))
+  !   call get_flux(flux_dim, n_vars, u_LR(:, 2), flux_LR(:, 2))
+  !   call get_min_max_wavespeed(flux_dim, n_vars, u_LR, cmin, cmax)
+  !   max_wavespeed = max(abs(cmin), cmax)
+
+  !   if (cmin >= 0) then
+  !      flux = flux_LR(:, 1)
+  !   else if (cmax <= 0) then
+  !      flux = flux_LR(:, 2)
+  !   else
+  !      flux = (cmax * flux_LR(:, 2) - cmin * flux_LR(:, 1) + &
+  !           cmin * cmax * (u_LR(:, 2) - u_LR(:, 1))) / (cmax - cmin)
+  !   end if
+  ! end subroutine flux_hll_one_side
+
+  pure subroutine get_flux(flux_dim, u, flux)
+    !$acc routine seq
+    integer, intent(in)   :: flux_dim
+    real(dp), intent(in)  :: u(n_vars)
+    real(dp), intent(out) :: flux(n_vars)
     flux(1) = velocity(flux_dim) * u(1)
-    max_wavespeed = abs(velocity(flux_dim))
   end subroutine get_flux
 
-  pure subroutine reconstruct_minmod(u, uL, uR)
-    real(dp), intent(in)  :: u(4)
-    real(dp), intent(out) :: uL
-    real(dp), intent(out) :: uR
-    real(dp)              :: u_diff(3)
-    u_diff = u(2:4) - u(1:3)
-    uL = u(2) + 0.5_dp * minmod(u_diff(1), u_diff(2))
-    uR = u(3) - 0.5_dp * minmod(u_diff(2), u_diff(3))
-  end subroutine reconstruct_minmod
-
-  elemental pure real(dp) function minmod(a, b)
-    real(dp), intent(in) :: a, b
-
-    if (a * b <= 0) then
-       minmod = 0.0_dp
-    else if (abs(a) < abs(b)) then
-       minmod = a
-    else
-       minmod = b
-    end if
-  end function minmod
-
-  pure subroutine reconstruct_vanleer(n_vars, i0, u, u_LR)
+  pure subroutine to_primitive(u)
     !$acc routine seq
-    integer, intent(in)   :: n_vars
-    integer, intent(in)   :: i0
-    real(dp), intent(in)  :: u(5, n_vars)
-    real(dp), intent(out) :: u_LR(n_vars, 2)
-    real(dp)              :: u_diff(3)
-    integer               :: n
+    real(dp), intent(inout) :: u(n_vars)
+  end subroutine to_primitive
 
-    do n = 1, n_vars
-       u_diff = u(i0+2:i0+4, n) - u(i0+1:i0+3, n)
-       u_LR(n, 1)  = u(i0+2, n) + 0.5_dp * vanleer(u_diff(1), u_diff(2))
-       u_LR(n, 2)  = u(i0+3, n) - 0.5_dp * vanleer(u_diff(2), u_diff(3))
-    end do
-  end subroutine reconstruct_vanleer
+  pure subroutine get_max_wavespeed(flux_dim, u, cmax)
+    !$acc routine seq
+    integer, intent(in)   :: flux_dim
+    real(dp), intent(in)  :: u(n_vars)
+    real(dp), intent(out) :: cmax
+    cmax = abs(velocity(flux_dim))
+  end subroutine get_max_wavespeed
 
-  elemental pure real(dp) function vanleer(a, b) result(phi)
-    real(dp), intent(in) :: a, b
-    real(dp)             :: ab
+include 'limiters/${LIMITER}$.f90'
 
-    ab = a * b
-    if (ab > 0) then
-       phi = 2 * ab / (a + b)
-    else
-       phi = 0
-    end if
-  end function vanleer
+  ! pure subroutine get_min_max_wavespeed(flux_dim, n_vars, u, cmin, cmax)
+  !   !$acc routine seq
+  !   integer, intent(in)   :: flux_dim
+  !   integer, intent(in)   :: n_vars
+  !   real(dp), intent(in)  :: u(n_vars)
+  !   real(dp), intent(out) :: cmin
+  !   real(dp), intent(out) :: cmax
+  !   cmin = min(velocity(flux_dim), 0.0_dp)
+  !   cmax = max(velocity(flux_dim), 0.0_dp)
+  ! end subroutine get_min_max_wavespeed
+
+  ! pure subroutine reconstruct_minmod(u, uL, uR)
+  !   !$acc routine seq
+  !   real(dp), intent(in)  :: u(4)
+  !   real(dp), intent(out) :: uL
+  !   real(dp), intent(out) :: uR
+  !   real(dp)              :: u_diff(3)
+  !   u_diff = u(2:4) - u(1:3)
+  !   uL = u(2) + 0.5_dp * minmod(u_diff(1), u_diff(2))
+  !   uR = u(3) - 0.5_dp * minmod(u_diff(2), u_diff(3))
+  ! end subroutine reconstruct_minmod
+
+  ! elemental pure real(dp) function minmod(a, b)
+  !   !$acc routine seq
+  !   real(dp), intent(in) :: a, b
+
+  !   if (a * b <= 0) then
+  !      minmod = 0.0_dp
+  !   else if (abs(a) < abs(b)) then
+  !      minmod = a
+  !   else
+  !      minmod = b
+  !   end if
+  ! end function minmod
 
 end program

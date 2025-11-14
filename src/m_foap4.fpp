@@ -2447,7 +2447,7 @@ end subroutine fill_ghostcell_buffers_round_two
     integer                      :: k, k_c, k_f
 #:endif
     integer                      :: n, i, j, iq, jq, i_c, j_c, i_f, j_f
-    integer                      :: i_buf, i_buf0, iv, ivar, face
+    integer                      :: i_buf, i_buf0, iv, ivar
     integer                      :: half_bx(NDIM), half_n_gc, offset(NDIM-1)
     logical                      :: odd_n_gc
     real(dp)                     :: fine(2**NDIM)
@@ -4048,18 +4048,17 @@ end subroutine fill_ghostcell_buffers_round_two
   !> Set refinement flags based on an estimate of the second derivative. This
   !> is similar to the FLASH code but not equivalent, since we do not compute
   !> cross derivatives.
-  subroutine f4_set_refinement_flags_diff2(f4, min_level, max_level, n_vars, &
-       i_vars, c_refine, c_derefine, c_eps)
+  subroutine f4_set_refinement_flags_diff2(f4, min_level, max_level, iv, &
+       c_refine, c_derefine, c_eps)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: min_level
     integer, intent(in)          :: max_level
-    integer, intent(in)          :: n_vars
-    integer, intent(in)          :: i_vars(n_vars)
+    integer, intent(in)          :: iv
     real(dp), intent(in)         :: c_refine
     real(dp), intent(in)         :: c_derefine
     real(dp), intent(in)         :: c_eps
 
-    integer             :: n, ${IJK}$, iq, iv, level
+    integer             :: n, ${IJK}$, level
     real(dp)            :: dr(NDIM), diff(NDIM), diff_norm
     real(dp), parameter :: small_number = 1e-20_dp
 
@@ -4070,64 +4069,54 @@ end subroutine fill_ghostcell_buffers_round_two
        diff_norm = 0.0_dp
 
 #:if NDIM == 2
-       !$acc loop collapse(2) reduction(max: diff_norm)
+       !$acc loop collapse(2) private(diff) reduction(max: diff_norm)
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
-             !$acc loop private(iv, diff) reduction(max: diff_norm)
-             do iq = 1, n_vars
-                iv = i_vars(iq)
+             diff(1) = abs(f4%uu(i+1, j, iv, n) - 2 * f4%uu(i, j, iv, n) + &
+                  f4%uu(i-1, j, iv, n)) / (small_number + &
+                  abs(f4%uu(i+1, j, iv, n) - f4%uu(i, j, iv, n)) + &
+                  abs(f4%uu(i, j, iv, n) - f4%uu(i-1, j, iv, n)) + &
+                  c_eps * (abs(f4%uu(i+1, j, iv, n)) + &
+                  2 * abs(f4%uu(i, j, iv, n)) + abs(f4%uu(i-1, j, iv, n))))
 
-                diff(1) = abs(f4%uu(i+1, j, iv, n) - 2 * f4%uu(i, j, iv, n) + &
-                     f4%uu(i-1, j, iv, n)) / (small_number + &
-                     abs(f4%uu(i+1, j, iv, n) - f4%uu(i, j, iv, n)) + &
-                     abs(f4%uu(i, j, iv, n) - f4%uu(i-1, j, iv, n)) + &
-                     c_eps * (abs(f4%uu(i+1, j, iv, n)) + &
-                     2 * abs(f4%uu(i, j, iv, n)) + abs(f4%uu(i-1, j, iv, n))))
+             diff(2) = abs(f4%uu(i, j+1, iv, n) - 2 * f4%uu(i, j, iv, n) + &
+                  f4%uu(i, j-1, iv, n)) / (small_number + &
+                  abs(f4%uu(i, j+1, iv, n) - f4%uu(i, j, iv, n)) + &
+                  abs(f4%uu(i, j, iv, n) - f4%uu(i, j-1, iv, n)) + &
+                  c_eps * (abs(f4%uu(i, j+1, iv, n)) + &
+                  2 * abs(f4%uu(i, j, iv, n)) + abs(f4%uu(i, j-1, iv, n))))
 
-                diff(2) = abs(f4%uu(i, j+1, iv, n) - 2 * f4%uu(i, j, iv, n) + &
-                     f4%uu(i, j-1, iv, n)) / (small_number + &
-                     abs(f4%uu(i, j+1, iv, n) - f4%uu(i, j, iv, n)) + &
-                     abs(f4%uu(i, j, iv, n) - f4%uu(i, j-1, iv, n)) + &
-                     c_eps * (abs(f4%uu(i, j+1, iv, n)) + &
-                     2 * abs(f4%uu(i, j, iv, n)) + abs(f4%uu(i, j-1, iv, n))))
-
-                diff_norm = max(diff_norm, sqrt(diff(1)**2 + diff(2)**2))
-             end do
+             diff_norm = max(diff_norm, sqrt(diff(1)**2 + diff(2)**2))
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(3) reduction(max: diff_norm)
+       !$acc loop collapse(3) private(diff) reduction(max: diff_norm)
        do k = 1, f4%bx(3)
           do j = 1, f4%bx(2)
              do i = 1, f4%bx(1)
-                !$acc loop private(iv, diff) reduction(max: diff_norm)
-                do iq = 1, n_vars
-                   iv = i_vars(iq)
+                diff(1) = abs(f4%uu(i+1, j, k, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
+                     f4%uu(i-1, j, k, iv, n)) / (small_number + &
+                     abs(f4%uu(i+1, j, k, iv, n) - f4%uu(i, j, k, iv, n)) + &
+                     abs(f4%uu(i, j, k, iv, n) - f4%uu(i-1, j, k, iv, n)) + &
+                     c_eps * (abs(f4%uu(i+1, j, k, iv, n)) + &
+                     2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i-1, j, k, iv, n))))
 
-                   diff(1) = abs(f4%uu(i+1, j, k, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
-                        f4%uu(i-1, j, k, iv, n)) / (small_number + &
-                        abs(f4%uu(i+1, j, k, iv, n) - f4%uu(i, j, k, iv, n)) + &
-                        abs(f4%uu(i, j, k, iv, n) - f4%uu(i-1, j, k, iv, n)) + &
-                        c_eps * (abs(f4%uu(i+1, j, k, iv, n)) + &
-                        2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i-1, j, k, iv, n))))
+                diff(2) = abs(f4%uu(i, j+1, k, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
+                     f4%uu(i, j-1, k, iv, n)) / (small_number + &
+                     abs(f4%uu(i, j+1, k, iv, n) - f4%uu(i, j, k, iv, n)) + &
+                     abs(f4%uu(i, j, k, iv, n) - f4%uu(i, j-1, k, iv, n)) + &
+                     c_eps * (abs(f4%uu(i, j+1, k, iv, n)) + &
+                     2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i, j-1, k, iv, n))))
 
-                   diff(2) = abs(f4%uu(i, j+1, k, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
-                        f4%uu(i, j-1, k, iv, n)) / (small_number + &
-                        abs(f4%uu(i, j+1, k, iv, n) - f4%uu(i, j, k, iv, n)) + &
-                        abs(f4%uu(i, j, k, iv, n) - f4%uu(i, j-1, k, iv, n)) + &
-                        c_eps * (abs(f4%uu(i, j+1, k, iv, n)) + &
-                        2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i, j-1, k, iv, n))))
+                diff(3) = abs(f4%uu(i, j, k+1, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
+                     f4%uu(i, j, k-1, iv, n)) / (small_number + &
+                     abs(f4%uu(i, j, k+1, iv, n) - f4%uu(i, j, k, iv, n)) + &
+                     abs(f4%uu(i, j, k, iv, n) - f4%uu(i, j, k-1, iv, n)) + &
+                     c_eps * (abs(f4%uu(i, j, k+1, iv, n)) + &
+                     2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i, j, k-1, iv, n))))
 
-                   diff(3) = abs(f4%uu(i, j, k+1, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
-                        f4%uu(i, j, k-1, iv, n)) / (small_number + &
-                        abs(f4%uu(i, j, k+1, iv, n) - f4%uu(i, j, k, iv, n)) + &
-                        abs(f4%uu(i, j, k, iv, n) - f4%uu(i, j, k-1, iv, n)) + &
-                        c_eps * (abs(f4%uu(i, j, k+1, iv, n)) + &
-                        2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i, j, k-1, iv, n))))
-
-                   diff_norm = max(diff_norm, &
-                        sqrt(diff(1)**2 + diff(2)**2 + diff(3)**2))
-                end do
+                diff_norm = max(diff_norm, &
+                     sqrt(diff(1)**2 + diff(2)**2 + diff(3)**2))
              end do
           end do
        end do
