@@ -79,8 +79,8 @@ src/%.mod: src/%.f90 src/%.o
 
 .PRECIOUS: src/%.f90 src/%_2d.f90 src/%_3d.f90
 src/%.f90: src/%.fpp
-	fypp $(FYPPFLAGS) $< $@
+	fypp $(FYPPFLAGS) $(FYPP_USER) $< $@
 src/%_2d.f90: src/%.fpp
-	fypp $(FYPPFLAGS) -D NDIM=2 $< $@
+	fypp $(FYPPFLAGS) $(FYPP_USER) -D NDIM=2 $< $@
 src/%_3d.f90: src/%.fpp
-	fypp $(FYPPFLAGS) -D NDIM=3 $< $@
+	fypp $(FYPPFLAGS) $(FYPP_USER) -D NDIM=3 $< $@

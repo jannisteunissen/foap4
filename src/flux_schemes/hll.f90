@@ -1,0 +1,42 @@
+subroutine flux_cell_faces(flux_dim, u, flux, max_wavespeed)
+  !$acc routine seq
+  integer, intent(in)   :: flux_dim
+  real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
+  real(dp), intent(out) :: flux(n_vars, 2)
+  real(dp), intent(out) :: max_wavespeed
+  real(dp)              :: cmax(2)
+
+  call flux_hll_one_side(flux_dim, 0, u, flux(:, 1), cmax(1))
+  call flux_hll_one_side(flux_dim, 1, u, flux(:, 2), cmax(2))
+  max_wavespeed = max(cmax(1), cmax(2))
+end subroutine flux_cell_faces
+
+subroutine flux_hll_one_side(flux_dim, n_gc, i0, u, flux, max_wavespeed)
+  !$acc routine seq
+  integer, intent(in)   :: flux_dim
+  integer, intent(in)   :: n_gc
+  integer, intent(in)   :: i0
+  real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
+  real(dp), intent(out) :: flux(n_vars)
+  real(dp), intent(out) :: max_wavespeed
+  real(dp)              :: u_LR(n_vars, 2)
+  real(dp)              :: flux_LR(n_vars, 2)
+  real(dp)              :: cmin, cmax
+
+  call reconstruct_${LIMITER}$(n_vars, i0, u, u_LR)
+
+  call get_flux(flux_dim, n_vars, u_LR(:, 1), flux_LR(:, 1))
+  call get_flux(flux_dim, n_vars, u_LR(:, 2), flux_LR(:, 2))
+  call get_min_max_wavespeed(flux_dim, n_vars, u_LR, cmin, cmax)
+  max_wavespeed = max(abs(cmin), cmax)
+
+  if (cmin >= 0) then
+     flux = flux_LR(:, 1)
+  else if (cmax <= 0) then
+     flux = flux_LR(:, 2)
+  else
+     flux = (cmax * flux_LR(:, 2) - cmin * flux_LR(:, 1) + &
+          cmin * cmax * (u_LR(:, 2) - u_LR(:, 1))) / (cmax - cmin)
+  end if
+end subroutine flux_hll_one_side
+

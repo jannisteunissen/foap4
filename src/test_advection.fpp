@@ -12,7 +12,7 @@ program test_adv
 
   implicit none
 
-  include 'limiters/${LIMITER}$_num_ghostcells.f90'
+  include 'limiters/${LIMITER}$_definitions.f90'
   integer, parameter :: dp   = kind(0.0d0)
   integer, parameter :: NDIM = ${NDIM}$
   integer, parameter :: n_gc = limiter_num_ghostcells
@@ -134,7 +134,7 @@ contains
        write_this_step = (time + dt >= n_output * dt_output)
        if (write_this_step) dt = n_output * dt_output - time
 
-       call f4_advance(f4, dt, dt_lim, time, integrator, forward_euler)
+       call f4_advance(f4, dt, dt_lim, time, integrator, feuler_finite_volume)
 
        if (write_this_step) then
           call f4_write_grid(f4, base_name, n_output, time)
@@ -217,185 +217,6 @@ contains
   end function rho_init
 #:endif
 
-  subroutine forward_euler(f4, dt, dt_lim, time, s_deriv, &
-       n_prev, s_prev, w_prev, s_out, i_step, n_steps)
-    type(foap4_t), intent(inout) :: f4
-    real(dp), intent(in)         :: dt
-    real(dp), intent(inout)      :: dt_lim         !< Time step limit
-    real(dp), intent(in)         :: time           !< Current time
-    integer, intent(in)          :: s_deriv        !< State to compute derivatives from
-    integer, intent(in)          :: n_prev         !< Number of previous states
-    integer, intent(in)          :: s_prev(n_prev) !< Previous states
-    real(dp), intent(in)         :: w_prev(n_prev) !< Weights of previous states
-    integer, intent(in)          :: s_out          !< Output state
-    integer, intent(in)          :: i_step         !< Step of the integrator
-    integer, intent(in)          :: n_steps        !< Total number of steps
-    integer                      :: n, ${IJK}$, m, level, iv, ix(NDIM), ierr
-    real(dp)                     :: inv_dr(NDIM), cmax(NDIM), max_cfl
-    real(dp)                     :: flux(n_vars, 2, NDIM)
-    real(dp)                     :: tmp(1+2*n_gc, n_vars)
-    real(dp)                     :: dvar(n_vars), u(n_vars)
-#:if NDIM == 2
-    real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), n_vars)
-#:elif NDIM == 3
-    real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), &
-         f4%ilo(3):f4%ihi(3), n_vars)
-#:endif
-
-    call f4_update_ghostcells(f4, 1, i_vars+s_deriv)
-
-    max_cfl = 0.0_dp
-
-    !$acc parallel loop private(level, inv_dr, max_cfl, uprim) &
-    !$acc &reduction(max:max_cfl)
-    do n = 1, f4%n_blocks
-
-       level = f4%block_level(n)
-       inv_dr = 1/f4%dr_level(:, level)
-
-       !$acc loop collapse(NDIM) private(ix, u)
-       do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
-          ix = [${IJK}$]
-          if (any(ix >= 1 .and. ix <= f4%bx)) then
-             ! Convert to primitive
-             u = f4%uu(${IJK}$, i_vars+s_deriv, n)
-             call to_primitive(u)
-             uprim(${IJK}$, :) = u
-          end if
-       end do; ${KJI_CLOSE_LOOP}$
-
-       !$acc loop collapse(NDIM) private(tmp, flux, dvar, cmax, iv, m) &
-       !$acc &reduction(max:max_cfl)
-       do @{KJI_LOOP_1_to_array(f4%bx)}@
-
-#:if NDIM == 2
-          ! Compute fluxes
-          tmp = uprim(i-2:i+2, j, :)
-          call flux_cell_faces(1, tmp, flux(:, :, 1), cmax(1))
-
-          tmp = uprim(i, j-2:j+2, :)
-          call flux_cell_faces(2, tmp, flux(:, :, 2), cmax(2))
-
-          ! Keep track of changes in variables
-          dvar = dt * ( &
-               (flux(:, 1, 1) - flux(:, 2, 1)) * inv_dr(1) + &
-               (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2))
-
-          ! Store boundary fluxes
-          if (i == 1) f4%bflux(j, 0, i_vars, n) = dt * flux(:, 1, 1)
-          if (i == bx(1)) f4%bflux(j, 1, i_vars, n) = dt * flux(:, 2, 1)
-          if (j == 1) f4%bflux(i, 2, i_vars, n) = dt * flux(:, 1, 2)
-          if (j == bx(2)) f4%bflux(i, 3, i_vars, n) = dt * flux(:, 2, 2)
-#:elif NDIM == 3
-          ! Compute fluxes
-          tmp = uprim(i-2:i+2, j, k, :)
-          call flux_cell_faces(1, tmp, flux(:, :, 1), cmax(1))
-
-          tmp = uprim(i, j-2:j+2, k, :)
-          call flux_cell_faces(2, tmp, flux(:, :, 2), cmax(2))
-
-          tmp = uprim(i, j, k-2:k+2, :)
-          call flux_cell_faces(3, tmp, flux(:, :, 3), cmax(3))
-
-          ! Keep track of changes in variables
-          dvar = dt * ( &
-               (flux(:, 1, 1) - flux(:, 2, 1)) * inv_dr(1) + &
-               (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2) + &
-               (flux(:, 1, 3) - flux(:, 2, 3)) * inv_dr(3))
-
-          ! Store boundary fluxes
-          if (i == 1)     f4%bflux(j, k, 0, i_vars, n) = dt * flux(:, 1, 1)
-          if (i == bx(1)) f4%bflux(j, k, 1, i_vars, n) = dt * flux(:, 2, 1)
-          if (j == 1)     f4%bflux(i, k, 2, i_vars, n) = dt * flux(:, 1, 2)
-          if (j == bx(2)) f4%bflux(i, k, 3, i_vars, n) = dt * flux(:, 2, 2)
-          if (k == 1)     f4%bflux(i, j, 4, i_vars, n) = dt * flux(:, 1, 3)
-          if (k == bx(3)) f4%bflux(i, j, 5, i_vars, n) = dt * flux(:, 2, 3)
-#:endif
-
-          max_cfl = max(max_cfl, sum(cmax * inv_dr))
-
-          ! Set output state
-          do iv = 1, n_vars
-             do m = 1, n_prev
-                ! Add weighted previous states
-                dvar(iv) = dvar(iv) + &
-                     f4%uu(${IJK}$, i_vars(iv)+s_prev(m), n) * w_prev(m)
-             end do
-             f4%uu(${IJK}$, i_vars(iv)+s_out, n) = dvar(iv)
-          end do
-       end do; ${KJI_CLOSE_LOOP}$
-    end do
-
-    call f4_fix_c2f_flux(f4, 1, i_vars, s_out)
-
-    dt_lim = 1/max_cfl
-    call MPI_Allreduce(MPI_IN_PLACE, dt_lim, 1, MPI_DOUBLE_PRECISION, &
-         MPI_MIN, f4%mpicomm, ierr)
-
-  end subroutine forward_euler
-
-  subroutine flux_cell_faces(flux_dim, u, flux, max_wavespeed)
-    !$acc routine seq
-    integer, intent(in)   :: flux_dim
-    real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
-    real(dp), intent(out) :: flux(n_vars, 2)
-    real(dp), intent(out) :: max_wavespeed
-    real(dp)              :: cmax(2)
-
-    call flux_tvdlf_one_side(flux_dim, 0, u, flux(:, 1), cmax(1))
-    call flux_tvdlf_one_side(flux_dim, 1, u, flux(:, 2), cmax(2))
-    max_wavespeed = max(cmax(1), cmax(2))
-  end subroutine flux_cell_faces
-
-  subroutine flux_tvdlf_one_side(flux_dim, i0, u, flux, max_wavespeed)
-    !$acc routine seq
-    integer, intent(in)   :: flux_dim
-    integer, intent(in)   :: i0
-    real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
-    real(dp), intent(out) :: flux(n_vars)
-    real(dp), intent(out) :: max_wavespeed
-    real(dp)              :: u_LR(n_vars, 2)
-    real(dp)              :: flux_LR(n_vars, 2)
-
-    call reconstruct_${LIMITER}$(u, i0, u_LR)
-
-    call get_flux(flux_dim, u_LR(:, 1), flux_LR(:, 1))
-    call get_flux(flux_dim, u_LR(:, 2), flux_LR(:, 2))
-    call get_max_wavespeed(flux_dim, u_LR, max_wavespeed)
-
-    flux = 0.5_dp * (flux_LR(:, 1) + flux_LR(:, 2) - &
-         max_wavespeed * (u_LR(:, 2) - u_LR(:, 1)))
-  end subroutine flux_tvdlf_one_side
-
-  ! subroutine flux_hll_one_side(flux_dim, n_gc, i0, u, flux, max_wavespeed)
-  !   !$acc routine seq
-  !   integer, intent(in)   :: flux_dim
-  !   integer, intent(in)   :: n_gc
-  !   integer, intent(in)   :: i0
-  !   real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
-  !   real(dp), intent(out) :: flux(n_vars)
-  !   real(dp), intent(out) :: max_wavespeed
-  !   real(dp)              :: u_LR(n_vars, 2)
-  !   real(dp)              :: flux_LR(n_vars, 2)
-  !   real(dp)              :: cmin, cmax
-
-  !   call reconstruct_${LIMITER}$(n_vars, i0, u, u_LR)
-
-  !   call get_flux(flux_dim, n_vars, u_LR(:, 1), flux_LR(:, 1))
-  !   call get_flux(flux_dim, n_vars, u_LR(:, 2), flux_LR(:, 2))
-  !   call get_min_max_wavespeed(flux_dim, n_vars, u_LR, cmin, cmax)
-  !   max_wavespeed = max(abs(cmin), cmax)
-
-  !   if (cmin >= 0) then
-  !      flux = flux_LR(:, 1)
-  !   else if (cmax <= 0) then
-  !      flux = flux_LR(:, 2)
-  !   else
-  !      flux = (cmax * flux_LR(:, 2) - cmin * flux_LR(:, 1) + &
-  !           cmin * cmax * (u_LR(:, 2) - u_LR(:, 1))) / (cmax - cmin)
-  !   end if
-  ! end subroutine flux_hll_one_side
-
   pure subroutine get_flux(flux_dim, u, flux)
     !$acc routine seq
     integer, intent(in)   :: flux_dim
@@ -417,41 +238,21 @@ contains
     cmax = abs(velocity(flux_dim))
   end subroutine get_max_wavespeed
 
-include 'limiters/${LIMITER}$.f90'
+  pure subroutine get_min_max_wavespeed(flux_dim, n_vars, u, cmin, cmax)
+    !$acc routine seq
+    integer, intent(in)   :: flux_dim
+    integer, intent(in)   :: n_vars
+    real(dp), intent(in)  :: u(n_vars)
+    real(dp), intent(out) :: cmin
+    real(dp), intent(out) :: cmax
+    cmin = min(velocity(flux_dim), 0.0_dp)
+    cmax = max(velocity(flux_dim), 0.0_dp)
+  end subroutine get_min_max_wavespeed
 
-  ! pure subroutine get_min_max_wavespeed(flux_dim, n_vars, u, cmin, cmax)
-  !   !$acc routine seq
-  !   integer, intent(in)   :: flux_dim
-  !   integer, intent(in)   :: n_vars
-  !   real(dp), intent(in)  :: u(n_vars)
-  !   real(dp), intent(out) :: cmin
-  !   real(dp), intent(out) :: cmax
-  !   cmin = min(velocity(flux_dim), 0.0_dp)
-  !   cmax = max(velocity(flux_dim), 0.0_dp)
-  ! end subroutine get_min_max_wavespeed
+#:include 'flux_schemes/finite_volume.fpp'
 
-  ! pure subroutine reconstruct_minmod(u, uL, uR)
-  !   !$acc routine seq
-  !   real(dp), intent(in)  :: u(4)
-  !   real(dp), intent(out) :: uL
-  !   real(dp), intent(out) :: uR
-  !   real(dp)              :: u_diff(3)
-  !   u_diff = u(2:4) - u(1:3)
-  !   uL = u(2) + 0.5_dp * minmod(u_diff(1), u_diff(2))
-  !   uR = u(3) - 0.5_dp * minmod(u_diff(2), u_diff(3))
-  ! end subroutine reconstruct_minmod
+  include 'flux_schemes/${FLUX_SCHEME}$.f90'
 
-  ! elemental pure real(dp) function minmod(a, b)
-  !   !$acc routine seq
-  !   real(dp), intent(in) :: a, b
-
-  !   if (a * b <= 0) then
-  !      minmod = 0.0_dp
-  !   else if (abs(a) < abs(b)) then
-  !      minmod = a
-  !   else
-  !      minmod = b
-  !   end if
-  ! end function minmod
+  include 'limiters/${LIMITER}$.f90'
 
 end program

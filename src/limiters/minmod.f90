@@ -8,20 +8,20 @@ pure subroutine reconstruct(u, i0, u_LR)
 
   do n = 1, n_vars
      u_diff = u(i0+2:i0+4, n) - u(i0+1:i0+3, n)
-     u_LR(n, 1) = u(i0+2, n) + 0.5_dp * vanleer(u_diff(1), u_diff(2))
-     u_LR(n, 2) = u(i0+3, n) - 0.5_dp * vanleer(u_diff(2), u_diff(3))
+     u_LR(n, 1) = u(i0+2, n) + 0.5_dp * minmod(u_diff(1), u_diff(2))
+     u_LR(n, 2) = u(i0+3, n) - 0.5_dp * minmod(u_diff(2), u_diff(3))
   end do
 end subroutine reconstruct
 
-elemental pure real(dp) function vanleer(a, b) result(phi)
+elemental pure real(dp) function minmod(a, b)
   !$acc routine seq
   real(dp), intent(in) :: a, b
-  real(dp)             :: ab
 
-  ab = a * b
-  if (ab > 0) then
-     phi = 2 * ab / (a + b)
+  if (a * b <= 0) then
+     minmod = 0.0_dp
+  else if (abs(a) < abs(b)) then
+     minmod = a
   else
-     phi = 0
+     minmod = b
   end if
-end function vanleer
+end function minmod
