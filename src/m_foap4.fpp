@@ -3117,27 +3117,12 @@ end subroutine fill_ghostcell_buffers_round_two
        i_from = srl(1, n)
        i_to = srl(2, n)
 
-#:if NDIM == 2
-       !$acc loop collapse(3)
+       !$acc loop collapse(ndim+1)
        do iv = 1, f4%n_vars
-          do j = f4%ilo(2), f4%ihi(2)
-             do i = f4%ilo(1), f4%ihi(2)
-                f4%uu(i, j, iv, i_to) = f4%uu(i, j, iv, i_from)
-             end do
-          end do
+          do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
+             f4%uu(${IJK}$, iv, i_to) = f4%uu(${IJK}$, iv, i_from)
+          end do; ${KJI_CLOSE_LOOP}$
        end do
-#:elif NDIM == 3
-       !$acc loop collapse(4)
-       do iv = 1, f4%n_vars
-          do k = f4%ilo(3), f4%ihi(3)
-             do j = f4%ilo(2), f4%ihi(2)
-                do i = f4%ilo(1), f4%ihi(2)
-                   f4%uu(i, j, k, iv, i_to) = f4%uu(i, j, k, iv, i_from)
-                end do
-             end do
-          end do
-       end do
-#:endif
     end do
 
     ! Refine on device
@@ -3305,27 +3290,12 @@ end subroutine fill_ghostcell_buffers_round_two
     ! Copy block solution data on device
     !$acc parallel loop
     do n = 1, n_blocks_old
-#:if NDIM == 2
-       !$acc loop collapse(3)
+       !$acc loop collapse(ndim+1)
        do iv = 1, f4%n_vars
-          do j = f4%ilo(2), f4%ihi(2)
-             do i = f4%ilo(1), f4%ihi(1)
-                f4%uu(i, j, iv, offset_copy+n) = f4%uu(i, j, iv, n)
-             end do
-          end do
+          do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
+             f4%uu(${IJK}$, iv, offset_copy+n) = f4%uu(${IJK}$, iv, n)
+          end do; ${KJI_CLOSE_LOOP}$
        end do
-#:elif NDIM == 3
-       !$acc loop collapse(4)
-       do iv = 1, f4%n_vars
-          do k = f4%ilo(3), f4%ihi(3)
-             do j = f4%ilo(2), f4%ihi(2)
-                do i = f4%ilo(1), f4%ihi(1)
-                   f4%uu(i, j, k, iv, offset_copy+n) = f4%uu(i, j, k, iv, n)
-                end do
-             end do
-          end do
-       end do
-#:endif
     end do
   end subroutine copy_blocks_to_end
 
@@ -3339,7 +3309,7 @@ end subroutine fill_ghostcell_buffers_round_two
     real(dp), intent(out) :: fine(2**NDIM)
     real(dp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
 
-    f(0) = center          ! Identical to coarse_y(2)
+    f(0) = center
     slopes_a(1) = center - xlo
     slopes_a(2) = center - ylo
     slopes_b(1) = xhi - center
@@ -3362,7 +3332,7 @@ end subroutine fill_ghostcell_buffers_round_two
     real(dp), intent(out) :: fine(2**NDIM)
     real(dp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
 
-    f(0) = center          ! Identical to coarse_y(2)
+    f(0) = center
     slopes_a(1) = center - xlo
     slopes_a(2) = center - ylo
     slopes_a(3) = center - zlo
@@ -3891,23 +3861,10 @@ end subroutine fill_ghostcell_buffers_round_two
        level = f4%block_level(n)
        dvol = product(f4%dr_level(:, level))
 
-#:if NDIM == 2
-       !$acc loop collapse(2) reduction(+:var_sum)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-            var_sum = var_sum + f4%uu(i, j, i_var, n) * dvol
-          end do
-       end do
-#:elif NDIM == 3
-       !$acc loop collapse(3) reduction(+:var_sum)
-       do k = 1, f4%bx(3)
-          do j = 1, f4%bx(2)
-             do i = 1, f4%bx(1)
-                var_sum = var_sum + f4%uu(i, j, k, i_var, n) * dvol
-             end do
-          end do
-       end do
-#:endif
+       !$acc loop collapse(ndim) reduction(+:var_sum)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+            var_sum = var_sum + f4%uu(${IJK}$, i_var, n) * dvol
+       end do; ${KJI_CLOSE_LOOP}$
     end do
 
     call MPI_Allreduce(MPI_IN_PLACE, var_sum, 1, MPI_DOUBLE_PRECISION, &
@@ -3930,23 +3887,10 @@ end subroutine fill_ghostcell_buffers_round_two
        level = f4%block_level(n)
        dvol = product(f4%dr_level(:, level))
 
-#:if NDIM == 2
-       !$acc loop collapse(2) reduction(max:var_max)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-            var_max = max(var_max, f4%uu(i, j, i_var, n))
-          end do
-       end do
-#:elif NDIM == 3
-       !$acc loop collapse(3) reduction(max:var_max)
-       do k = 1, f4%bx(3)
-          do j = 1, f4%bx(2)
-             do i = 1, f4%bx(1)
-                var_max = max(var_max, f4%uu(i, j, k, i_var, n))
-             end do
-          end do
-       end do
-#:endif
+       !$acc loop collapse(ndim) reduction(max:var_max)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+            var_max = max(var_max, f4%uu(${IJK}$, i_var, n))
+       end do; ${KJI_CLOSE_LOOP}$
     end do
 
     call MPI_Allreduce(MPI_IN_PLACE, var_max, 1, MPI_DOUBLE_PRECISION, &
