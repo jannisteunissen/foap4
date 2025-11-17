@@ -3237,6 +3237,7 @@ end subroutine fill_ghostcell_buffers_round_two
                       i_f = 2 * i - 1
 
                       f4%uu(i_c, j_c, k_c, iv, i_to) = 0.125_dp * (&
+                           f4%uu(i_f  , j_f  , k_f,   iv, i_from+i_ch-1) + &
                            f4%uu(i_f+1, j_f  , k_f,   iv, i_from+i_ch-1) + &
                            f4%uu(i_f  , j_f+1, k_f,   iv, i_from+i_ch-1) + &
                            f4%uu(i_f+1, j_f+1, k_f,   iv, i_from+i_ch-1) + &
@@ -3268,10 +3269,7 @@ end subroutine fill_ghostcell_buffers_round_two
     integer, intent(in)          :: n_blocks_old
     integer, intent(in)          :: n_blocks_new
     integer, intent(out)         :: offset_copy
-    integer                      :: n, i, j, iv
-#:if NDIM == 3
-    integer                      :: k
-#:endif
+    integer                      :: n, ${IJK}$, iv
 
     offset_copy = max(n_blocks_old, n_blocks_new)
 

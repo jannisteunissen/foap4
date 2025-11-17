@@ -1,6 +1,6 @@
 #:include 'definitions.fpp'
 #:set LIMITER = 'vanleer'
-#:set FLUX_SCHEME = 'hll'
+#:set FLUX_SCHEME = 'tvdlf'
 
 program euler
   use iso_fortran_env, only: int64
@@ -79,7 +79,7 @@ contains
     integer, parameter           :: n_blocks_per_dim(NDIM) = 1
     real(dp), parameter          :: block_length(NDIM) = 1.0_dp
     logical                      :: periodic(NDIM) = .true.
-    integer                      :: n_output !n, prev_mesh_revision
+    integer                      :: n_output
     integer                      :: n, n_iterations, ierr, prev_mesh_revision
     integer(int64)               :: sum_local_blocks, sum_global_blocks
     logical                      :: write_this_step, temporal(n_vars)

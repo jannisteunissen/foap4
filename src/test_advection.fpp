@@ -108,7 +108,7 @@ contains
     if (do_refinement) then
        do n = 1, 10
           prev_mesh_revision = f4_get_mesh_revision(f4)
-          call f4_update_ghostcells(f4, 1, i_vars)
+          call f4_update_ghostcells(f4, n_vars, i_vars)
           call f4_set_refinement_flags_diff2(f4, min_refinement_level, &
                max_refinement_level, i_rho, c_refine, c_derefine, c_eps)
           call f4_adjust_refinement(f4, .true.)
@@ -146,7 +146,7 @@ contains
        end if
 
        if (do_refinement) then
-          call f4_update_ghostcells(f4, 1, i_vars)
+          call f4_update_ghostcells(f4, n_vars, i_vars)
           call f4_set_refinement_flags_diff2(f4, min_refinement_level, &
                max_refinement_level, i_rho, c_refine, c_derefine, c_eps)
           call f4_adjust_refinement(f4, .true.)
@@ -187,34 +187,21 @@ contains
        !$acc loop collapse(NDIM) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
-          f4%uu(${IJK}$, i_rho, n) = rho_init(@{DINDEX(rr)}@)
+          f4%uu(${IJK}$, i_rho, n) = rho_init(rr)
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_init_cond
 
-#:if NDIM == 2
-  pure real(dp) function rho_init(x, y)
+  pure real(dp) function rho_init(rr)
     !$acc routine seq
-    real(dp), intent(in) :: x, y
+    real(dp), intent(in) :: rr(NDIM)
 
-    if (sqrt((x-0.5_dp)**2 + (y-0.5_dp)**2) < 0.1_dp) then
+    if (norm2(rr - 0.5_dp) < 0.1_dp) then
        rho_init = 1.0_dp
     else
        rho_init = 0.0_dp
     end if
   end function rho_init
-#:elif NDIM == 3
-  pure real(dp) function rho_init(x, y, z)
-    !$acc routine seq
-    real(dp), intent(in) :: x, y, z
-
-    if (sqrt((x-0.5_dp)**2 + (y-0.5_dp)**2 + (z-0.5_dp)**2) < 0.1_dp) then
-       rho_init = 1.0_dp
-    else
-       rho_init = 0.0_dp
-    end if
-  end function rho_init
-#:endif
 
   pure subroutine get_flux(flux_dim, u, flux)
     !$acc routine seq

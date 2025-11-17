@@ -160,6 +160,7 @@ contains
     end do
 
     if (test_coarsening) then
+       if (f4%mpirank == 0) print *, "Test coarsening"
        do n = 1, 10
           prev_mesh_revision = f4_get_mesh_revision(f4)
           call set_coarsening_flag(f4)
@@ -287,7 +288,7 @@ contains
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
           sol = phi_init(@{DINDEX(rr)}@)
-          f4%uu(${IJK}$, i_err, n) = f4%uu(${IJK}$, i_phi, n) - sol
+          f4%uu(${IJK}$, i_err, n) = abs(f4%uu(${IJK}$, i_phi, n) - sol)
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine compute_error
