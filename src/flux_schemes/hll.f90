@@ -11,10 +11,9 @@ subroutine flux_cell_faces(flux_dim, u, flux, max_wavespeed)
   max_wavespeed = max(cmax(1), cmax(2))
 end subroutine flux_cell_faces
 
-subroutine flux_hll_one_side(flux_dim, n_gc, i0, u, flux, max_wavespeed)
+subroutine flux_hll_one_side(flux_dim, i0, u, flux, max_wavespeed)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  integer, intent(in)   :: n_gc
   integer, intent(in)   :: i0
   real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
   real(dp), intent(out) :: flux(n_vars)
@@ -23,19 +22,23 @@ subroutine flux_hll_one_side(flux_dim, n_gc, i0, u, flux, max_wavespeed)
   real(dp)              :: flux_LR(n_vars, 2)
   real(dp)              :: cmin, cmax
 
-  call reconstruct_${LIMITER}$(n_vars, i0, u, u_LR)
+  call reconstruct(u, i0, u_LR)
 
-  call get_flux(flux_dim, n_vars, u_LR(:, 1), flux_LR(:, 1))
-  call get_flux(flux_dim, n_vars, u_LR(:, 2), flux_LR(:, 2))
-  call get_min_max_wavespeed(flux_dim, n_vars, u_LR, cmin, cmax)
+  call get_flux(flux_dim, u_LR(:, 1), flux_LR(:, 1))
+  call get_flux(flux_dim, u_LR(:, 2), flux_LR(:, 2))
+  call get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
   max_wavespeed = max(abs(cmin), cmax)
+
+  ! Convert to conservative
+  call to_conservative(u_LR(:, 1))
+  call to_conservative(u_LR(:, 2))
 
   if (cmin >= 0) then
      flux = flux_LR(:, 1)
   else if (cmax <= 0) then
      flux = flux_LR(:, 2)
   else
-     flux = (cmax * flux_LR(:, 2) - cmin * flux_LR(:, 1) + &
+     flux = (cmax * flux_LR(:, 1) - cmin * flux_LR(:, 2) + &
           cmin * cmax * (u_LR(:, 2) - u_LR(:, 1))) / (cmax - cmin)
   end if
 end subroutine flux_hll_one_side

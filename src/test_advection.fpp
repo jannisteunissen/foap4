@@ -1,7 +1,6 @@
 #:include 'definitions.fpp'
-
-#:set LIMITER = getvar('LIMITER', 'vanleer')
-#:set FLUX_SCHEME = getvar('FLUX_SCHEME', 'tvdlf')
+#:set LIMITER = 'weno5'
+#:set FLUX_SCHEME = 'hll'
 
 program test_adv
   use iso_fortran_env, only: int64
@@ -230,19 +229,23 @@ contains
     real(dp), intent(inout) :: u(n_vars)
   end subroutine to_primitive
 
-  pure subroutine get_max_wavespeed(flux_dim, u, cmax)
+  pure subroutine to_conservative(u)
+    !$acc routine seq
+    real(dp), intent(inout) :: u(n_vars)
+  end subroutine to_conservative
+
+  pure subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
     !$acc routine seq
     integer, intent(in)   :: flux_dim
-    real(dp), intent(in)  :: u(n_vars)
+    real(dp), intent(in)  :: u_LR(n_vars, 2)
     real(dp), intent(out) :: cmax
     cmax = abs(velocity(flux_dim))
   end subroutine get_max_wavespeed
 
-  pure subroutine get_min_max_wavespeed(flux_dim, n_vars, u, cmin, cmax)
+  pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
     !$acc routine seq
     integer, intent(in)   :: flux_dim
-    integer, intent(in)   :: n_vars
-    real(dp), intent(in)  :: u(n_vars)
+    real(dp), intent(in)  :: u_LR(n_vars, 2)
     real(dp), intent(out) :: cmin
     real(dp), intent(out) :: cmax
     cmin = min(velocity(flux_dim), 0.0_dp)

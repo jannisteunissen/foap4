@@ -12,3 +12,6 @@
 /test_euler*
 /src/*_2d.f90
 /src/*_3d.f90
+/src/m_xdmf_writer.f90
+/src/physics/euler_2d.f90
+/src/physics/m_euler_2d.f90

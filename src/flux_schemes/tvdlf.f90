@@ -27,6 +27,10 @@ subroutine flux_tvdlf_one_side(flux_dim, i0, u, flux, max_wavespeed)
   call get_flux(flux_dim, u_LR(:, 2), flux_LR(:, 2))
   call get_max_wavespeed(flux_dim, u_LR, max_wavespeed)
 
+  ! Convert to conservative
+  call to_conservative(u_LR(:, 1))
+  call to_conservative(u_LR(:, 2))
+
   flux = 0.5_dp * (flux_LR(:, 1) + flux_LR(:, 2) - &
        max_wavespeed * (u_LR(:, 2) - u_LR(:, 1)))
 end subroutine flux_tvdlf_one_side

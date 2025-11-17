@@ -3,7 +3,7 @@
 FC := mpif90
 CC := mpicc
 FYPPFLAGS := -n
-INCDIRS := p4est/build/local/include
+INCDIRS := p4est/build/local/include src/physics
 LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
 CFLAGS := -Wall -O2 -g
@@ -41,10 +41,10 @@ $(TARGETS_3D): src/m_foap4_3d.o src/p4est_wrapper_3d.o src/m_xdmf_writer.o src/m
 $(addsuffix .o,$(addprefix src/,$(TARGETS_2D))): src/m_foap4_2d.mod src/m_config.mod
 $(addsuffix .o,$(addprefix src/,$(TARGETS_3D))): src/m_foap4_3d.mod src/m_config.mod
 
-src/test_euler_2d.o: src/m_euler.mod
-src/test_euler_3d.o: src/m_euler.mod
-test_euler_2d: src/m_euler.o
-test_euler_3d: src/m_euler.o
+src/test_euler_2d.o: src/physics/m_euler_2d.mod src/physics/euler_2d.f90
+src/test_euler_3d.o: src/physics/m_euler_3d.mod src/physics/euler_3d.f90
+test_euler_2d: src/physics/m_euler_2d.o
+test_euler_3d: src/physics/m_euler_3d.o
 
 src/test_advection_2d.o: src/m_advection.mod
 src/test_advection_3d.o: src/m_advection.mod

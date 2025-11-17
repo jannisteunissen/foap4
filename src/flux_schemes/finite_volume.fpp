@@ -23,7 +23,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
        f4%ilo(3):f4%ihi(3), n_vars)
 #:endif
 
-  call f4_update_ghostcells(f4, 1, i_vars+s_deriv)
+  call f4_update_ghostcells(f4, n_vars, i_vars+s_deriv)
 
   max_cfl = 0.0_dp
 
@@ -38,7 +38,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
      do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
         ix = [${IJK}$]
         if (any(ix >= 1 .and. ix <= f4%bx)) then
-           ! Convert to primitive
+           ! Convert to primitive, but not in corners
            u = f4%uu(${IJK}$, i_vars+s_deriv, n)
            call to_primitive(u)
            uprim(${IJK}$, :) = u
@@ -49,6 +49,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
      !$acc &reduction(max:max_cfl)
      do @{KJI_LOOP_1_to_array(f4%bx)}@
 
+        ! TODO: set source terms
+        dvar = 0.0_dp
+
 #:if NDIM == 2
         ! Compute fluxes
         tmp = uprim(i-n_gc:i+n_gc, j, :)
@@ -58,7 +61,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         call flux_cell_faces(2, tmp, flux(:, :, 2), cmax(2))
 
         ! Keep track of changes in variables
-        dvar = dt * ( &
+        dvar = dvar + dt * ( &
              (flux(:, 1, 1) - flux(:, 2, 1)) * inv_dr(1) + &
              (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2))
 
@@ -79,7 +82,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         call flux_cell_faces(3, tmp, flux(:, :, 3), cmax(3))
 
         ! Keep track of changes in variables
-        dvar = dt * ( &
+        dvar = dvar + dt * ( &
              (flux(:, 1, 1) - flux(:, 2, 1)) * inv_dr(1) + &
              (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2) + &
              (flux(:, 1, 3) - flux(:, 2, 3)) * inv_dr(3))
@@ -107,7 +110,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
      end do; ${KJI_CLOSE_LOOP}$
   end do
 
-  call f4_fix_c2f_flux(f4, 1, i_vars, s_out)
+  call f4_fix_c2f_flux(f4, n_vars, i_vars, s_out)
 
   dt_lim = 1/max_cfl
   call MPI_Allreduce(MPI_IN_PLACE, dt_lim, 1, MPI_DOUBLE_PRECISION, &
