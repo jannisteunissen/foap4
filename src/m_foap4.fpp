@@ -1411,7 +1411,7 @@ contains
             ! For hanging faces, sort by offset
             less_than = (bnd_face(a)%offset(1) < bnd_face(b)%offset(1))
 #:elif NDIM == 3
-         else if (bnd_face(a)%offset(1) /= bnd_face(a)%offset(2)) then
+         else if (bnd_face(a)%offset(1) /= bnd_face(b)%offset(1)) then
             ! For hanging faces, sort by offset
             less_than = (bnd_face(a)%offset(1) < bnd_face(b)%offset(1))
          else
@@ -1430,7 +1430,7 @@ contains
          else
             less_than = (bnd_face(a)%offset(1) < bnd_face(b)%offset(1))
 #:elif NDIM == 3
-         else if (bnd_face(a)%offset(1) /= bnd_face(a)%offset(2)) then
+         else if (bnd_face(a)%offset(1) /= bnd_face(b)%offset(1)) then
             less_than = (bnd_face(a)%offset(1) < bnd_face(b)%offset(1))
          else
             less_than = (bnd_face(a)%offset(2) < bnd_face(b)%offset(2))
