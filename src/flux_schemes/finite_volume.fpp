@@ -37,7 +37,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
      !$acc loop collapse(NDIM) private(ix, u)
      do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
         ix = [${IJK}$]
-        if (any(ix >= 1 .and. ix <= f4%bx)) then
+        if (count(ix < 1 .or. ix > f4%bx) <= 1) then
            ! Convert to primitive, but not in corners
            u = f4%uu(${IJK}$, i_vars+s_deriv, n)
            call to_primitive(u)
@@ -45,12 +45,14 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         end if
      end do; ${KJI_CLOSE_LOOP}$
 
-     !$acc loop collapse(NDIM) private(tmp, flux, dvar, cmax, iv, m) &
+     !$acc loop collapse(NDIM) private(tmp, flux, dvar, cmax, iv, m, u) &
      !$acc &reduction(max:max_cfl)
      do @{KJI_LOOP_1_to_array(f4%bx)}@
 
-        ! TODO: set source terms
+        u = uprim(${IJK}$, :)
         dvar = 0.0_dp
+        call source_term(u, dvar)
+        dvar = dvar * dt
 
 #:if NDIM == 2
         ! Compute fluxes

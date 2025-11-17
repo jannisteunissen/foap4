@@ -9,7 +9,7 @@ LIBS := p4est sc z m
 CFLAGS := -Wall -O2 -g
 TARGETS_2D := test_refinement_2d test_advection_2d test_xdmf_writer_2d test_euler_2d	\
 	benchmark_ghostcell_2d
-TARGETS_3D := test_refinement_3d test_advection_3d
+TARGETS_3D := test_refinement_3d test_advection_3d test_euler_3d
 
 .PHONY: all
 all: $(TARGETS_2D) $(TARGETS_3D)

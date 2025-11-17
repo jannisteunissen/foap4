@@ -15,3 +15,5 @@
 /src/m_xdmf_writer.f90
 /src/physics/euler_2d.f90
 /src/physics/m_euler_2d.f90
+/src/physics/euler_3d.f90
+/src/physics/m_euler_3d.f90

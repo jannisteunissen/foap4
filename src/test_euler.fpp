@@ -1,13 +1,13 @@
 #:include 'definitions.fpp'
 #:set LIMITER = 'vanleer'
-#:set FLUX_SCHEME = 'tvdlf'
+#:set FLUX_SCHEME = 'hll'
 
 program euler
   use iso_fortran_env, only: int64
   use mpi_f08
-  use m_foap4_2d
+  use m_foap4_${NDIM}$d
   use m_config
-  use m_euler
+  use m_euler_${NDIM}$d
 
   implicit none
 
@@ -19,21 +19,21 @@ program euler
   type(foap4_t) :: f4
   type(CFG_t)   :: cfg
 
-  integer  :: min_level   = 2
-  integer  :: max_level   = 4
-  integer  :: max_blocks  = 1000
-  integer  :: bx(2)       = [32, 32]
-  integer  :: num_outputs = 40
-  logical  :: periodic(2) = .true.
-  logical  :: do_refinement = .false.
-  real(dp) :: end_time    = 2.0_dp
-  real(dp) :: c_refine = 0.8_dp
-  real(dp) :: c_derefine = 0.2_dp
-  real(dp) :: c_eps = 0.01_dp
-  integer :: n_steps_refinement = 4
-  real(dp) :: cfl_number       = 0.5_dp
-  character(len=10) :: test_case = "sod"
-  character(len=40) :: integrator_name = "heuns_method"
+  integer           :: min_level          = 2
+  integer           :: max_level          = 4
+  integer           :: max_blocks         = 1000
+  integer           :: bx(NDIM)           = 32
+  integer           :: num_outputs        = 40
+  logical           :: periodic(NDIM)     = .true.
+  logical           :: do_refinement      = .false.
+  real(dp)          :: end_time           = 2.0_dp
+  real(dp)          :: c_refine           = 0.8_dp
+  real(dp)          :: c_derefine         = 0.2_dp
+  real(dp)          :: c_eps              = 0.01_dp
+  integer           :: n_steps_refinement = 4
+  real(dp)          :: cfl_number         = 0.5_dp
+  character(len=10) :: test_case          = "sod"
+  character(len=40) :: integrator_name    = "heuns_method"
 
   call f4_initialize(f4, "error")
 
@@ -57,7 +57,8 @@ program euler
   call CFG_check(cfg)
 
   call test_euler(f4, bx, min_level, max_blocks, &
-       num_outputs, "output/test_euler", test_case, end_time, integrator_name)
+       num_outputs, "output/test_euler_${NDIM}$d", test_case, &
+       end_time, integrator_name)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
   call f4_finalize(f4)
@@ -67,7 +68,7 @@ contains
   subroutine test_euler(f4, bx, min_level, max_blocks, num_outputs, base_name, &
        test_case, end_time, integrator_name)
     type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: bx(2)
+    integer, intent(in)          :: bx(NDIM)
     integer, intent(in)          :: min_level
     integer, intent(in)          :: max_blocks
     integer, intent(in)          :: num_outputs
@@ -75,11 +76,9 @@ contains
     character(len=*), intent(in) :: test_case
     real(dp), intent(in)         :: end_time
     character(len=40), intent(in) :: integrator_name
-    integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
-    real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
-    integer, parameter           :: n_gc                = 2
-    logical                      :: periodic(2)         = [.true., .true.]
-    real(dp), parameter          :: cfl_number          = 0.5_dp
+    integer, parameter           :: n_blocks_per_dim(NDIM) = 1
+    real(dp), parameter          :: block_length(NDIM) = 1.0_dp
+    logical                      :: periodic(NDIM) = .true.
     integer                      :: n_output !n, prev_mesh_revision
     integer                      :: n, n_iterations, ierr, prev_mesh_revision
     integer(int64)               :: sum_local_blocks, sum_global_blocks
@@ -100,16 +99,23 @@ contains
     integrator = f4_get_time_integrator(trim(integrator_name))
     n_time_states = f4_advance_num_copies(integrator)
 
-    if (test_case == "rt") periodic(2) = .false.
+    if (test_case == "rt") periodic(NDIM) = .false.
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, temporal, n_time_states, periodic, &
          min_level, max_blocks, f4_bc_neumann, 0.0_dp)
 
     if (test_case == "rt") then
-       call f4_set_physical_boundary(f4, i_mom(2), 2, f4_bc_dirichlet, 0.0_dp)
-       call f4_set_physical_boundary(f4, i_mom(2), 3, f4_bc_dirichlet, 0.0_dp)
+       call f4_set_physical_boundary(f4, i_mom(NDIM), 2*(NDIM-1), &
+            f4_bc_dirichlet, 0.0_dp)
+       call f4_set_physical_boundary(f4, i_mom(NDIM), 2*(NDIM-1)+1, &
+            f4_bc_dirichlet, 0.0_dp)
+       gravity_constant = 1.0_dp
+    else
+       gravity_constant = 0.0_dp
     end if
+
+    !$acc update device(gravity_constant)
 
     call set_initial_conditions(f4, test_case)
 
@@ -188,88 +194,58 @@ contains
   subroutine set_initial_conditions(f4, test_case)
     type(foap4_t), intent(inout) :: f4
     character(len=*), intent(in) :: test_case
-    integer                      :: n
-    real(dp)                     :: u0(n_vars, 4)
 
     select case (test_case)
-    case ("first")
-       u0(i_e, :)      = [1.0_dp, 0.4_dp, 0.0439_dp, 0.15_dp]
-       u0(i_rho, :)    = [1.0_dp, 0.5197_dp, 0.1072_dp, 0.2579_dp]
-       u0(i_mom(1), :) = [0.0_dp, -0.7259_dp, -0.7259_dp, 0.0_dp]
-       u0(i_mom(2), :) = [0.0_dp, 0.0_dp, -1.4045_dp, -1.4045_dp]
-
-       do n = 1, 4
-          call to_conservative(u0(:, n))
-       end do
-       call set_initial_quadrants(f4, u0)
-    case ("sixth")
-       u0(i_e, :)      = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp]
-       u0(i_rho, :)    = [1.0_dp, 2.0_dp, 1.0_dp, 3.0_dp]
-       u0(i_mom(1), :) = [0.75_dp, 0.75_dp, -0.75_dp, -0.75_dp]
-       u0(i_mom(2), :) = [-0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp]
-
-       do n = 1, 4
-          call to_conservative(u0(:, n))
-       end do
-       call set_initial_quadrants(f4, u0)
     case ("sod")
-       ! 1D Sod shock test case
-       u0(i_rho, :)    = [0.125_dp, 1.0_dp, 1.0_dp, 0.125_dp]
-       u0(i_e, :)      = [0.1_dp, 1.0_dp, 1.0_dp, 0.1_dp]
-       u0(i_mom(1), :) = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
-       u0(i_mom(2), :) = [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
-
-       do n = 1, 4
-          call to_conservative(u0(:, n))
-       end do
-       call set_initial_quadrants(f4, u0)
+       call set_initial_conditions_sod(f4)
     case ("rt")
-       call set_rayleigh_taylor(f4)
+       call set_initial_conditions_rt(f4)
     case default
-       error stop "Unknown test case, options: rt, sod, first, sixth"
+       error stop "Unknown test case, options: rt, sod"
     end select
-
   end subroutine set_initial_conditions
 
-  subroutine set_initial_quadrants(f4, u0)
+  subroutine set_initial_conditions_sod(f4)
     type(foap4_t), intent(inout) :: f4
-    real(dp), intent(in)         :: u0(n_vars, 4)
-    integer                      :: n, i, j
-    real(dp)                     :: rr(2)
+    integer                      :: n, ${IJK}$
+    real(dp)                     :: rr(NDIM)
+    real(dp)                     :: u0(n_vars, 2)
+
+    ! 1D Sod shock test case
+    u0(i_rho, :) = [1.0_dp, 0.125_dp]
+    u0(i_e, :)   = [1.0_dp, 0.1_dp]
+    u0(i_mom, :) = 0.0_dp
+
+    call to_conservative(u0(:, 1))
+    call to_conservative(u0(:, 2))
 
     !$acc parallel loop
     do n = 1, f4%n_blocks
-       !$acc loop collapse(2) private(rr)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-             rr = f4_cell_coord(f4, n, i, j)
+       !$acc loop collapse(NDIM) private(rr)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          rr = f4_cell_coord(f4, n, ${IJK}$)
 
-             if (rr(1) > 0.5_dp .and. rr(2) > 0.5_dp) then
-                f4%uu(i, j, i_vars, n) = u0(:, 1)
-             elseif (rr(1) <= 0.5_dp .and. rr(2) >= 0.5_dp) then
-                f4%uu(i, j, i_vars, n) = u0(:, 2)
-             elseif (rr(1) <= 0.5_dp .and. rr(2) <= 0.5_dp) then
-                f4%uu(i, j, i_vars, n) = u0(:, 3)
-             else
-                f4%uu(i, j, i_vars, n) = u0(:, 4)
-             end if
-          end do
-       end do
+          if (rr(1) < 0.5_dp) then
+             f4%uu(${IJK}$, i_vars, n) = u0(:, 1)
+          else
+             f4%uu(${IJK}$, i_vars, n) = u0(:, 2)
+          end if
+       end do; ${KJI_CLOSE_LOOP}$
     end do
-  end subroutine set_initial_quadrants
+  end subroutine set_initial_conditions_sod
 
-  subroutine set_rayleigh_taylor(f4)
+  subroutine set_initial_conditions_rt(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n, i, j
-    real(dp)                     :: y0, rho_high, rho_low, width
-    real(dp)                     :: p_interface, kx, rr(2)
+    integer                      :: n, ${IJK}$
+    real(dp)                     :: h0, dh, rho_high, rho_low
+    real(dp)                     :: p_interface, k_vec(NDIM-1), rr(NDIM)
     real(dp), parameter          :: pi = acos(-1.0_dp)
 
     ! The location of interface
-    y0 = 0.8d0
+    h0 = 0.8d0
 
     ! Width of the sinusoidal fluctuations on the interface
-    width = 0.05d0
+    dh = 0.05d0
 
     ! High and low density
     rho_high = 1.0_dp
@@ -279,30 +255,37 @@ contains
     p_interface = 1.0_dp
 
     ! Wavelength
-    kx = 2 * pi
+    k_vec(1) = 2 * pi
+#:if NDIM == 3
+    k_vec(2) = 4 * pi
+#:endif
 
     !$acc parallel loop
     do n = 1, f4%n_blocks
-       !$acc loop collapse(2) private(rr)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-             rr = f4_cell_coord(f4, n, i, j)
+       !$acc loop collapse(NDIM) private(rr)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          rr = f4_cell_coord(f4, n, ${IJK}$)
 
-             f4%uu(i, j, i_mom(1), n) = 0.0_dp
-             f4%uu(i, j, i_mom(2), n) = 0.0_dp
+          f4%uu(${IJK}$, i_mom, n) = 0.0_dp
 
-             if (rr(2) > y0 + width * sin(kx * rr(1))) then
-                f4%uu(i, j, i_rho, n) = rho_high
-             else
-                f4%uu(i, j, i_rho, n) = rho_low
-             end if
+          if (rr(NDIM) > h0 + dh * product(sin(k_vec * rr(1:NDIM-1)))) then
+             f4%uu(${IJK}$, i_rho, n) = rho_high
+          else
+             f4%uu(${IJK}$, i_rho, n) = rho_low
+          end if
 
-             f4%uu(i, j, i_e, n) = inv_gamma_m1 * (p_interface - 1.0_dp * &
-                  f4%uu(i, j, i_rho, n) * (rr(2) - y0))
-          end do
-       end do
+          f4%uu(${IJK}$, i_e, n) = inv_gamma_m1 * (p_interface - 1.0_dp * &
+               f4%uu(${IJK}$, i_rho, n) * (rr(NDIM) - h0))
+       end do; ${KJI_CLOSE_LOOP}$
     end do
-  end subroutine set_rayleigh_taylor
+  end subroutine set_initial_conditions_rt
+
+  subroutine source_term(u_prim, source)
+    real(dp), intent(in)    :: u_prim(n_vars)
+    real(dp), intent(inout) :: source(n_vars)
+    source(i_mom(NDIM)) = -gravity_constant * u_prim(i_rho)
+    source(i_e)         = -gravity_constant * source(i_mom(NDIM))
+  end subroutine source_term
 
   #:include 'physics/euler.fpp'
 

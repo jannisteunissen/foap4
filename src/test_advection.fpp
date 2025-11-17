@@ -39,9 +39,9 @@ program test_adv
   call CFG_update_from_arguments(cfg)
   call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
   call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
-  call CFG_add_get(cfg, 'min_refinement_level', min_refinement_level, &
+  call CFG_add_get(cfg, 'min_level', min_refinement_level, &
        'Minimum refinement level in the domain')
-  call CFG_add_get(cfg, 'max_refinement_level', max_refinement_level, &
+  call CFG_add_get(cfg, 'max_level', max_refinement_level, &
        'Maximum refinement level in the domain')
   call CFG_add_get(cfg, 'c_refine', c_refine, 'Coefficient for refinement')
   call CFG_add_get(cfg, 'c_derefine', c_refine, 'Coefficient for derefinement')
@@ -233,6 +233,12 @@ contains
     !$acc routine seq
     real(dp), intent(inout) :: u(n_vars)
   end subroutine to_conservative
+
+  subroutine source_term(u_prim, source)
+    real(dp), intent(in) :: u_prim(n_vars)
+    real(dp), intent(out) :: source(n_vars)
+    source = 0.0_dp
+  end subroutine source_term
 
   pure subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
     !$acc routine seq

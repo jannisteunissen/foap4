@@ -1,4 +1,4 @@
-module m_euler
+module m_euler_${NDIM}$d
 
   implicit none
   public
@@ -24,4 +24,7 @@ module m_euler
 
   integer, parameter :: i_vars(n_vars) = [i_rho, i_mom, i_e]
 
-end module m_euler
+  real(dp) :: gravity_constant = 0.0_dp
+  !$acc declare create(gravity_constant)
+
+end module m_euler_${NDIM}$d
