@@ -22,6 +22,7 @@ program euler
   integer           :: min_level          = 2
   integer           :: max_level          = 4
   integer           :: max_blocks         = 1000
+  integer           :: blocks_per_dim(NDIM) = 1
   integer           :: bx(NDIM)           = 32
   integer           :: num_outputs        = 40
   logical           :: periodic(NDIM)     = .true.
@@ -50,6 +51,8 @@ program euler
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
   call CFG_add_get(cfg, 'periodic', periodic, 'Whether the domain is periodic')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
+  call CFG_add_get(cfg, 'blocks_per_dim', blocks_per_dim, &
+       'Number of blocks (per dimension) on coarse grid')
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_add_get(cfg, 'test_case', test_case, 'Which test case to run')
   call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
@@ -76,7 +79,6 @@ contains
     character(len=*), intent(in) :: test_case
     real(dp), intent(in)         :: end_time
     character(len=40), intent(in) :: integrator_name
-    integer, parameter           :: n_blocks_per_dim(NDIM) = 1
     real(dp), parameter          :: block_length(NDIM) = 1.0_dp
     logical                      :: periodic(NDIM) = .true.
     integer                      :: n_output
@@ -101,7 +103,7 @@ contains
 
     if (test_case == "rt") periodic(NDIM) = .false.
 
-    call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
+    call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, temporal, n_time_states, periodic, &
          min_level, max_blocks, f4_bc_neumann, 0.0_dp)
 
@@ -134,7 +136,7 @@ contains
 
     call f4_compute_sum(f4, i_rho, rho_initial_sum)
 
-    if (dt_output < end_time) call f4_write_grid(f4, base_name, n_output, time)
+    if (dt_output <= end_time) call f4_write_grid(f4, base_name, n_output, time)
     n_output = n_output + 1
 
     t0 = MPI_Wtime()

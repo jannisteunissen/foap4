@@ -27,6 +27,7 @@ program test_adv
   integer           :: max_refinement_level = 3
   integer           :: min_refinement_level = 1
   integer           :: max_blocks           = 2000
+  integer           :: blocks_per_dim(NDIM) = 1
   integer           :: bx(NDIM)             = 32
   integer           :: num_outputs          = 40
   character(len=40) :: integrator_name      = "heuns_method"
@@ -47,6 +48,8 @@ program test_adv
   call CFG_add_get(cfg, 'c_derefine', c_refine, 'Coefficient for derefinement')
   call CFG_add_get(cfg, 'c_eps', c_refine, 'Used in refinement criterion')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
+  call CFG_add_get(cfg, 'blocks_per_dim', blocks_per_dim, &
+       'Number of blocks (per dimension) on coarse grid')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
   call CFG_add_get(cfg, 'velocity', velocity(1:NDIM), 'Velocity')
   !$acc update device(velocity(1:NDIM))
@@ -76,7 +79,6 @@ contains
     character(len=*), intent(in) :: base_name
     real(dp), intent(in)         :: end_time
     character(len=40), intent(in) :: integrator_name
-    integer, parameter           :: n_blocks_per_dim(NDIM) = 1
     real(dp), parameter          :: block_length(NDIM) = 1.0_dp
     logical, parameter           :: periodic(NDIM) = .true.
     real(dp), parameter          :: cfl_number = 0.5_dp
@@ -99,7 +101,7 @@ contains
     integrator = f4_get_time_integrator(trim(integrator_name))
     n_time_states = f4_advance_num_copies(integrator)
 
-    call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
+    call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, temporal, n_time_states, periodic, &
          min_refinement_level, max_blocks, f4_bc_dirichlet, 0.0_dp)
 
