@@ -24,8 +24,8 @@ program test_adv
   real(dp)           :: c_eps            = 0.01_dp
 
   logical           :: do_refinement        = .true.
-  integer           :: max_refinement_level = 5
-  integer           :: min_refinement_level = 2
+  integer           :: max_refinement_level = 3
+  integer           :: min_refinement_level = 1
   integer           :: max_blocks           = 2000
   integer           :: bx(NDIM)             = 32
   integer           :: num_outputs          = 40
