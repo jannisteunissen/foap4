@@ -1,4 +1,4 @@
-module m_euler_${NDIM}$d
+module m_physics_euler_${NDIM}$d
 
   implicit none
   public
@@ -27,4 +27,4 @@ module m_euler_${NDIM}$d
   real(dp) :: gravity_constant = 0.0_dp
   !$acc declare create(gravity_constant)
 
-end module m_euler_${NDIM}$d
+end module m_physics_euler_${NDIM}$d

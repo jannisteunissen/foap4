@@ -1,4 +1,4 @@
-module m_advection
+module m_physics_advection
 
   implicit none
   public
@@ -12,4 +12,4 @@ module m_advection
   real(dp)                     :: velocity(3)       = 1.0_dp
   !$acc declare create(velocity)
 
-end module m_advection
+end module m_physics_advection

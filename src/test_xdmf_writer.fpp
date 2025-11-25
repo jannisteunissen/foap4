@@ -1,5 +1,5 @@
-program test_xdmf_writer
-  use m_xdmf_writer
+program test_xdmf_writer_${NDIM}$d
+  use m_foap4_${NDIM}$d
   use mpi_f08
 
   implicit none
@@ -16,16 +16,19 @@ program test_xdmf_writer
      stop
   end if
 
+#:if NDIM == 2
   call multi_block_test_2d("output/xdmf_test_single_2d", [1, 1], [16, 16])
   call multi_block_test_2d("output/xdmf_test_multiple_2d", [4, 2], [8, 8])
-
+#:elif NDIM == 3
   call multi_block_test_3d("output/xdmf_test_single_3d", [1, 1, 1], [16, 16, 16])
   call multi_block_test_3d("output/xdmf_test_multiple_3d", [4, 2, 2], [8, 8, 8])
+#:endif
 
   call MPI_finalize(ierr)
 
 contains
 
+#:if NDIM == 2
   subroutine multi_block_test_2d(fname, n_blocks_dim, nx)
     character(len=*), intent(in) :: fname
     integer, intent(in)          :: n_blocks_dim(2)
@@ -67,11 +70,11 @@ contains
        end do
     end do
 
-    call xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
+    call f4_xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
          nx+2*n_gc, n_cc, cc_names, n_gc, origin, dr, cc_data, time=time)
 
   end subroutine multi_block_test_2d
-
+#:elif NDIM == 3
   subroutine multi_block_test_3d(fname, n_blocks_dim, nx)
     character(len=*), intent(in) :: fname
     integer, intent(in)          :: n_blocks_dim(3)
@@ -119,9 +122,10 @@ contains
        end do
     end do
 
-    call xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
+    call f4_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
          nx+2*n_gc, n_cc, cc_names, n_gc, origin, dr, cc_data, time=time)
 
   end subroutine multi_block_test_3d
+#:endif
 
-end program test_xdmf_writer
+end program test_xdmf_writer_${NDIM}$d

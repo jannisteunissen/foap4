@@ -7,11 +7,11 @@ program euler
   use mpi_f08
   use m_foap4_${NDIM}$d
   use m_config
-  use m_euler_${NDIM}$d
+  use m_physics_euler_${NDIM}$d
 
   implicit none
 
-  include 'limiters/${LIMITER}$_definitions.f90'
+  include 'limiter_${LIMITER}$_definitions.f90'
   integer, parameter :: dp = kind(0.0d0)
   integer, parameter :: NDIM = ${NDIM}$
   integer, parameter :: n_gc = limiter_num_ghostcells
@@ -289,12 +289,12 @@ contains
     source(i_e)         = -gravity_constant * source(i_mom(NDIM))
   end subroutine source_term
 
-  #:include 'physics/euler.fpp'
+  #:include 'physics_euler.fpp'
 
-  #:include 'flux_schemes/finite_volume.fpp'
+  #:include 'flux_finite_volume.fpp'
 
-  include 'flux_schemes/${FLUX_SCHEME}$.f90'
+  include 'flux_${FLUX_SCHEME}$.f90'
 
-  include 'limiters/${LIMITER}$.f90'
+  include 'limiter_${LIMITER}$.f90'
 
 end program

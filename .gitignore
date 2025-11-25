@@ -5,15 +5,6 @@
 *.visit
 *.o
 *.mod
-/benchmark_ghostcell*
-/test_refinement*
-/test_advection*
-/test_xdmf_writer*
-/test_euler*
 /src/*_2d.f90
 /src/*_3d.f90
-/src/m_xdmf_writer.f90
-/src/physics/euler_2d.f90
-/src/physics/m_euler_2d.f90
-/src/physics/euler_3d.f90
-/src/physics/m_euler_3d.f90
+/build/

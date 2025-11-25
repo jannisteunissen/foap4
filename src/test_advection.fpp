@@ -7,11 +7,11 @@ program test_adv
   use mpi_f08
   use m_foap4_${NDIM}$d
   use m_config
-  use m_advection
+  use m_physics_advection
 
   implicit none
 
-  include 'limiters/${LIMITER}$_definitions.f90'
+  include 'limiter_${LIMITER}$_definitions.f90'
   integer, parameter :: dp   = kind(0.0d0)
   integer, parameter :: NDIM = ${NDIM}$
   integer, parameter :: n_gc = limiter_num_ghostcells
@@ -247,10 +247,10 @@ contains
     cmax = max(velocity(flux_dim), 0.0_dp)
   end subroutine get_min_max_wavespeed
 
-#:include 'flux_schemes/finite_volume.fpp'
+#:include 'flux_finite_volume.fpp'
 
-  include 'flux_schemes/${FLUX_SCHEME}$.f90'
+  include 'flux_${FLUX_SCHEME}$.f90'
 
-  include 'limiters/${LIMITER}$.f90'
+  include 'limiter_${LIMITER}$.f90'
 
 end program
