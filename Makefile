@@ -41,8 +41,8 @@ $(TARGETS_3D): src/m_foap4_3d.o src/p4est_wrapper_3d.o src/m_xdmf_writer.o src/m
 $(addsuffix .o,$(addprefix src/,$(TARGETS_2D))): src/m_foap4_2d.mod src/m_config.mod
 $(addsuffix .o,$(addprefix src/,$(TARGETS_3D))): src/m_foap4_3d.mod src/m_config.mod
 
-src/test_euler_2d.o: src/physics/m_euler_2d.mod src/physics/euler_2d.f90
-src/test_euler_3d.o: src/physics/m_euler_3d.mod src/physics/euler_3d.f90
+src/test_euler_2d.o: src/physics/m_euler_2d.o src/physics/euler_2d.f90
+src/test_euler_3d.o: src/physics/m_euler_3d.o
 test_euler_2d: src/physics/m_euler_2d.o
 test_euler_3d: src/physics/m_euler_3d.o
 
@@ -56,7 +56,7 @@ src/m_foap4_3d.o: src/m_xdmf_writer.mod src/p4est_wrapper_3d.o
 
 .PHONY: clean
 clean:
-	$(RM) $(TARGETS) src/*.o src/*.mod src/*.smod
+	$(RM) $(TARGETS) src/*.o src/*.mod src/*.smod src/physics/*.o src/limiters/*.o
 
 # How to get .o object files from .c source files
 src/%_2d.o: src/%.c
