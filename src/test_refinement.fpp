@@ -128,9 +128,11 @@ contains
     logical, parameter           :: partition              = .true.
     integer                      :: n, prev_mesh_revision
 
+    f4%bc_callback => bc_callback
+
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, [.false., .false.], 1, periodic, min_level, max_blocks, &
-         f4_bc_linear_extrap, 0.0_dp)
+         f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
     call f4_update_ghostcells(f4, 1, [i_phi])
@@ -196,6 +198,41 @@ contains
     phi_init = x + 2*y + 3*z
   end function phi_init
 #:endif
+
+  subroutine bc_callback(f4)
+    type(foap4_t), intent(inout) :: f4
+    integer                      :: face, i_block, ix, n, i
+    real(dp)                     :: rr(NDIM)
+#:if NDIM == 3
+    integer                      :: j
+#:endif
+
+    !$acc parallel
+    do face = 0, 2*NDIM-1
+       !$acc loop private(i_block, ix) independent
+       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
+          i_block = f4%gc_phys(n) + 1
+          f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
+          ix = f4%bc_data_ix(face, i_block)
+#:if NDIM == 2
+          !$acc loop private(rr)
+          do i = 1, f4%bx(1)
+             rr = f4_block_face_coord(f4, i_block, face, i)
+             f4%bc_data(i, i_phi, ix) = phi_init(rr(1), rr(2))
+          end do
+#:elif NDIM == 3
+          !$acc loop collapse(2) private(rr)
+          do j = 1, f4%bx(1)
+             do i = 1, f4%bx(1)
+                rr = f4_block_face_coord(f4, i_block, face, i, j)
+                f4%bc_data(i, j, i_phi, ix) = phi_init(rr(1), rr(2), rr(3))
+             end do
+          end do
+#:endif
+       end do
+    end do
+    !$acc end parallel
+  end subroutine bc_callback
 
   subroutine set_init_cond(f4)
     type(foap4_t), intent(inout) :: f4

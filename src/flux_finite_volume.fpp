@@ -68,10 +68,14 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
              (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2))
 
         ! Store boundary fluxes
-        if (i == 1) f4%bflux(j, 0, i_vars, n) = dt * flux(:, 1, 1)
-        if (i == bx(1)) f4%bflux(j, 1, i_vars, n) = dt * flux(:, 2, 1)
-        if (j == 1) f4%bflux(i, 2, i_vars, n) = dt * flux(:, 1, 2)
-        if (j == bx(2)) f4%bflux(i, 3, i_vars, n) = dt * flux(:, 2, 2)
+        if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
+             f4%bflux(j, i_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
+        if (f4%bflux_ix(1, n) > 0 .and. i == bx(1)) &
+             f4%bflux(j, i_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
+        if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
+             f4%bflux(i, i_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
+        if (f4%bflux_ix(3, n) > 0 .and. j == bx(2)) &
+             f4%bflux(i, i_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
 #:elif NDIM == 3
         ! Compute fluxes
         tmp = uprim(i-n_gc:i+n_gc, j, k, :)
@@ -90,12 +94,18 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
              (flux(:, 1, 3) - flux(:, 2, 3)) * inv_dr(3))
 
         ! Store boundary fluxes
-        if (i == 1)     f4%bflux(j, k, 0, i_vars, n) = dt * flux(:, 1, 1)
-        if (i == bx(1)) f4%bflux(j, k, 1, i_vars, n) = dt * flux(:, 2, 1)
-        if (j == 1)     f4%bflux(i, k, 2, i_vars, n) = dt * flux(:, 1, 2)
-        if (j == bx(2)) f4%bflux(i, k, 3, i_vars, n) = dt * flux(:, 2, 2)
-        if (k == 1)     f4%bflux(i, j, 4, i_vars, n) = dt * flux(:, 1, 3)
-        if (k == bx(3)) f4%bflux(i, j, 5, i_vars, n) = dt * flux(:, 2, 3)
+        if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
+             f4%bflux(j, k, i_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
+        if (f4%bflux_ix(1, n) > 0 .and. i == bx(1)) &
+             f4%bflux(j, k, i_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
+        if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
+             f4%bflux(i, k, i_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
+        if (f4%bflux_ix(3, n) > 0 .and. j == bx(2)) &
+             f4%bflux(i, k, i_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
+        if (f4%bflux_ix(4, n) > 0 .and. k == 1) &
+             f4%bflux(i, j, i_vars, f4%bflux_ix(4, n)) = dt * flux(:, 1, 3)
+        if (f4%bflux_ix(5, n) > 0 .and. k == bx(3)) &
+             f4%bflux(i, j, i_vars, f4%bflux_ix(5, n)) = dt * flux(:, 2, 3)
 #:endif
 
         max_cfl = max(max_cfl, sum(cmax * inv_dr))

@@ -108,9 +108,9 @@ contains
          min_level, max_blocks, f4_bc_neumann, 0.0_dp)
 
     if (test_case == "rt") then
-       call f4_set_physical_boundary(f4, i_mom(NDIM), 2*(NDIM-1), &
+       call f4_set_bc_scalar(f4, i_mom(NDIM), 2*(NDIM-1), &
             f4_bc_dirichlet, 0.0_dp)
-       call f4_set_physical_boundary(f4, i_mom(NDIM), 2*(NDIM-1)+1, &
+       call f4_set_bc_scalar(f4, i_mom(NDIM), 2*(NDIM-1)+1, &
             f4_bc_dirichlet, 0.0_dp)
        gravity_constant = 1.0_dp
     else

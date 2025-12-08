@@ -147,11 +147,17 @@ module m_foap4_${NDIM}$d
      !> Refinement flag of each block. Negative means coarsen (if possible),
      !> positive means refine, and zero means keep refinement.
      integer, allocatable  :: refinement_flags(:)
+     !> Index into bc_data array (only used if > 0), shaped bc_data_ix(face, i_block)
+     integer, allocatable  :: bc_data_ix(:, :)
+     !> Index into bflux array (only used if > 0), shaped bflux_ix(face, i_block)
+     integer, allocatable  :: bflux_ix(:, :)
 
      !> Storage of block data uu(i, j, [k,] i_var, i_block)
      real(dp), allocatable :: uu(@{DTIMES(:)}@, :, :)
      !> Storage of boundary flux * dt, as bflux(i, [j,] face, i_var, i_block)
-     real(dp), allocatable :: bflux(@{DTIMES(:)}@, :, :)
+     real(dp), allocatable :: bflux(@{DTIMES(:)}@, :)
+     !> Storage of boundary condition data bc_data(i, [j,] face, i_var, i_block)
+     real(dp), allocatable :: bc_data(@{DTIMES(:)}@, :)
 
      ! For communication
      type(MPI_comm)        :: mpicomm        !< MPI communicator
@@ -231,6 +237,7 @@ module m_foap4_${NDIM}$d
 
      ! Performance information
      real(dp) :: wtime_t0 = 0.0_dp
+     real(dp) :: wtime_initialization = 0.0_dp
      real(dp) :: wtime_gc_fill_round1 = 0.0_dp
      real(dp) :: wtime_gc_fill_round2 = 0.0_dp
      real(dp) :: wtime_gc_fill_buff_round1 = 0.0_dp
@@ -243,6 +250,9 @@ module m_foap4_${NDIM}$d
      real(dp) :: wtime_exchange_buffers = 0.0_dp
      real(dp) :: wtime_flux_fix = 0.0_dp
 
+     !> Optional procedure to set boundary conditions after changing the mesh.
+     !> Should be set before the mesh is created.
+     procedure(bc_callback_t), pointer, nopass :: bc_callback => null()
   end type foap4_t
 
   interface
@@ -402,13 +412,17 @@ module m_foap4_${NDIM}$d
        real(dp), intent(inout) :: cc_data(:, :, :, :)
      end subroutine subr_cc_data_3D
 
+     subroutine bc_callback_t(f4)
+       import
+       type(foap4_t), intent(inout) :: f4
+     end subroutine bc_callback_t
   end interface
 
   public :: f4_initialize
   public :: f4_destroy
   public :: f4_finalize
   public :: f4_construct_brick
-  public :: f4_set_physical_boundary
+  public :: f4_set_bc_scalar
   public :: f4_reset_wtime
   public :: f4_print_wtime
   public :: f4_write_grid
@@ -417,6 +431,7 @@ module m_foap4_${NDIM}$d
   public :: f4_get_num_local_blocks
   public :: f4_get_num_global_blocks
   public :: f4_cell_coord
+  public :: f4_block_face_coord
   public :: f4_exchange_buffers
   public :: f4_update_ghostcells
   public :: f4_adjust_refinement
@@ -539,6 +554,7 @@ contains
     type(foap4_t), intent(inout) :: f4
 
     f4%wtime_t0 = MPI_Wtime()
+    f4%wtime_initialization = 0.0_dp
     f4%wtime_gc_fill_round1 = 0.0_dp
     f4%wtime_gc_fill_round2 = 0.0_dp
     f4%wtime_gc_fill_buff_round1 = 0.0_dp
@@ -560,6 +576,8 @@ contains
     t_total = MPI_Wtime() - f4%wtime_t0
     fac     = 1e2_dp / t_total
     write(*, "(I6,A25,F9.2,' s')") f4%mpirank, "total_runtime", t_total
+    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "initialization", &
+         f4%wtime_initialization * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_round1", &
          f4%wtime_gc_fill_round1 * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_round2", &
@@ -583,7 +601,9 @@ contains
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "flux_fix", &
          f4%wtime_flux_fix * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "sum_of_above", &
-         fac * (f4%wtime_gc_fill_round1 + &
+         fac * ( &
+         f4%wtime_initialization + &
+         f4%wtime_gc_fill_round1 + &
          f4%wtime_gc_fill_round2 + &
          f4%wtime_gc_fill_buff_round1 + &
          f4%wtime_gc_fill_buff_round2 + &
@@ -604,7 +624,8 @@ contains
 
     !$acc exit data delete(f4%bc_type, f4%bc_value)
     !$acc exit data delete(f4%block_level, f4%block_origin)
-    !$acc exit data delete(f4%uu, f4%bflux, f4%refinement_flags)
+    !$acc exit data delete(f4%uu, f4%refinement_flags)
+    !$acc exit data delete(f4%bc_data_ix, f4%bc_data, f4%bflux_ix, f4%bflux)
     !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
     !$acc exit data delete(&
     !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
@@ -623,7 +644,10 @@ contains
     deallocate(f4%block_level)
     deallocate(f4%refinement_flags)
     deallocate(f4%uu)
+    deallocate(f4%bflux_ix)
     deallocate(f4%bflux)
+    deallocate(f4%bc_data_ix)
+    deallocate(f4%bc_data)
     deallocate(f4%recv_buffer)
     deallocate(f4%send_buffer)
     deallocate(f4%recv_offset)
@@ -661,6 +685,9 @@ contains
     real(dp), intent(in)         :: bc_value !< Default physical boundary value
     integer                      :: i, k, periodic_as_int(ndim)
     character(len=3)             :: time_state
+    real(dp)                     :: t0, t1
+
+    t0 = MPI_Wtime()
 
     if (any(bx /= bx(1))) error stop "TODO: unequal bx(:) not yet supported"
     if (any(bx < 2 * n_gc)) error stop "Cannot have any(bx < 2 * n_gc)"
@@ -718,18 +745,22 @@ contains
     allocate(f4%block_origin(ndim, max_blocks))
     allocate(f4%block_level(max_blocks))
     allocate(f4%refinement_flags(max_blocks))
+    allocate(f4%bflux_ix(0:2*NDIM-1, max_blocks))
+    allocate(f4%bc_data_ix(0:2*NDIM-1, max_blocks))
 
 #:if NDIM == 2
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
          f4%n_vars_all, max_blocks))
-    allocate(f4%bflux(bx(1), 0:2*NDIM-1, n_vars, max_blocks))
+    allocate(f4%bflux(bx(1), n_vars, 0))
+    allocate(f4%bc_data(bx(1), n_vars, 0))
     f4%gc_data_size = f4%bx(1) * f4%n_gc
     f4%gc_data_size_c2f = (f4%bx(1)/2) * f4%n_gc
     f4%gc_data_size_fluxfix = f4%bx(1)/2
 #:elif NDIM == 3
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, 1-n_gc:bx(3)+n_gc, &
          f4%n_vars_all, max_blocks))
-    allocate(f4%bflux(bx(1), bx(2), 0:2*NDIM-1, n_vars, max_blocks))
+    allocate(f4%bflux(bx(1), bx(1), n_vars, 0))
+    allocate(f4%bc_data(bx(1), bx(1), n_vars, 0))
     f4%gc_data_size = f4%bx(1)**2 * f4%n_gc
     f4%gc_data_size_c2f = (f4%bx(1)/2)**2 * f4%n_gc
     f4%gc_data_size_fluxfix = (f4%bx(1)/2)**2
@@ -757,14 +788,122 @@ contains
     !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
 
     call f4_set_quadrants(f4)
+    call update_ghostcell_pattern(f4)
+    call set_face_data_storage(f4)
+    if (associated(f4%bc_callback)) call f4%bc_callback(f4)
+
+    t1 = MPI_Wtime()
+    f4%wtime_initialization = f4%wtime_initialization + t1 - t0
 
   end subroutine f4_construct_brick
 
-  !> Set physical boundary conditions for a variable on a face
-  subroutine f4_set_physical_boundary(f4, ivar, iface, bc_type, bc_value)
+  !> Allocate storage for fluxes at refinement boundaries and for boundary
+  !> condition data, and set indices into this storage.
+  !> Note: this routine requires that update_ghostcell_pattern has been called
+  subroutine set_face_data_storage(f4)
+    type(foap4_t), intent(inout) :: f4
+
+    integer :: n, face, ix, i_block, i_coarse, i_fine, offset(NDIM-1)
+    integer :: n_face_bc, n_face_rb
+
+    ! Number of faces next to physical boundary
+    n_face_bc = f4%gc_phys_iface(2*NDIM) - 1
+
+    ! Number of faces next to refinement boundary. For the local ones, there
+    ! are 2^(NDIM-1) fine faces, correct to also get the coarse faces counted.
+    n_face_rb = (f4%gc_f2c_local_iface(2*NDIM) - 1)/2**(NDIM-1) * &
+         (2**(NDIM-1) + 1) + &
+         f4%gc_f2c_to_buf_iface(2*NDIM) - 1 + &
+         f4%gc_c2f_from_buf_iface(2*NDIM) - 1
+
+    if (n_face_bc > size(f4%bc_data, NDIM+1)) then
+       ! Resize storage, and reserve extra space
+       !$acc exit data delete(f4%bc_data)
+       deallocate(f4%bc_data)
+#:if NDIM == 2
+       allocate(f4%bc_data(f4%bx(1), f4%n_vars, 2*n_face_bc))
+#:elif NDIM == 3
+       allocate(f4%bc_data(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_bc))
+#:endif
+       !$acc enter data create(f4%bc_data)
+    end if
+
+    if (n_face_rb > size(f4%bflux, NDIM+1)) then
+       ! Resize storage, and reserve extra space
+       !$acc exit data delete(f4%bflux)
+       deallocate(f4%bflux)
+#:if NDIM == 2
+       allocate(f4%bflux(f4%bx(1), f4%n_vars, 2*n_face_rb))
+#:elif NDIM == 3
+       allocate(f4%bflux(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_rb))
+#:endif
+       !$acc enter data create(f4%bflux)
+    end if
+
+    ! Set indices into boundary condition data. No boundary is set to zero,
+    ! while boundaries are set to a negative index. This index should be
+    ! turned positive where the boundary data should be used.
+    ix = 0
+    f4%bc_data_ix(:, 1:f4%n_blocks) = 0
+    do face = 0, 2*NDIM-1
+       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
+          i_block = f4%gc_phys(n) + 1
+          ix = ix + 1
+          f4%bc_data_ix(face, i_block) = -ix
+       end do
+    end do
+
+    ! Set indices into bflux array (local case)
+    ix = 0
+    f4%bflux_ix(:, 1:f4%n_blocks) = 0
+    do face = 0, 2*NDIM-1
+       do n = f4%gc_f2c_local_iface(face), f4%gc_f2c_local_iface(face+1)-1
+          i_fine = f4%gc_f2c_local(1, n) + 1
+          i_coarse = f4%gc_f2c_local(2, n) + 1
+#:if NDIM == 2
+          offset(1) = f4%gc_f2c_local(3, n) ! offset
+#:elif NDIM == 3
+          offset(1:2) = f4%gc_f2c_local(3:4, n) ! offset
+#:endif
+
+          ix = ix + 1
+          f4%bflux_ix(face, i_fine) = ix
+
+          ! Add index for coarse block if offset is all zero. Note that the
+          ! face is reversed.
+          if (all(offset == 0)) then
+             ix = ix + 1
+             f4%bflux_ix(face_swap(face), i_coarse) = ix
+          end if
+       end do
+    end do
+
+    ! Case where coarse block is on other MPI rank
+    do face = 0, 2*NDIM-1
+       do n = f4%gc_f2c_to_buf_iface(face), f4%gc_f2c_to_buf_iface(face+1)-1
+          i_fine = f4%gc_f2c_to_buf(1, n) + 1
+          ix = ix + 1
+          f4%bflux_ix(face, i_fine) = ix
+       end do
+    end do
+
+    ! Case where fine blocks are on other MPI rank
+    do face = 0, 2*NDIM-1
+       do n = f4%gc_c2f_from_buf_iface(face), f4%gc_c2f_from_buf_iface(face+1)-1
+          i_coarse = f4%gc_c2f_from_buf(1, n) + 1
+          ix = ix + 1
+          f4%bflux_ix(face, i_coarse) = ix
+       end do
+    end do
+
+  end subroutine set_face_data_storage
+
+  !> Set a default physical boundary conditions for a variable for a given
+  !> face direction
+  subroutine f4_set_bc_scalar(f4, ivar, iface, bc_type, bc_value)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: ivar
-    integer, intent(in)          :: iface !< Range 0 - 3
+    integer, intent(in)          :: iface !< Range 0 - 2*NDIM-1
     integer, intent(in)          :: bc_type
     real(dp), intent(in)         :: bc_value
     integer                      :: k, ix
@@ -788,7 +927,7 @@ contains
        end do
     end if
 
-  end subroutine f4_set_physical_boundary
+  end subroutine f4_set_bc_scalar
 
   !> Return the mesh revision number
   pure integer function f4_get_mesh_revision(f4)
@@ -902,7 +1041,7 @@ contains
 
   end subroutine f4_write_grid
 
-  !> Return the coordinates at the center of a grid cells
+  !> Return the coordinates at the center of a grid cell
   pure function f4_cell_coord(f4, i_block, ${IJK}$) result(rr)
     !$acc routine seq
     type(foap4_t), intent(in) :: f4
@@ -917,6 +1056,70 @@ contains
 #:endif
   end function f4_cell_coord
 
+  !> Return the coordinates at the center of a cell face on a block
+#:if NDIM == 2
+  pure function f4_block_face_coord(f4, i_block, face, i) result(rr)
+    !$acc routine seq
+    type(foap4_t), intent(in) :: f4
+    integer, intent(in)       :: i_block
+    integer, intent(in)       :: face
+    integer, intent(in)       :: i
+    real(dp)                  :: rr(NDIM), dr(NDIM)
+
+    dr = f4%dr_level(:, f4%block_level(i_block))
+    rr = f4%block_origin(:, i_block)
+
+    select case (face)
+    case (0)
+       rr(2) = rr(2) + dr(2) * (i - 0.5_dp)
+    case (1)
+       rr(1) = rr(1) + dr(1) * f4%bx(1)
+       rr(2) = rr(2) + dr(2) * (i - 0.5_dp)
+    case (2)
+       rr(1) = rr(1) + dr(1) * (i - 0.5_dp)
+    case (3)
+       rr(1) = rr(1) + dr(1) * (i - 0.5_dp)
+       rr(2) = rr(2) + dr(2) * f4%bx(2)
+    end select
+  end function f4_block_face_coord
+#:elif NDIM == 3
+  pure function f4_block_face_coord(f4, i_block, face, i, j) result(rr)
+    !$acc routine seq
+    type(foap4_t), intent(in) :: f4
+    integer, intent(in)       :: i_block
+    integer, intent(in)       :: face
+    integer, intent(in)       :: i, j
+    real(dp)                  :: rr(NDIM), dr(NDIM)
+
+    dr = f4%dr_level(:, f4%block_level(i_block))
+    rr = f4%block_origin(:, i_block)
+
+    select case (face)
+    case (0)
+       rr(2) = rr(2) + dr(2) * (i - 0.5_dp)
+       rr(3) = rr(3) + dr(3) * (j - 0.5_dp)
+    case (1)
+       rr(1) = rr(1) + dr(1) * f4%bx(1)
+       rr(2) = rr(2) + dr(2) * (i - 0.5_dp)
+       rr(3) = rr(3) + dr(3) * (j - 0.5_dp)
+    case (2)
+       rr(1) = rr(1) + dr(1) * (i - 0.5_dp)
+       rr(3) = rr(3) + dr(3) * (j - 0.5_dp)
+    case (3)
+       rr(1) = rr(1) + dr(1) * (i - 0.5_dp)
+       rr(2) = rr(2) + dr(2) * f4%bx(2)
+       rr(3) = rr(3) + dr(3) * (j - 0.5_dp)
+    case (4)
+       rr(1) = rr(1) + dr(1) * (i - 0.5_dp)
+       rr(2) = rr(2) + dr(2) * (j - 0.5_dp)
+    case (5)
+       rr(1) = rr(1) + dr(1) * (i - 0.5_dp)
+       rr(2) = rr(2) + dr(2) * (j - 0.5_dp)
+       rr(3) = rr(3) + dr(3) * f4%bx(3)
+    end select
+  end function f4_block_face_coord
+#:endif
+
   !> Update the information required to update ghost cells
   subroutine update_ghostcell_pattern(f4)
     type(foap4_t), intent(inout) :: f4
@@ -924,10 +1127,12 @@ contains
     type(bnd_face_t), pointer    :: bnd_face(:)
     type(c_ptr)                  :: tmp
     integer                      :: n_faces
+    real(dp)                     :: t0, t1
 
     mesh_revision = pw_get_mesh_revision(f4%pw)
     if (mesh_revision == f4%gc_mesh_revision) return
 
+    t0 = MPI_Wtime()
     call pw_get_all_faces(f4%pw, n_faces, tmp)
 
     call c_f_pointer(tmp, bnd_face, shape=[n_faces])
@@ -935,7 +1140,8 @@ contains
     call set_ghost_cell_pattern(f4, size(bnd_face), bnd_face, &
          f4%mpirank, f4%mpisize)
     f4%gc_mesh_revision = mesh_revision
-
+    t1 = MPI_Wtime()
+    f4%wtime_update_gc_pattern = f4%wtime_update_gc_pattern + t1 - t0
   end subroutine update_ghostcell_pattern
 
   !> Store the information required to update ghost cells
@@ -2034,7 +2240,7 @@ end subroutine fill_ghostcell_buffers_round_two
          max_vars, max_blocks)
 #:endif
     integer                      :: n, i, j, iq, jq, i_f, j_f
-    integer                      :: i_buf, i_buf0, iv, ivar
+    integer                      :: i_buf, i_buf0, iv, ivar, i_bc_data
     integer                      :: half_bx(NDIM), offset(NDIM-1), bc_type, level
     real(dp)                     :: bc_value, dr(NDIM), slope
 #:if NDIM == 3
@@ -2097,11 +2303,12 @@ end subroutine fill_ghostcell_buffers_round_two
     ! Fill physical boundaries
 
 #:def fyp_phys(face, ilim, jlim, klim=None)
-    !$acc loop private(iq, level, dr)
+    !$acc loop private(iq, level, dr, i_bc_data)
     do n = f4%gc_phys_iface(${face}$), f4%gc_phys_iface(${face}$+1)-1
        iq    = f4%gc_phys(n) + 1
        level = f4%block_level(iq)
        dr    = f4%dr_level(:, level)
+       i_bc_data = f4%bc_data_ix(${face}$, iq)
 
 #:if NDIM == 2
        !$acc loop collapse(3) private(ivar, bc_type, bc_value, slope)
@@ -2110,7 +2317,18 @@ end subroutine fill_ghostcell_buffers_round_two
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
                 bc_type = f4%bc_type(ivar, ${face}$)
-                bc_value = f4%bc_value(ivar, ${face}$)
+
+                if (i_bc_data > 0) then
+                   ! Use array value
+#:if face in ['0', '1']
+                   bc_value = f4%bc_data(j, ivar, i_bc_data)
+#:else
+                   bc_value = f4%bc_data(i, ivar, i_bc_data)
+#:endif
+                else
+                   ! Use stored scalar
+                   bc_value = f4%bc_value(ivar, ${face}$)
+                end if
 
                 select case (bc_type)
                 case (f4_bc_dirichlet)
@@ -2170,7 +2388,20 @@ end subroutine fill_ghostcell_buffers_round_two
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
                    bc_type = f4%bc_type(ivar, ${face}$)
+
+                   if (i_bc_data > 0) then
+                   ! Use array value
+#:if face in ['0', '1']
+                   bc_value = f4%bc_data(j, k, ivar, i_bc_data)
+#:elif face in ['2', '3']
+                   bc_value = f4%bc_data(i, k, ivar, i_bc_data)
+#:else
+                   bc_value = f4%bc_data(i, j, ivar, i_bc_data)
+#:endif
+                else
+                   ! Use stored scalar
                    bc_value = f4%bc_value(ivar, ${face}$)
+                end if
 
                    select case (bc_type)
                    case (f4_bc_dirichlet)
@@ -3016,11 +3247,7 @@ end subroutine fill_ghostcell_buffers_round_two
     integer, intent(in)          :: i_vars(n_vars)
     real(dp)                     :: t0, t1
 
-    t0 = MPI_Wtime()
-    call update_ghostcell_pattern(f4)
     t1 = MPI_Wtime()
-    f4%wtime_update_gc_pattern = f4%wtime_update_gc_pattern + t1 - t0
-
     call fill_ghostcell_buffers_round_one(f4, n_vars, i_vars)
     t0 = MPI_Wtime()
     f4%wtime_gc_fill_buff_round1 = f4%wtime_gc_fill_buff_round1 + t0 - t1
@@ -3275,6 +3502,14 @@ end subroutine fill_ghostcell_buffers_round_two
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
 
     if (partition_after) call f4_partition(f4)
+
+    t0 = MPI_Wtime()
+    call update_ghostcell_pattern(f4)
+    call set_face_data_storage(f4)
+    if (associated(f4%bc_callback)) call f4%bc_callback(f4)
+    t1 = MPI_Wtime()
+    f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
+
   end subroutine f4_adjust_refinement
 
   !> Temporarily copy blocks to the end of the block array
@@ -3553,20 +3788,24 @@ end subroutine fill_ghostcell_buffers_round_two
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
 
-    integer  :: i_fine, n, i, i_f
+    integer  :: i_fine, i_bflux, n, i, i_f
     integer  :: iv, ivar, i_buf0, i_buf
     integer  :: half_bx(NDIM)
 #:if NDIM == 3
     integer :: j, j_f
 #:endif
 
+    ! Early exit if nothing to do
+    if (f4%gc_f2c_to_buf_iface(2*NDIM) == 1) return
+
     half_bx = f4%bx/2
 
 #:def fyp_fixflux_to_buf(face, ilim, jlim=None)
-    !$acc loop private(i_fine, i_buf0)
+    !$acc loop private(i_fine, i_buf0, i_bflux)
     do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
+       i_bflux = f4%bflux_ix(${face}$, i_fine)
 
 #:if NDIM == 2
        !$acc loop collapse(2) private(i_f, ivar, i_buf)
@@ -3578,8 +3817,8 @@ end subroutine fill_ghostcell_buffers_round_two
              i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$) + 1
 
              f4%send_buffer(i_buf) = 0.5_dp * ( &
-                  f4%bflux(i_f, ${face}$, ivar, i_fine) + &
-                  f4%bflux(i_f+1, ${face}$, ivar, i_fine))
+                  f4%bflux(i_f, ivar, i_bflux) + &
+                  f4%bflux(i_f+1, ivar, i_bflux))
           end do
        end do
 #:elif NDIM == 3
@@ -3594,10 +3833,10 @@ end subroutine fill_ghostcell_buffers_round_two
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
 
                 f4%send_buffer(i_buf) = 0.25_dp * ( &
-                     f4%bflux(i_f, j_f, ${face}$, ivar, i_fine) + &
-                     f4%bflux(i_f+1, j_f, ${face}$, ivar, i_fine) + &
-                     f4%bflux(i_f, j_f+1, ${face}$, ivar, i_fine) + &
-                     f4%bflux(i_f+1, j_f+1, ${face}$, ivar, i_fine))
+                     f4%bflux(i_f, j_f, ivar, i_bflux) + &
+                     f4%bflux(i_f+1, j_f, ivar, i_bflux) + &
+                     f4%bflux(i_f, j_f+1, ivar, i_bflux) + &
+                     f4%bflux(i_f+1, j_f+1, ivar, i_bflux))
              end do
           end do
        end do
@@ -3645,7 +3884,7 @@ end subroutine fill_ghostcell_buffers_round_two
     integer, intent(in)          :: i_vars(n_vars)
     integer, intent(in)          :: s_out
 
-    integer  :: i_coarse, i_fine
+    integer  :: i_coarse, i_fine, i_bflux, i_bflux_fine, i_bflux_coarse
     integer  :: n, i, i_f, i_c
     integer  :: iv, ivar, i_buf0, i_buf
     integer  :: half_bx(NDIM), offset(NDIM-1)
@@ -3654,15 +3893,20 @@ end subroutine fill_ghostcell_buffers_round_two
     integer :: j, j_c, j_f
 #:endif
 
+    ! Early exit if nothing to do
+    if (f4%gc_c2f_from_buf_iface(2*NDIM) == 1 .and. &
+         f4%gc_f2c_local_iface(2*NDIM) == 1) return
+
     half_bx = bx/2
 
 #:if NDIM == 2
 #:def fyp_fixflux_from_buf(face, ilim, ix, sign)
-    !$acc loop private(i_coarse, offset, i_buf0, fac)
+    !$acc loop private(i_coarse, offset, i_buf0, fac, i_bflux)
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 ! Coarse block
        offset(1)   = f4%gc_c2f_from_buf_fluxfix(2, n)
        i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
+       i_bflux = f4%bflux_ix(${face}$, i_coarse)
        fac      = ${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse))
 
@@ -3674,7 +3918,7 @@ end subroutine fill_ghostcell_buffers_round_two
 
              i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$) + 1
              flux_diff = fac * ( &
-                  f4%bflux(i_c, ${face}$, ivar, i_coarse) - &
+                  f4%bflux(i_c, ivar, i_bflux) - &
                   f4%recv_buffer(i_buf))
 
              ! Correct solution on coarse side. Prevent a race condition with
@@ -3688,12 +3932,15 @@ end subroutine fill_ghostcell_buffers_round_two
 #:enddef
 
 #:def fyp_fixflux_local(face, oface, ilim, ix, sign)
-    !$acc loop private(i_coarse, i_fine, offset, fac)
+    !$acc loop private(i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
-       offset(1)   = f4%gc_f2c_local(3, n)      ! offset
-       fac      = ${sign}$ / &
+       offset(1) = f4%gc_f2c_local(3, n)  ! offset
+       i_bflux_fine = f4%bflux_ix(${face}$, i_fine)
+       i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse)
+       ! print *, "TEST", ${face}$, i_fine, i_coarse, i_bflux_fine, i_bflux_coarse
+       fac = ${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse))
 
        !$acc loop collapse(2) private(i_c, i_f, ivar, flux_diff)
@@ -3705,9 +3952,9 @@ end subroutine fill_ghostcell_buffers_round_two
 
              ! Difference between coarse and fine side
              flux_diff = fac * ( &
-                  f4%bflux(i_c, ${oface}$, ivar, i_coarse) - 0.5_dp * ( &
-                  f4%bflux(i_f, ${face}$, ivar, i_fine) + &
-                  f4%bflux(i_f+1, ${face}$, ivar, i_fine)))
+                  f4%bflux(i_c, ivar, i_bflux_coarse) - 0.5_dp * ( &
+                  f4%bflux(i_f, ivar, i_bflux_fine) + &
+                  f4%bflux(i_f+1, ivar, i_bflux_fine)))
 
              ! Correct solution on coarse side. Prevent a race condition with
              ! the atomic statement.
@@ -3721,11 +3968,12 @@ end subroutine fill_ghostcell_buffers_round_two
 
 #:elif NDIM == 3
 #:def fyp_fixflux_from_buf(face, ilim, jlim, ix, sign)
-    !$acc loop private(i_coarse, offset, i_buf0, fac)
+    !$acc loop private(i_coarse, offset, i_buf0, fac, i_bflux)
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 ! Coarse block
        offset(1:2) = f4%gc_c2f_from_buf_fluxfix(2:3, n)
        i_buf0   = f4%gc_c2f_from_buf_fluxfix(4, n) * n_vars
+       i_bflux = f4%bflux_ix(${face}$, i_coarse)
        fac      = ${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse))
 
@@ -3739,7 +3987,7 @@ end subroutine fill_ghostcell_buffers_round_two
 
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
                 flux_diff = fac * ( &
-                     f4%bflux(i_c, j_c, ${face}$, ivar, i_coarse) - &
+                     f4%bflux(i_c, j_c, ivar, i_bflux) - &
                      f4%recv_buffer(i_buf))
 
                 ! Correct solution on coarse side. Prevent a race condition with
@@ -3754,11 +4002,13 @@ end subroutine fill_ghostcell_buffers_round_two
 #:enddef
 
 #:def fyp_fixflux_local(face, oface, ilim, jlim, ix, sign)
-    !$acc loop private(i_coarse, i_fine, offset, fac)
+    !$acc loop private(i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 ! coarse block
        offset(1:2) = f4%gc_f2c_local(3:4, n)   ! offset
+       i_bflux_fine = f4%bflux_ix(${face}$, i_fine)
+       i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse)
        fac      = ${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse))
 
@@ -3774,11 +4024,11 @@ end subroutine fill_ghostcell_buffers_round_two
 
                 ! Difference between coarse and fine side
                 flux_diff = fac * ( &
-                     f4%bflux(i_c, j_c, ${oface}$, ivar, i_coarse) - 0.25_dp * ( &
-                     f4%bflux(i_f, j_f, ${face}$, ivar, i_fine) + &
-                     f4%bflux(i_f+1, j_f, ${face}$, ivar, i_fine) + &
-                     f4%bflux(i_f, j_f+1, ${face}$, ivar, i_fine) + &
-                     f4%bflux(i_f+1, j_f+1, ${face}$, ivar, i_fine)))
+                     f4%bflux(i_c, j_c, ivar, i_bflux_coarse) - 0.25_dp * ( &
+                     f4%bflux(i_f, j_f, ivar, i_bflux_fine) + &
+                     f4%bflux(i_f+1, j_f, ivar, i_bflux_fine) + &
+                     f4%bflux(i_f, j_f+1, ivar, i_bflux_fine) + &
+                     f4%bflux(i_f+1, j_f+1, ivar, i_bflux_fine)))
 
                 ! Correct solution on coarse side. Prevent a race condition with
                 ! the atomic statement.
@@ -3791,7 +4041,6 @@ end subroutine fill_ghostcell_buffers_round_two
     end do
 #:enddef
 #:endif
-
 
     ! Correct solution on coarse side of non-local refinement boundaries
 
