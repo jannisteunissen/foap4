@@ -108,9 +108,9 @@ contains
          min_level, max_blocks, f4_bc_neumann, 0.0_dp)
 
     if (test_case == "rt") then
-       call f4_set_bc_scalar(f4, i_mom(NDIM), 2*(NDIM-1), &
+       call f4_set_bc_scalar(f4, i_mom0+NDIM, 2*(NDIM-1), &
             f4_bc_dirichlet, 0.0_dp)
-       call f4_set_bc_scalar(f4, i_mom(NDIM), 2*(NDIM-1)+1, &
+       call f4_set_bc_scalar(f4, i_mom0+NDIM, 2*(NDIM-1)+1, &
             f4_bc_dirichlet, 0.0_dp)
        gravity_constant = 1.0_dp
     else
@@ -216,7 +216,7 @@ contains
     ! 1D Sod shock test case
     u0(i_rho, :) = [1.0_dp, 0.125_dp]
     u0(i_e, :)   = [1.0_dp, 0.1_dp]
-    u0(i_mom, :) = 0.0_dp
+    u0(i_mom0+1:i_mom0+NDIM, :) = 0.0_dp
 
     call to_conservative(u0(:, 1))
     call to_conservative(u0(:, 2))
@@ -268,7 +268,7 @@ contains
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
-          f4%uu(${IJK}$, i_mom, n) = 0.0_dp
+          f4%uu(${IJK}$, i_mom0+1:i_mom0+NDIM, n) = 0.0_dp
 
           if (rr(NDIM) > h0 + dh * product(sin(k_vec * rr(1:NDIM-1)))) then
              f4%uu(${IJK}$, i_rho, n) = rho_high
@@ -285,8 +285,8 @@ contains
   subroutine source_term(u_prim, source)
     real(dp), intent(in)    :: u_prim(n_vars)
     real(dp), intent(inout) :: source(n_vars)
-    source(i_mom(NDIM)) = -gravity_constant * u_prim(i_rho)
-    source(i_e)         = -gravity_constant * source(i_mom(NDIM))
+    source(i_mom0+NDIM) = -gravity_constant * u_prim(i_rho)
+    source(i_e)         = -gravity_constant * source(i_mom0+NDIM)
   end subroutine source_term
 
   #:include 'physics_euler.fpp'
