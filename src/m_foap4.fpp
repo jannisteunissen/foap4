@@ -687,6 +687,9 @@ contains
     character(len=3)             :: time_state
     real(dp)                     :: t0, t1
 
+    ! Reset timers
+    call f4_reset_wtime(f4)
+
     t0 = MPI_Wtime()
 
     if (any(bx /= bx(1))) error stop "TODO: unequal bx(:) not yet supported"
@@ -2185,8 +2188,12 @@ end subroutine fill_ghostcell_buffers_round_two
        end if
     end do
 
-    call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
-    call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
+    if (n_recv > 0) then
+       call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
+    end if
+    if (n_send > 0) then
+       call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
+    end if
 
   end subroutine f4_exchange_buffers
 
@@ -3730,8 +3737,12 @@ end subroutine fill_ghostcell_buffers_round_two
        end do
     end if
 
-    call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
-    call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
+    if (n_recv > 1) then
+       call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
+    end if
+    if (n_send > 1) then
+       call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
+    end if
 
     call f4_set_quadrants(f4)
 
@@ -4430,9 +4441,9 @@ end subroutine fill_ghostcell_buffers_round_two
          MPI_INTEGER, mpicomm, ierr)
 
     ! Write binary file
-    binary_fname = get_fname_rank(trim(filename), '.bin', mpirank)
+    call get_fname_rank(trim(filename), '.bin', mpirank, binary_fname)
     open(newunit=my_unit, file=trim(binary_fname), form='unformatted', &
-         access='stream', status='replace')
+         access='stream')
 
     if (present(cc_data)) then
        write(my_unit) cc_data
@@ -4478,8 +4489,11 @@ end subroutine fill_ghostcell_buffers_round_two
     do rank = 0, mpisize-1
 
        if (mpirank == rank) then
-          origin_sendbuf = pack(origin, .true.)
-          dr_sendbuf = pack(dr, .true.)
+          allocate(origin_sendbuf(NDIM*n_blocks))
+          allocate(dr_sendbuf(NDIM*n_blocks))
+          origin_sendbuf(:) = pack(origin, .true.)
+          dr_sendbuf(:) = pack(dr, .true.)
+
           call MPI_Isend(origin_sendbuf, NDIM*n_blocks, &
                MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(1), ierr)
           call MPI_Isend(dr_sendbuf, NDIM*n_blocks, &
@@ -4496,7 +4510,7 @@ end subroutine fill_ghostcell_buffers_round_two
                MPI_DOUBLE_PRECISION, rank, tag, mpicomm, MPI_STATUS_IGNORE, ierr)
 
           ! Get name corresponding to this rank
-          binary_fname = get_fname_rank(trim(filename), '.bin', rank)
+          call get_fname_rank(trim(filename), '.bin', rank, binary_fname)
           call get_basename(binary_fname, binary_basename)
 
           do n = 1, blocks_per_rank(rank)
@@ -4587,16 +4601,16 @@ end subroutine fill_ghostcell_buffers_round_two
   end subroutine f4_xdmf_write_blocks_${NDIM}$DCoRect
 
   !> Return the name of the binary file for mpirank
-  function get_fname_rank(filename, extension, mpirank) result(fname)
-    character(len=*), intent(in)  :: filename
-    character(len=*), intent(in)  :: extension
-    integer, intent(in)           :: mpirank
-    character(len=20)             :: suffix
-    character(len=:), allocatable :: fname
+  subroutine get_fname_rank(filename, extension, mpirank, fname)
+    character(len=*), intent(in)    :: filename
+    character(len=*), intent(in)    :: extension
+    integer, intent(in)             :: mpirank
+    character(len=20)               :: suffix
+    character(len=*), intent(inout) :: fname
 
     write(suffix, '(A,I06.6)') "_", mpirank
     fname = trim(filename) // trim(suffix) // trim(extension)
-  end function get_fname_rank
+  end subroutine get_fname_rank
 
   subroutine get_basename(fullpath, out_basename)
     character(len=*), intent(in) :: fullpath

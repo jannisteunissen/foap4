@@ -12,6 +12,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
   integer, intent(in)          :: i_step         !< Step of the integrator
   integer, intent(in)          :: n_steps        !< Total number of steps
   integer                      :: n, ${IJK}$, m, level, iv, ix(NDIM), ierr
+  integer                      :: i_vars_deriv(n_vars)
   real(dp)                     :: inv_dr(NDIM), cmax(NDIM), max_cfl
   real(dp)                     :: flux(n_vars, 2, NDIM)
   real(dp)                     :: tmp(1+2*n_gc, n_vars)
@@ -23,7 +24,8 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
        f4%ilo(3):f4%ihi(3), n_vars)
 #:endif
 
-  call f4_update_ghostcells(f4, n_vars, i_vars+s_deriv)
+  i_vars_deriv = i_vars + s_deriv
+  call f4_update_ghostcells(f4, n_vars, i_vars_deriv)
 
   max_cfl = 0.0_dp
 
@@ -39,7 +41,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         ix = [${IJK}$]
         if (count(ix < 1 .or. ix > f4%bx) <= 1) then
            ! Convert to primitive, but not in corners
-           u = f4%uu(${IJK}$, i_vars+s_deriv, n)
+           u = f4%uu(${IJK}$, i_vars_deriv, n)
            call to_primitive(u)
            uprim(${IJK}$, :) = u
         end if

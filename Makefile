@@ -1,6 +1,6 @@
 .SUFFIXES:
 
-FC := mpif90
+FC ?= mpif90
 CC := mpicc
 FYPPFLAGS := -n
 INCDIRS := p4est/build/local/include
@@ -34,6 +34,23 @@ else ifeq ($(compiler_brand), nvfortran)
 else ifeq ($(compiler_brand), pgfortran)
 	FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
 	-static-nvidia -g -module $(OBJDIR) $(FFLAGS_USER)
+else ifeq ($(compiler_brand), Cray)
+# Description of some relevant flags
+# -J dir_name Specifies an alternate directory for the module information files.
+# -h [no]acc Enables or disables the compiler recognition of OpenACC accelerator directives.
+# -g     When  specified  the  debug level is determined by the optimization level.
+# -G debug_lvl from 0 (most) to 2 (least)
+# -M msgs suppress warnings and lower their severity
+# -e enable / -d disable
+# a      Aborts compilation after encountering the first error.
+# D      The -eD option enables all debugging options.
+# f      When this option is enabled, module files are created with lowercase names
+# n      Generates messages to note nonstandard Fortran usage.
+# o      Display to stderr the optimization options the compiler used for this compilation.
+# T      Controls  preprocessing of Fortran source files.  When enabled, source preprocessing is performed.
+# w      Enables support for automatic memory allocation for allocatable variables and arrays
+	FFLAGS ?= -M878 -O2 -eT -ea -ef -ffree -h acc \
+	-h acc_model=auto_async_none:fast_addr:no_deep_copy -J$(OBJDIR) $(FFLAGS_USER)
 endif
 
 # General dependencies
@@ -44,11 +61,15 @@ $(addsuffix .o,$(TARGETS_3D)): $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o
 
 # Dependencies for 2D targets
 $(OBJDIR)/test_advection_2d: $(OBJDIR)/m_physics_advection.o
+$(OBJDIR)/test_advection_2d.o: $(OBJDIR)/m_physics_advection.o
 $(OBJDIR)/test_euler_2d: $(OBJDIR)/m_physics_euler_2d.o
+$(OBJDIR)/test_euler_2d.o: $(OBJDIR)/m_physics_euler_2d.o
 
 # Dependencies for 3D targets
 $(OBJDIR)/test_advection_3d: $(OBJDIR)/m_physics_advection.o
+$(OBJDIR)/test_advection_3d.o: $(OBJDIR)/m_physics_advection.o
 $(OBJDIR)/test_euler_3d: $(OBJDIR)/m_physics_euler_3d.o
+$(OBJDIR)/test_euler_3d.o: $(OBJDIR)/m_physics_euler_3d.o
 
 # Ensure build directory exists
 $(OBJDIR):
