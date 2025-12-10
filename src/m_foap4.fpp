@@ -901,6 +901,9 @@ contains
        end do
     end do
 
+    !$acc update device(f4%bc_data_ix(:, 1:f4%n_blocks))
+    !$acc update device(f4%bflux_ix(:, 1:f4%n_blocks))
+
   end subroutine set_face_data_storage
 
   !> Set a default physical boundary conditions for a variable for a given
