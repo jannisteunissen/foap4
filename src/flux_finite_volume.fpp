@@ -29,8 +29,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
   max_cfl = 0.0_dp
 
-  !$acc parallel loop private(level, inv_dr, max_cfl, uprim) &
-  !$acc &reduction(max:max_cfl)
+  !$acc parallel loop private(level, inv_dr, uprim) reduction(max:max_cfl)
   do n = 1, f4%n_blocks
 
      level = f4%block_level(n)
