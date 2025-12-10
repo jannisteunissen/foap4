@@ -783,7 +783,9 @@ contains
     !$acc enter data copyin(f4)
     !$acc enter data copyin(f4%bc_type, f4%bc_value)
     !$acc enter data create(f4%block_level, f4%block_origin)
-    !$acc enter data create(f4%uu, f4%bflux, f4%refinement_flags)
+    !$acc enter data create(f4%uu, f4%refinement_flags)
+    !$acc enter data create(f4%bc_data_ix, f4%bc_data)
+    !$acc enter data create(f4%bflux_ix, f4%bflux)
     !$acc enter data create(f4%recv_buffer, f4%send_buffer)
     !$acc enter data create(&
     !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
