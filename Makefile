@@ -1,6 +1,6 @@
 .SUFFIXES:
 
-FC ?= mpif90
+F90C ?= mpif90
 CC := mpicc
 FYPPFLAGS := -n
 INCDIRS := p4est/build/local/include
@@ -19,7 +19,7 @@ SRCDIR := src
 all: $(TARGETS_2D) $(TARGETS_3D)
 
 # Determine compiler brand
-compiler_version = $(shell $(FC) --version)
+compiler_version = $(shell $(F90C) --version)
 compiler_brand = $(word 1, $(compiler_version))
 
 ifeq ($(compiler_brand), GNU)
@@ -77,11 +77,11 @@ $(OBJDIR):
 
 # Compile Fortran source files to object files
 $(OBJDIR)/%.o: $(SRCDIR)/%.f90 | $(OBJDIR)
-	$(FC) -c -o $@ $< $(FFLAGS) $(addprefix -I,$(INCDIRS))
+	$(F90C) -c -o $@ $< $(FFLAGS) $(addprefix -I,$(INCDIRS))
 
 # Compile Fortran executables from .o object files
 $(OBJDIR)/%: $(OBJDIR)/%.o
-	$(FC) -o $@ $^ $(FFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
+	$(F90C) -o $@ $^ $(FFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
 
 # Compile C source files to object files for 2D
 $(OBJDIR)/%_2d.o: $(SRCDIR)/%.c | $(OBJDIR)
