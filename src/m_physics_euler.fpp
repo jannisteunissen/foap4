@@ -10,10 +10,11 @@ module m_physics_euler_${NDIM}$d
   real(dp), parameter :: inv_gamma_m1 = 1/(euler_gamma-1.0_dp)
   !$acc declare create(inv_gamma_m1)
 
-  integer, parameter  :: n_vars = 2 + ${NDIM}$
-  integer, parameter  :: i_rho = 1
-  integer, parameter  :: i_mom0 = 1
-  integer, parameter  :: i_e = n_vars
+  integer, parameter :: n_vars = 2 + ${NDIM}$
+  integer, parameter :: i_rho = 1
+  integer, parameter :: i_mom0 = 1
+  integer, parameter :: i_e = n_vars
+  integer, parameter :: i_vars0 = i_rho - 1
 #:if NDIM == 2
   integer, parameter :: i_vars(n_vars) = [i_rho, i_mom0+1, i_mom0+2, i_e]
   character(len=10), parameter :: var_names(n_vars) = [character(len=10) :: &

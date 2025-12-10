@@ -41,7 +41,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         ix = [${IJK}$]
         if (count(ix < 1 .or. ix > f4%bx) <= 1) then
            ! Convert to primitive, but not in corners
-           u = f4%uu(${IJK}$, i_vars_deriv, n)
+           u = f4%uu(${IJK}$, i_vars0+1+s_deriv:i_vars0+n_vars+s_deriv, n)
            call to_primitive(u)
            uprim(${IJK}$, :) = u
         end if
@@ -71,13 +71,13 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
         ! Store boundary fluxes
         if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
-             f4%bflux(j, i_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
+             f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
         if (f4%bflux_ix(1, n) > 0 .and. i == bx(1)) &
-             f4%bflux(j, i_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
+             f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
         if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
-             f4%bflux(i, i_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
+             f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
         if (f4%bflux_ix(3, n) > 0 .and. j == bx(2)) &
-             f4%bflux(i, i_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
+             f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
 #:elif NDIM == 3
         ! Compute fluxes
         tmp = uprim(i-n_gc:i+n_gc, j, k, :)
@@ -97,17 +97,17 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
         ! Store boundary fluxes
         if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
-             f4%bflux(j, k, i_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
+             f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
         if (f4%bflux_ix(1, n) > 0 .and. i == bx(1)) &
-             f4%bflux(j, k, i_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
+             f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
         if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
-             f4%bflux(i, k, i_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
+             f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
         if (f4%bflux_ix(3, n) > 0 .and. j == bx(2)) &
-             f4%bflux(i, k, i_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
+             f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
         if (f4%bflux_ix(4, n) > 0 .and. k == 1) &
-             f4%bflux(i, j, i_vars, f4%bflux_ix(4, n)) = dt * flux(:, 1, 3)
+             f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(4, n)) = dt * flux(:, 1, 3)
         if (f4%bflux_ix(5, n) > 0 .and. k == bx(3)) &
-             f4%bflux(i, j, i_vars, f4%bflux_ix(5, n)) = dt * flux(:, 2, 3)
+             f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(5, n)) = dt * flux(:, 2, 3)
 #:endif
 
         max_cfl = max(max_cfl, sum(cmax * inv_dr))
@@ -117,9 +117,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
            do m = 1, n_prev
               ! Add weighted previous states
               dvar(iv) = dvar(iv) + &
-                   f4%uu(${IJK}$, i_vars(iv)+s_prev(m), n) * w_prev(m)
+                   f4%uu(${IJK}$, i_vars0+iv+s_prev(m), n) * w_prev(m)
            end do
-           f4%uu(${IJK}$, i_vars(iv)+s_out, n) = dvar(iv)
+           f4%uu(${IJK}$, i_vars0+iv+s_out, n) = dvar(iv)
         end do
      end do; ${KJI_CLOSE_LOOP}$
   end do

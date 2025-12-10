@@ -4533,10 +4533,19 @@ end subroutine fill_ghostcell_buffers_round_two
                   '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
 #:endif
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', NDIM, '">'
-             write(my_unit, *) origin_recvbuf((n-1)*NDIM + coord_ix)
+
+#:if NDIM == 2
+             write(my_unit, "(2ES24.17)") origin_recvbuf((n-1)*NDIM + coord_ix)
+#:elif NDIM == 3
+             write(my_unit, "(3ES24.17)") origin_recvbuf((n-1)*NDIM + coord_ix)
+#:endif
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', NDIM, '">'
-             write(my_unit, *) dr_recvbuf((n-1)*NDIM + coord_ix)
+#:if NDIM == 2
+             write(my_unit, "(2ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
+#:elif NDIM == 3
+             write(my_unit, "(3ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
+#:endif
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a)") '    </Geometry>'
 
