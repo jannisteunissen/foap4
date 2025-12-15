@@ -111,7 +111,13 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
              f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(5, n)) = dt * flux(:, 2, 3)
 #:endif
 
-        max_cfl = max(max_cfl, sum(cmax * inv_dr))
+        ! Use cmax(1) to temporarily store sum(cmax * inv_dr)
+#:if NDIM == 2
+        cmax(1) = cmax(1)*inv_dr(1) + cmax(2)*inv_dr(2)
+#:elif NDIM == 3
+        cmax(1) = cmax(1)*inv_dr(1) + cmax(2)*inv_dr(2) + cmax(3)*inv_dr(3)
+#:endif
+        max_cfl = max(max_cfl, cmax(1))
 
         ! Set output state
         do iv = 1, n_vars

@@ -631,6 +631,7 @@ contains
     !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
     !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
     !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+    !$acc exit data delete(f4%bx, f4%ilo, f4%ihi, f4%dr_level, f4%tree_length)
     !$acc exit data delete(f4)
 
     ! TODO: delete ghost cell patterns
@@ -791,6 +792,7 @@ contains
     !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
     !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
     !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+    !$acc enter data create(f4%bx, f4%ilo, f4%ihi, f4%dr_level, f4%tree_length)
 
     call f4_set_quadrants(f4)
     call update_ghostcell_pattern(f4)
@@ -1759,8 +1761,11 @@ contains
                 j_f = ${j0}$ + 2 * j - 1
                 i_f = ${i0}$ + 2 * i - 1
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
-                f4%send_buffer(i_buf) = 0.25_dp * &
-                     sum(f4%uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
+                f4%send_buffer(i_buf) = 0.25_dp * ( &
+                     f4%uu(i_f,   j_f,   ivar, iq) + &
+                     f4%uu(i_f+1, j_f,   ivar, iq) + &
+                     f4%uu(i_f,   j_f+1, ivar, iq) + &
+                     f4%uu(i_f+1, j_f+1, ivar, iq) )
              end do
           end do
        end do
@@ -1776,8 +1781,15 @@ contains
                    i_f = ${i0}$ + 2 * i - 1
                    i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
                         ${klim}$, ${jlim}$, ${ilim}$) + 1
-                   f4%send_buffer(i_buf) = 0.125_dp * &
-                        sum(f4%uu(i_f:i_f+1, j_f:j_f+1, k_f:k_f+1, ivar, iq))
+                   f4%send_buffer(i_buf) = 0.125_dp * ( &
+                        f4%uu(i_f,   j_f,   k_f,   ivar, iq) + &
+                        f4%uu(i_f+1, j_f,   k_f,   ivar, iq) + &
+                        f4%uu(i_f,   j_f+1, k_f,   ivar, iq) + &
+                        f4%uu(i_f+1, j_f+1, k_f,   ivar, iq) + &
+                        f4%uu(i_f,   j_f,   k_f+1, ivar, iq) + &
+                        f4%uu(i_f+1, j_f,   k_f+1, ivar, iq) + &
+                        f4%uu(i_f,   j_f+1, k_f+1, ivar, iq) + &
+                        f4%uu(i_f+1, j_f+1, k_f+1, ivar, iq) )
                 end do
              end do
           end do
@@ -2262,7 +2274,8 @@ contains
     !$acc &f4%gc_phys_iface, f4%gc_phys, f4%bc_data, f4%block_level, &
     !$acc &f4%block_level, f4%dr_level, f4%gc_srl_from_buf_iface, f4%gc_srl_from_buf, &
     !$acc &f4%recv_buffer, f4%gc_c2f_from_buf_iface,f4%bc_type, f4%bc_data_ix, &
-    !$acc &f4%bc_value, f4%gc_f2c_local, f4%gc_srl_from_buf, f4%gc_c2f_from_buf)
+    !$acc &f4%bc_value, f4%gc_f2c_local, f4%gc_srl_from_buf, f4%gc_c2f_from_buf, &
+    !$acc &f4%gc_f2c_local_iface)
 
 #:def fyp_srl_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
     &i2=0, j2=0, k2=0)
@@ -2522,8 +2535,11 @@ contains
                 ivar = i_vars(iv)
                 j_f = ${jf0}$ + 2 * j - 1
                 i_f = ${if0}$ + 2 * i - 1
-                uu(${i0}$+i, ${j0}$+j, ivar, jq) = 0.25_dp * &
-                     sum(uu(i_f:i_f+1, j_f:j_f+1, ivar, iq))
+                uu(${i0}$+i, ${j0}$+j, ivar, jq) = 0.25_dp * ( &
+                     uu(i_f,   j_f,   ivar, iq) + &
+                     uu(i_f+1, j_f,   ivar, iq) + &
+                     uu(i_f,   j_f+1, ivar, iq) + &
+                     uu(i_f+1, j_f+1, ivar, iq) )
              end do
           end do
        end do
@@ -2537,8 +2553,15 @@ contains
                    k_f = ${kf0}$ + 2 * k - 1
                    j_f = ${jf0}$ + 2 * j - 1
                    i_f = ${if0}$ + 2 * i - 1
-                   uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, jq) = 0.125_dp * &
-                        sum(uu(i_f:i_f+1, j_f:j_f+1, k_f:k_f+1, ivar, iq))
+                   uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, jq) = 0.125_dp * ( &
+                        uu(i_f,   j_f,   k_f,   ivar, iq) + &
+                        uu(i_f+1, j_f,   k_f,   ivar, iq) + &
+                        uu(i_f,   j_f+1, k_f,   ivar, iq) + &
+                        uu(i_f+1, j_f+1, k_f,   ivar, iq) + &
+                        uu(i_f,   j_f,   k_f+1, ivar, iq) + &
+                        uu(i_f+1, j_f,   k_f+1, ivar, iq) + &
+                        uu(i_f,   j_f+1, k_f+1, ivar, iq) + &
+                        uu(i_f+1, j_f+1, k_f+1, ivar, iq) )
                 end do
              end do
           end do
@@ -3856,7 +3879,7 @@ contains
 #:enddef
 
     !$acc parallel present(f4%uu, f4%gc_f2c_to_buf_iface, f4%gc_f2c_to_buf, &
-    !$acc &f4%send_buffer, f4%bflux, f4%gc_f2c_to_buf_fluxfix)
+    !$acc &f4%send_buffer, f4%bflux, f4%bflux_ix, f4%gc_f2c_to_buf_fluxfix)
 
 #:if NDIM == 2
     @:fyp_fixflux_to_buf(0, half_bx(2))
@@ -4133,7 +4156,7 @@ contains
     var_sum = 0.0_dp
 
     !$acc parallel loop private(level, dvol) reduction(+:var_sum) &
-    !$acc &present(f4%uu, f4%bx)
+    !$acc &present(f4%uu, f4%bx, f4%block_level, f4%dr_level)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        dvol = product(f4%dr_level(:, level))
