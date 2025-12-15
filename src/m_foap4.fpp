@@ -4160,7 +4160,6 @@ contains
     integer, intent(in)       :: i_var
     real(dp), intent(out)     :: var_max
     integer                   :: level, ${IJK}$, n, ierror
-    real(dp)                  :: dvol
 
     var_max = -huge(1.0_dp)
 
