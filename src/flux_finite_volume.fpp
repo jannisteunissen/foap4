@@ -11,8 +11,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
   integer, intent(in)          :: s_out          !< Output state
   integer, intent(in)          :: i_step         !< Step of the integrator
   integer, intent(in)          :: n_steps        !< Total number of steps
-  integer                      :: n, ${IJK}$, m, level, iv, ix(NDIM), ierr
+  integer                      :: n, ${IJK}$, m, level, iv, ierr
   integer                      :: i_vars_deriv(n_vars)
+  logical                      :: ghost_dim(NDIM), valid_cell
   real(dp)                     :: inv_dr(NDIM), cmax(NDIM), max_cfl
   real(dp)                     :: flux(n_vars, 2, NDIM)
   real(dp)                     :: tmp(1+2*n_gc, n_vars)
@@ -37,10 +38,24 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
      level = f4%block_level(n)
      inv_dr = 1/f4%dr_level(:, level)
 
-     !$acc loop collapse(NDIM) private(ix, u)
+     !$acc loop collapse(NDIM) private(u, ghost_dim)
      do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
-        ix = [${IJK}$]
-        if (count(ix < 1 .or. ix > f4%bx) <= 1) then
+        ghost_dim(1) = i < 1 .or. i > f4%bx(1)
+        ghost_dim(2) = j < 1 .or. j > f4%bx(2)
+#:if NDIM == 3
+        ghost_dim(3) = k < 1 .or. k > f4%bx(3)
+#:endif
+
+#:if NDIM == 2
+        valid_cell = .not. (ghost_dim(1) .and. ghost_dim(2))
+#:elif NDIM == 3
+        valid_cell = .not. ( &
+             (ghost_dim(1) .and. ghost_dim(2)) .or. &
+             (ghost_dim(1) .and. ghost_dim(3)) .or. &
+             (ghost_dim(2) .and. ghost_dim(3)))
+#:endif
+
+        if (valid_cell) then
            ! Convert to primitive, but not in corners
            u = f4%uu(${IJK}$, i_vars0+1+s_deriv:i_vars0+n_vars+s_deriv, n)
            call to_primitive(u)

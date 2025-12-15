@@ -4158,7 +4158,12 @@ contains
     !$acc &present(f4%uu, f4%bx, f4%block_level, f4%dr_level)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
-       dvol = product(f4%dr_level(:, level))
+#:if NDIM == 2
+       dvol = f4%dr_level(1, level) * f4%dr_level(2, level)
+#:elif NDIM == 3
+       dvol = f4%dr_level(1, level) * f4%dr_level(2, level) * &
+            f4%dr_level(3, level)
+#:endif
 
        !$acc loop collapse(ndim) reduction(+:var_sum)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
@@ -4181,11 +4186,10 @@ contains
 
     var_max = -huge(1.0_dp)
 
-    !$acc parallel loop private(level, dvol) reduction(max:var_max) &
+    !$acc parallel loop private(level) reduction(max:var_max) &
     !$acc &present(f4%uu, f4%bx, f4%block_level, f4%dr_level)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
-       dvol = product(f4%dr_level(:, level))
 
        !$acc loop collapse(ndim) reduction(max:var_max)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
