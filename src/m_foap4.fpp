@@ -3974,7 +3974,6 @@ contains
        offset(1) = f4%gc_f2c_local(3, n)  ! offset
        i_bflux_fine = f4%bflux_ix(${face}$, i_fine)
        i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse)
-       ! print *, "TEST", ${face}$, i_fine, i_coarse, i_bflux_fine, i_bflux_coarse
        fac = ${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse))
 
