@@ -29,7 +29,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
   max_cfl = 0.0_dp
 
-  !$acc parallel loop private(level, inv_dr, uprim) reduction(max:max_cfl)
+  !$acc parallel loop private(level, inv_dr, uprim) reduction(max:max_cfl) &
+  !$acc &present(f4%uu, f4%ilo, f4%ihi, f4%bx, f4%bflux, f4%bflux_ix, &
+  !$acc &f4%block_level, f4%dr_level)
   do n = 1, f4%n_blocks
 
      level = f4%block_level(n)
@@ -71,11 +73,11 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         ! Store boundary fluxes
         if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
              f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
-        if (f4%bflux_ix(1, n) > 0 .and. i == bx(1)) &
+        if (f4%bflux_ix(1, n) > 0 .and. i == f4%bx(1)) &
              f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
         if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
              f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
-        if (f4%bflux_ix(3, n) > 0 .and. j == bx(2)) &
+        if (f4%bflux_ix(3, n) > 0 .and. j == f4%bx(2)) &
              f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
 #:elif NDIM == 3
         ! Compute fluxes
@@ -97,15 +99,15 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         ! Store boundary fluxes
         if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
              f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
-        if (f4%bflux_ix(1, n) > 0 .and. i == bx(1)) &
+        if (f4%bflux_ix(1, n) > 0 .and. i == f4%bx(1)) &
              f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
         if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
              f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
-        if (f4%bflux_ix(3, n) > 0 .and. j == bx(2)) &
+        if (f4%bflux_ix(3, n) > 0 .and. j == f4%bx(2)) &
              f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
         if (f4%bflux_ix(4, n) > 0 .and. k == 1) &
              f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(4, n)) = dt * flux(:, 1, 3)
-        if (f4%bflux_ix(5, n) > 0 .and. k == bx(3)) &
+        if (f4%bflux_ix(5, n) > 0 .and. k == f4%bx(3)) &
              f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(5, n)) = dt * flux(:, 2, 3)
 #:endif
 

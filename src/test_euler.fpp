@@ -221,7 +221,7 @@ contains
     call to_conservative(u0(:, 1))
     call to_conservative(u0(:, 2))
 
-    !$acc parallel loop
+    !$acc parallel loop present(f4%uu, f4%bx)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
