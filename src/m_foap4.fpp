@@ -491,60 +491,38 @@ contains
   end subroutine f4_initialize
 
 #ifdef _OPENACC
-  !> Set the device to be used by OpenACC. Code based on:
-  !> https://docs.nvidia.com/hpc-sdk/compilers/openacc-mpi-tutorial/
-  !> OpenMPI provides an environment variable, but this is not portable
+  !> Set the device to be used by OpenACC
+  !> Inspired by https://enccs.github.io/gpu-programming/10-multiple_gpu/
   subroutine set_openacc_device(f4)
     use openacc
     type(foap4_t), intent(in) :: f4
+    type(MPI_Comm)            :: host_comm
+    integer                   :: host_rank, host_size, ierr
+    integer                   :: my_device, num_devices
+    integer(acc_device_kind)  :: dev_type
 
-    interface
-       ! Get a unique number to identify the host
-       function gethostid() bind(C)
-         import C_int
-         integer (C_int) :: gethostid
-       end function gethostid
-    end interface
+    ! Split communicator into subgroups per node
+    call MPI_Comm_split_type(f4%mpicomm, MPI_COMM_TYPE_SHARED, 0, &
+                            MPI_INFO_NULL, host_comm, ierr)
+    call MPI_Comm_rank(host_comm, host_rank, ierr)
+    call MPI_Comm_size(host_comm, host_size, ierr)
 
-    integer :: hostids(0:f4%mpisize-1), local_procs(0:f4%mpisize-1)
-    integer :: hostid, ierr, num_devices, my_device, rank, num_local_procs
-    integer(acc_device_kind) :: dev_type
-
-    dev_type = ACC_DEVICE_DEFAULT
-
-    ! Get the hostids to determine how many processes are on this host
-    hostid = gethostid()
-    call MPI_Allgather(hostid, 1, MPI_INTEGER, hostids, 1, MPI_INTEGER, &
-         f4%mpicomm, ierr)
-
-    ! Determine the local MPI ranks and number them, starting at zero
-    num_local_procs = 0
-    local_procs     = 0
-
-    do rank = 0, f4%mpisize-1
-       if (hostid == hostids(rank)) then
-          local_procs(rank) = num_local_procs
-          num_local_procs = num_local_procs+1
-       endif
-    enddo
-
+    dev_type = acc_get_device_type()
     num_devices = acc_get_num_devices(dev_type)
+
     if (num_devices < 1) error stop "No devices available on host"
 
-    if (num_devices < num_local_procs) then
-       ! Print warning only for first local process
-       if (local_procs(f4%mpirank) == 0) then
+    if (num_devices < host_size) then
+       if (f4%mpirank == 0) then
           write(*, "(A,I0,A,I0,A,I0,A)") "WARNING from ", f4%mpirank, &
-               ": more local processes (", num_local_procs, &
+               ": more local processes (", host_size, &
                ") than GPUs (", num_devices, ")"
        endif
 
-       my_device = mod(local_procs(f4%mpirank), num_devices)
+       my_device = mod(host_rank, num_devices)
     else
-       my_device = local_procs(f4%mpirank)
+       my_device = host_rank
     endif
-
-    call acc_set_device_num(my_device, dev_type)
 
   end subroutine set_openacc_device
 #endif
