@@ -239,7 +239,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
 
-    !$acc parallel loop
+    !$acc parallel loop present(f4%uu)
     do n = 1, f4%n_blocks
        !$acc loop collapse(${NDIM}$) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
@@ -284,7 +284,7 @@ contains
     allocate(tmp(@{DINDEX(f4%bx)}@))
     iv = i_phi
 
-    !$acc parallel loop private(tmp)
+    !$acc parallel loop private(tmp) present(f4%uu)
     do n = 1, f4%n_blocks
        !$acc loop collapse(${NDIM}$)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
@@ -319,7 +319,7 @@ contains
 
     iv = i_phi
 
-    !$acc parallel loop
+    !$acc parallel loop present(f4%uu)
     do n = 1, f4%n_blocks
        !$acc loop collapse(${NDIM}$) private(rr, sol)
        do @{KJI_LOOP_1_to_array(f4%bx)}@

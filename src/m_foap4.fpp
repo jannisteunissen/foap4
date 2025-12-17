@@ -2248,13 +2248,6 @@ contains
 
     half_bx = f4%bx/2
 
-    !$acc parallel present(uu, f4%bx, f4%gc_srl_local_iface, f4%gc_srl_local, &
-    !$acc &f4%gc_phys_iface, f4%gc_phys, f4%bc_data, f4%block_level, &
-    !$acc &f4%block_level, f4%dr_level, f4%gc_srl_from_buf_iface, f4%gc_srl_from_buf, &
-    !$acc &f4%recv_buffer, f4%gc_c2f_from_buf_iface,f4%bc_type, f4%bc_data_ix, &
-    !$acc &f4%bc_value, f4%gc_f2c_local, f4%gc_srl_from_buf, f4%gc_c2f_from_buf, &
-    !$acc &f4%gc_f2c_local_iface)
-
 #:def fyp_srl_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
     &i2=0, j2=0, k2=0)
     !$acc loop private(iq, jq)
@@ -2293,16 +2286,6 @@ contains
 #:endif
     end do
 #:enddef
-
-    ! Fill local boundaries at the same refinement level
-#:if NDIM == 2
-    @:fyp_srl_local(1, n_gc,  bx(2), i0=bx(1), i1=-n_gc, i2=bx(1)-n_gc)
-    @:fyp_srl_local(3, bx(1), n_gc,  j0=bx(2), j1=-n_gc, j2=bx(2)-n_gc)
-#:elif NDIM == 3
-    @:fyp_srl_local(1, n_gc,  bx(2), bx(3), i0=bx(1), i1=-n_gc, i2=bx(1)-n_gc)
-    @:fyp_srl_local(3, bx(1), n_gc,  bx(3), j0=bx(2), j1=-n_gc, j2=bx(2)-n_gc)
-    @:fyp_srl_local(5, bx(1), bx(2), n_gc,  k0=bx(3), k1=-n_gc, k2=bx(3)-n_gc)
-#:endif
 
     ! Fill physical boundaries
 
@@ -2480,20 +2463,6 @@ contains
     end do
 #:enddef
 
-#:if NDIM == 2
-    @:fyp_phys(0, n_gc, bx(2))
-    @:fyp_phys(1, n_gc, bx(2))
-    @:fyp_phys(2, bx(1), n_gc)
-    @:fyp_phys(3, bx(1), n_gc)
-#:elif NDIM == 3
-    @:fyp_phys(0, n_gc, bx(2), bx(3))
-    @:fyp_phys(1, n_gc, bx(2), bx(3))
-    @:fyp_phys(2, bx(1), n_gc, bx(3))
-    @:fyp_phys(3, bx(1), n_gc, bx(3))
-    @:fyp_phys(4, bx(1), bx(2), n_gc)
-    @:fyp_phys(5, bx(1), bx(2), n_gc)
-#:endif
-
 #:def fyp_f2c_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, if0=0, jf0=0, kf0=0)
     !$acc loop private(iq, jq, offset)
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
@@ -2548,27 +2517,6 @@ contains
     end do
 #:enddef
 
-    ! Fill coarse side of local fine-to-coarse refinement boundaries
-#:if NDIM == 2
-    @:fyp_f2c_local(0, n_gc, half_bx(2), i0=bx(1), j0=offset(1)*half_bx(2))
-    @:fyp_f2c_local(1, n_gc, half_bx(2), i0=-n_gc, j0=offset(1)*half_bx(2), if0=bx(1) - 2*n_gc)
-    @:fyp_f2c_local(2, half_bx(1), n_gc, i0=offset(1)*half_bx(1), j0=bx(2))
-    @:fyp_f2c_local(3, half_bx(1), n_gc, i0=offset(1)*half_bx(1), j0=-n_gc, jf0=bx(2) -2*n_gc)
-#:elif NDIM == 3
-    @:fyp_f2c_local(0, n_gc, half_bx(2), half_bx(3), i0=bx(1), &
-         &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
-    @:fyp_f2c_local(1, n_gc, half_bx(2), half_bx(3), i0=-n_gc, &
-         &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3), if0=bx(1) - 2*n_gc)
-    @:fyp_f2c_local(2, half_bx(1), n_gc, half_bx(3), &
-         &i0=offset(1)*half_bx(1), j0=bx(2), k0=offset(2)*half_bx(3))
-    @:fyp_f2c_local(3, half_bx(1), n_gc, half_bx(3), &
-         i0=offset(1)*half_bx(1), j0=-n_gc, k0=offset(2)*half_bx(3), jf0=bx(2) -2*n_gc)
-    @:fyp_f2c_local(4, half_bx(1), half_bx(2), n_gc, &
-         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=bx(3))
-    @:fyp_f2c_local(5, half_bx(1), half_bx(2), n_gc, &
-         i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=-n_gc, kf0=bx(3) -2*n_gc)
-#:endif
-
 #:def fyp_srl_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
     !$acc loop private(iq, i_buf0)
     do n = f4%gc_srl_from_buf_iface(${face}$), f4%gc_srl_from_buf_iface(${face}$+1)-1
@@ -2603,21 +2551,6 @@ contains
 #:endif
     end do
 #:enddef
-
-    ! Fill ghost cells at the same refinement level from the buffer
-#:if NDIM == 2
-    @:fyp_srl_from_buf(0, n_gc, bx(2), i0=-n_gc)
-    @:fyp_srl_from_buf(1, n_gc, bx(2), i0=bx(1))
-    @:fyp_srl_from_buf(2, bx(1), n_gc, j0=-n_gc)
-    @:fyp_srl_from_buf(3, bx(1), n_gc, j0=bx(2))
-#:elif NDIM == 3
-    @:fyp_srl_from_buf(0, n_gc, bx(2), bx(3), i0=-n_gc)
-    @:fyp_srl_from_buf(1, n_gc, bx(2), bx(3), i0=bx(1))
-    @:fyp_srl_from_buf(2, bx(1), n_gc, bx(3), j0=-n_gc)
-    @:fyp_srl_from_buf(3, bx(1), n_gc, bx(3), j0=bx(2))
-    @:fyp_srl_from_buf(4, bx(1), bx(2), n_gc, k0=-n_gc)
-    @:fyp_srl_from_buf(5, bx(1), bx(2), n_gc, k0=bx(3))
-#:endif
 
 #:def fyp_c2f_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
     !$acc loop private(iq, offset, i_buf0)
@@ -2661,6 +2594,74 @@ contains
 #:endif
     end do
 #:enddef
+
+    !$acc parallel present(uu, f4%bx, f4%gc_srl_local_iface, f4%gc_srl_local, &
+    !$acc &f4%gc_phys_iface, f4%gc_phys, f4%bc_data, f4%block_level, &
+    !$acc &f4%block_level, f4%dr_level, f4%gc_srl_from_buf_iface, f4%gc_srl_from_buf, &
+    !$acc &f4%recv_buffer, f4%gc_c2f_from_buf_iface,f4%bc_type, f4%bc_data_ix, &
+    !$acc &f4%bc_value, f4%gc_f2c_local, f4%gc_srl_from_buf, f4%gc_c2f_from_buf, &
+    !$acc &f4%gc_f2c_local_iface)
+
+    ! Fill local boundaries at the same refinement level
+#:if NDIM == 2
+    @:fyp_srl_local(1, n_gc,  bx(2), i0=bx(1), i1=-n_gc, i2=bx(1)-n_gc)
+    @:fyp_srl_local(3, bx(1), n_gc,  j0=bx(2), j1=-n_gc, j2=bx(2)-n_gc)
+#:elif NDIM == 3
+    @:fyp_srl_local(1, n_gc,  bx(2), bx(3), i0=bx(1), i1=-n_gc, i2=bx(1)-n_gc)
+    @:fyp_srl_local(3, bx(1), n_gc,  bx(3), j0=bx(2), j1=-n_gc, j2=bx(2)-n_gc)
+    @:fyp_srl_local(5, bx(1), bx(2), n_gc,  k0=bx(3), k1=-n_gc, k2=bx(3)-n_gc)
+#:endif
+
+    ! Fill ghost cells at physical boundaries
+#:if NDIM == 2
+    @:fyp_phys(0, n_gc, bx(2))
+    @:fyp_phys(1, n_gc, bx(2))
+    @:fyp_phys(2, bx(1), n_gc)
+    @:fyp_phys(3, bx(1), n_gc)
+#:elif NDIM == 3
+    @:fyp_phys(0, n_gc, bx(2), bx(3))
+    @:fyp_phys(1, n_gc, bx(2), bx(3))
+    @:fyp_phys(2, bx(1), n_gc, bx(3))
+    @:fyp_phys(3, bx(1), n_gc, bx(3))
+    @:fyp_phys(4, bx(1), bx(2), n_gc)
+    @:fyp_phys(5, bx(1), bx(2), n_gc)
+#:endif
+
+    ! Fill coarse side of local fine-to-coarse refinement boundaries
+#:if NDIM == 2
+    @:fyp_f2c_local(0, n_gc, half_bx(2), i0=bx(1), j0=offset(1)*half_bx(2))
+    @:fyp_f2c_local(1, n_gc, half_bx(2), i0=-n_gc, j0=offset(1)*half_bx(2), if0=bx(1) - 2*n_gc)
+    @:fyp_f2c_local(2, half_bx(1), n_gc, i0=offset(1)*half_bx(1), j0=bx(2))
+    @:fyp_f2c_local(3, half_bx(1), n_gc, i0=offset(1)*half_bx(1), j0=-n_gc, jf0=bx(2) -2*n_gc)
+#:elif NDIM == 3
+    @:fyp_f2c_local(0, n_gc, half_bx(2), half_bx(3), i0=bx(1), &
+         &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_f2c_local(1, n_gc, half_bx(2), half_bx(3), i0=-n_gc, &
+         &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3), if0=bx(1) - 2*n_gc)
+    @:fyp_f2c_local(2, half_bx(1), n_gc, half_bx(3), &
+         &i0=offset(1)*half_bx(1), j0=bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_f2c_local(3, half_bx(1), n_gc, half_bx(3), &
+         i0=offset(1)*half_bx(1), j0=-n_gc, k0=offset(2)*half_bx(3), jf0=bx(2) -2*n_gc)
+    @:fyp_f2c_local(4, half_bx(1), half_bx(2), n_gc, &
+         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=bx(3))
+    @:fyp_f2c_local(5, half_bx(1), half_bx(2), n_gc, &
+         i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=-n_gc, kf0=bx(3) -2*n_gc)
+#:endif
+
+    ! Fill ghost cells at the same refinement level from the buffer
+#:if NDIM == 2
+    @:fyp_srl_from_buf(0, n_gc, bx(2), i0=-n_gc)
+    @:fyp_srl_from_buf(1, n_gc, bx(2), i0=bx(1))
+    @:fyp_srl_from_buf(2, bx(1), n_gc, j0=-n_gc)
+    @:fyp_srl_from_buf(3, bx(1), n_gc, j0=bx(2))
+#:elif NDIM == 3
+    @:fyp_srl_from_buf(0, n_gc, bx(2), bx(3), i0=-n_gc)
+    @:fyp_srl_from_buf(1, n_gc, bx(2), bx(3), i0=bx(1))
+    @:fyp_srl_from_buf(2, bx(1), n_gc, bx(3), j0=-n_gc)
+    @:fyp_srl_from_buf(3, bx(1), n_gc, bx(3), j0=bx(2))
+    @:fyp_srl_from_buf(4, bx(1), bx(2), n_gc, k0=-n_gc)
+    @:fyp_srl_from_buf(5, bx(1), bx(2), n_gc, k0=bx(3))
+#:endif
 
     ! Update coarse side from buffers at coarse-to-fine buffer
 #:if NDIM == 2
@@ -3014,41 +3015,6 @@ contains
 #:enddef
 #:endif
 
-    !$acc parallel present(uu, f4%bx, f4%gc_f2c_local_iface, f4%gc_f2c_local, &
-    !$acc &f4%gc_f2c_from_buf_iface, f4%gc_f2c_from_buf, f4%recv_buffer)
-
-    ! ----------------------------------------
-    ! Fill fine side of local coarse-to-fine boundaries
-    ! ----------------------------------------
-
-#:if NDIM == 2
-    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
-         &jc0=offset(1)*half_bx(2), if0=-2*half_n_gc)
-    @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
-         &jc0=offset(1)*half_bx(2), if0=bx(1))
-    @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=bx(2)-half_n_gc, jf0=-2*half_n_gc)
-    @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
-         &ic0=offset(1)*half_bx(1), jf0=bx(2))
-#:elif NDIM == 3
-    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
-         &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3), if0=-2*half_n_gc)
-    @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
-         &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3), if0=bx(1))
-    @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=bx(2)-half_n_gc, kc0=offset(2)*half_bx(3), jf0=-2*half_n_gc)
-    @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
-         &ic0=offset(1)*half_bx(1), kc0=offset(2)*half_bx(3), jf0=bx(2))
-    @:fyp_f2c_local_fine(4, klim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=offset(2)*half_bx(2), kc0=bx(3)-half_n_gc, kf0=-2*half_n_gc)
-    @:fyp_f2c_local_fine(5, klim=half_n_gc, &
-         &ic0=offset(1)*half_bx(1), jc0=offset(2)*half_bx(2), kf0=bx(3))
-#:endif
-
-    ! ----------------------------------------
-    ! Fill fine side of nonlocal coarse-to-fine boundaries
-    ! ----------------------------------------
-
 #:if NDIM == 2
 #:def fyp_f2c_from_buf(face, ilim='half_bx(1)', jlim='half_bx(2)', if0=0, jf0=0)
     !$acc loop private(iq, i_buf0)
@@ -3237,6 +3203,41 @@ contains
     end do
 #:enddef
 #:endif
+
+    !$acc parallel present(uu, f4%bx, f4%gc_f2c_local_iface, f4%gc_f2c_local, &
+    !$acc &f4%gc_f2c_from_buf_iface, f4%gc_f2c_from_buf, f4%recv_buffer)
+
+    ! ----------------------------------------
+    ! Fill fine side of local coarse-to-fine boundaries
+    ! ----------------------------------------
+
+#:if NDIM == 2
+    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
+         &jc0=offset(1)*half_bx(2), if0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
+         &jc0=offset(1)*half_bx(2), if0=bx(1))
+    @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
+         &jc0=bx(2)-half_n_gc, jf0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
+         &ic0=offset(1)*half_bx(1), jf0=bx(2))
+#:elif NDIM == 3
+    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
+         &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3), if0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
+         &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3), if0=bx(1))
+    @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
+         &jc0=bx(2)-half_n_gc, kc0=offset(2)*half_bx(3), jf0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
+         &ic0=offset(1)*half_bx(1), kc0=offset(2)*half_bx(3), jf0=bx(2))
+    @:fyp_f2c_local_fine(4, klim=half_n_gc, ic0=offset(1)*half_bx(1), &
+         &jc0=offset(2)*half_bx(2), kc0=bx(3)-half_n_gc, kf0=-2*half_n_gc)
+    @:fyp_f2c_local_fine(5, klim=half_n_gc, &
+         &ic0=offset(1)*half_bx(1), jc0=offset(2)*half_bx(2), kf0=bx(3))
+#:endif
+
+    ! ----------------------------------------
+    ! Fill fine side of nonlocal coarse-to-fine boundaries
+    ! ----------------------------------------
 
 #:if NDIM == 2
     @:fyp_f2c_from_buf(0, ilim=half_n_gc, if0=-2*half_n_gc)

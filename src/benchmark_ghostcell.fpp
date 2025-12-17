@@ -119,7 +119,7 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
-    !$acc parallel loop
+    !$acc parallel loop present(f4%uu)
     do n = 1, f4%n_blocks
        !$acc loop collapse(2) private(rr)
        do j = 1, f4%bx(2)

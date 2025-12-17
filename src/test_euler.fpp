@@ -262,7 +262,7 @@ contains
     k_vec(2) = 4 * pi
 #:endif
 
-    !$acc parallel loop
+    !$acc parallel loop present(f4%uu)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
