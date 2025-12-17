@@ -1776,7 +1776,7 @@ contains
     end do
 #:enddef
 
-    !$acc parallel present(f4%uu, f4%bx, f4%gc_f2c_to_buf_iface, &
+    !$acc parallel present(f4, f4%uu, f4%bx, f4%gc_f2c_to_buf_iface, &
     !$acc &f4%gc_f2c_to_buf, f4%gc_srl_to_buf_iface, f4%gc_srl_to_buf, &
     !$acc &f4%send_buffer)
 
@@ -2116,7 +2116,7 @@ contains
 #:enddef
 #:endif
 
-    !$acc parallel present(f4%uu, f4%bx, f4%send_buffer, &
+    !$acc parallel present(f4, f4%uu, f4%bx, f4%send_buffer, &
     !$acc &f4%gc_c2f_to_buf_iface, f4%gc_c2f_to_buf)
 
 #:if NDIM == 2
@@ -3204,7 +3204,7 @@ contains
 #:enddef
 #:endif
 
-    !$acc parallel present(uu, f4%bx, f4%gc_f2c_local_iface, f4%gc_f2c_local, &
+    !$acc parallel present(uu, f4, f4%bx, f4%gc_f2c_local_iface, f4%gc_f2c_local, &
     !$acc &f4%gc_f2c_from_buf_iface, f4%gc_f2c_from_buf, f4%recv_buffer)
 
     ! ----------------------------------------
@@ -3371,7 +3371,7 @@ contains
 
     ! Copy on device
     !$acc parallel loop private(i_from, i_to) &
-    !$acc &present(f4%uu, f4%ilo, f4%ihi, srl) async
+    !$acc &present(f4, f4%uu, f4%ilo, f4%ihi, srl) async
     do n = 1, i_srl
        i_from = srl(1, n)
        i_to = srl(2, n)
@@ -3553,7 +3553,7 @@ contains
     end do
 
     ! Copy block solution data on device
-    !$acc parallel loop present(f4%uu, f4%ilo, f4%ihi)
+    !$acc parallel loop present(f4, f4%uu, f4%ilo, f4%ihi)
     do n = 1, n_blocks_old
        !$acc loop collapse(ndim+1)
        do iv = 1, f4%n_vars
@@ -3857,7 +3857,7 @@ contains
     end do
 #:enddef
 
-    !$acc parallel present(f4%uu, f4%gc_f2c_to_buf_iface, f4%gc_f2c_to_buf, &
+    !$acc parallel present(f4, f4%uu, f4%gc_f2c_to_buf_iface, f4%gc_f2c_to_buf, &
     !$acc &f4%send_buffer, f4%bflux, f4%bflux_ix, f4%gc_f2c_to_buf_fluxfix)
 
 #:if NDIM == 2
@@ -4057,7 +4057,7 @@ contains
 
     ! Correct solution on coarse side of non-local refinement boundaries
 
-    !$acc parallel present(uu, f4%bx, f4%gc_c2f_from_buf_iface, f4%gc_c2f_from_buf, &
+    !$acc parallel present(uu, f4, f4%bx, f4%gc_c2f_from_buf_iface, f4%gc_c2f_from_buf, &
     !$acc &f4%bflux, f4%recv_buffer, f4%gc_c2f_from_buf_fluxfix, f4%dr_level, &
     !$acc &f4%block_level, f4%bflux_ix, f4%gc_f2c_local_iface, f4%gc_f2c_local)
 #:if NDIM == 2
@@ -4134,7 +4134,7 @@ contains
     var_sum = 0.0_dp
 
     !$acc parallel loop private(level, dvol) reduction(+:var_sum) &
-    !$acc &present(f4%uu, f4%bx, f4%block_level, f4%dr_level)
+    !$acc &present(f4, f4%uu, f4%bx, f4%block_level, f4%dr_level)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
 #:if NDIM == 2
@@ -4289,7 +4289,7 @@ contains
     real(dp), parameter :: small_number = 1e-20_dp
 
     !$acc parallel loop private(level, diff_norm) &
-    !$acc &present(f4%uu, f4%bx, f4%block_level, f4%refinement_flags)
+    !$acc &present(f4, f4%uu, f4%bx, f4%block_level, f4%refinement_flags)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        diff_norm = 0.0_dp
