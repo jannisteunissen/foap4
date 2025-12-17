@@ -46,6 +46,7 @@ pure real(dp) function weno5_reconstruct(u, di)
 
   ! Compute weighted average of ENO schemes
   alpha = weights/(weno_eps + IS)**2
-  inv_alpha_sum = 1/sum(alpha)
-  weno5_reconstruct = inv_alpha_sum * sum(alpha * ENO)
+  inv_alpha_sum = 1/(alpha(1) + alpha(2) + alpha(3))
+  weno5_reconstruct = inv_alpha_sum * (alpha(1) * ENO(1) + &
+       alpha(2) * ENO(2) + alpha(3) * ENO(3))
 end function weno5_reconstruct
