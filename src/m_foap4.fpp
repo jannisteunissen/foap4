@@ -3525,7 +3525,7 @@ contains
     call set_face_data_storage(f4)
     if (associated(f4%bc_callback)) call f4%bc_callback(f4)
     t1 = MPI_Wtime()
-    f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
+    f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t1 - t0
 
   end subroutine f4_adjust_refinement
 
