@@ -14,8 +14,8 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
   integer                      :: n, ${IJK}$, m, level, iv, ierr
   integer                      :: i_vars_deriv(n_vars)
   logical                      :: ghost_dim(NDIM), valid_cell
-  real(dp)                     :: inv_dr(NDIM), cmax(NDIM), max_cfl
-  real(dp)                     :: flux(n_vars, 2, NDIM)
+  real(dp)                     :: inv_dr(NDIM), cmax, cfl_sum, max_cfl
+  real(dp)                     :: flux(n_vars, 2)
   real(dp)                     :: tmp(1+2*n_gc, n_vars)
   real(dp)                     :: dvar(n_vars), u(n_vars)
 #:if NDIM == 2
@@ -63,7 +63,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         end if
      end do; ${KJI_CLOSE_LOOP}$
 
-     !$acc loop collapse(NDIM) private(tmp, flux, dvar, cmax, iv, m, u) &
+     !$acc loop collapse(NDIM) private(tmp, flux, dvar, cmax, cfl_sum, iv, m, u) &
      !$acc &reduction(max:max_cfl)
      do @{KJI_LOOP_1_to_array(f4%bx)}@
 
@@ -73,66 +73,66 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
         dvar = dvar * dt
 
 #:if NDIM == 2
-        ! Compute fluxes
+        ! Compute x-flux
         tmp = uprim(i-n_gc:i+n_gc, j, :)
-        call flux_cell_faces(1, tmp, flux(:, :, 1), cmax(1))
+        call flux_cell_faces(1, tmp, flux, cmax)
+        dvar = dvar + dt * inv_dr(1) * (flux(:, 1) - flux(:, 2))
+        cfl_sum = cmax * inv_dr(1)
 
-        tmp = uprim(i, j-n_gc:j+n_gc, :)
-        call flux_cell_faces(2, tmp, flux(:, :, 2), cmax(2))
-
-        ! Keep track of changes in variables
-        dvar = dvar + dt * ( &
-             (flux(:, 1, 1) - flux(:, 2, 1)) * inv_dr(1) + &
-             (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2))
-
-        ! Store boundary fluxes
+        ! Store refinement boundary fluxes
         if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
-             f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
+             f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1)
         if (f4%bflux_ix(1, n) > 0 .and. i == f4%bx(1)) &
-             f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
+             f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
+
+        ! Compute y-flux
+        tmp = uprim(i, j-n_gc:j+n_gc, :)
+        call flux_cell_faces(2, tmp, flux, cmax)
+        dvar = dvar + dt * inv_dr(2) * (flux(:, 1) - flux(:, 2))
+        cfl_sum = cfl_sum + cmax * inv_dr(2)
+
+        ! Store refinement boundary fluxes
         if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
-             f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
+             f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1)
         if (f4%bflux_ix(3, n) > 0 .and. j == f4%bx(2)) &
-             f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
+             f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
 #:elif NDIM == 3
         ! Compute fluxes
         tmp = uprim(i-n_gc:i+n_gc, j, k, :)
-        call flux_cell_faces(1, tmp, flux(:, :, 1), cmax(1))
+        call flux_cell_faces(1, tmp, flux, cmax)
+        dvar = dvar + dt * inv_dr(1) * (flux(:, 1) - flux(:, 2))
+        cfl_sum = cmax * inv_dr(1)
+
+        ! Store refinement boundary fluxes
+        if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
+             f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1)
+        if (f4%bflux_ix(1, n) > 0 .and. i == f4%bx(1)) &
+             f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
 
         tmp = uprim(i, j-n_gc:j+n_gc, k, :)
-        call flux_cell_faces(2, tmp, flux(:, :, 2), cmax(2))
+        call flux_cell_faces(2, tmp, flux, cmax)
+        dvar = dvar + dt * inv_dr(2) * (flux(:, 1) - flux(:, 2))
+        cfl_sum = cfl_sum + cmax * inv_dr(2)
+
+        ! Store refinement boundary fluxes
+        if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
+             f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1)
+        if (f4%bflux_ix(3, n) > 0 .and. j == f4%bx(2)) &
+             f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
 
         tmp = uprim(i, j, k-n_gc:k+n_gc, :)
-        call flux_cell_faces(3, tmp, flux(:, :, 3), cmax(3))
+        call flux_cell_faces(3, tmp, flux, cmax)
+        dvar = dvar + dt * inv_dr(3) * (flux(:, 1) - flux(:, 2))
+        cfl_sum = cfl_sum + cmax * inv_dr(3)
 
-        ! Keep track of changes in variables
-        dvar = dvar + dt * ( &
-             (flux(:, 1, 1) - flux(:, 2, 1)) * inv_dr(1) + &
-             (flux(:, 1, 2) - flux(:, 2, 2)) * inv_dr(2) + &
-             (flux(:, 1, 3) - flux(:, 2, 3)) * inv_dr(3))
-
-        ! Store boundary fluxes
-        if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
-             f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1, 1)
-        if (f4%bflux_ix(1, n) > 0 .and. i == f4%bx(1)) &
-             f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2, 1)
-        if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
-             f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1, 2)
-        if (f4%bflux_ix(3, n) > 0 .and. j == f4%bx(2)) &
-             f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2, 2)
+        ! Store refinement boundary fluxes
         if (f4%bflux_ix(4, n) > 0 .and. k == 1) &
-             f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(4, n)) = dt * flux(:, 1, 3)
+             f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(4, n)) = dt * flux(:, 1)
         if (f4%bflux_ix(5, n) > 0 .and. k == f4%bx(3)) &
-             f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(5, n)) = dt * flux(:, 2, 3)
+             f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(5, n)) = dt * flux(:, 2)
 #:endif
 
-        ! Use cmax(1) to temporarily store sum(cmax * inv_dr)
-#:if NDIM == 2
-        cmax(1) = cmax(1)*inv_dr(1) + cmax(2)*inv_dr(2)
-#:elif NDIM == 3
-        cmax(1) = cmax(1)*inv_dr(1) + cmax(2)*inv_dr(2) + cmax(3)*inv_dr(3)
-#:endif
-        max_cfl = max(max_cfl, cmax(1))
+        max_cfl = max(max_cfl, cfl_sum)
 
         ! Set output state
         do iv = 1, n_vars
