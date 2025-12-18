@@ -189,21 +189,38 @@ contains
        !$acc loop collapse(NDIM) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
-          f4%uu(${IJK}$, i_rho, n) = rho_init(rr)
+#:if NDIM == 2
+          f4%uu(${IJK}$, i_rho, n) = rho_init(rr(1), rr(2))
+#:elif NDIM == 3
+          f4%uu(${IJK}$, i_rho, n) = rho_init(rr(1), rr(2), rr(3))
+#:endif
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_init_cond
 
-  pure real(dp) function rho_init(rr)
+#:if NDIM == 2
+  pure real(dp) function rho_init(x, y)
     !$acc routine seq
-    real(dp), intent(in) :: rr(NDIM)
+    real(dp), intent(in) :: x, y
 
-    if (norm2(rr - 0.5_dp) < 0.1_dp) then
+    if (sqrt((x - 0.5_dp)**2 + (y - 0.5_dp)**2) < 0.1_dp) then
        rho_init = 1.0_dp
     else
        rho_init = 0.0_dp
     end if
   end function rho_init
+#:elif NDIM == 3
+  pure real(dp) function rho_init(x, y, z)
+    !$acc routine seq
+    real(dp), intent(in) :: x, y, z
+
+    if (sqrt((x - 0.5_dp)**2 + (y - 0.5_dp)**2 + (z - 0.5_dp)**2) < 0.1_dp) then
+       rho_init = 1.0_dp
+    else
+       rho_init = 0.0_dp
+    end if
+  end function rho_init
+#:endif
 
   pure subroutine get_flux(flux_dim, u, flux)
     !$acc routine seq
