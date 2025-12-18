@@ -38,7 +38,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
      level = f4%block_level(n)
      inv_dr = 1/f4%dr_level(:, level)
 
-     !$acc loop collapse(NDIM) private(u, ghost_dim)
+     !$acc loop collapse(NDIM) private(u, ghost_dim, valid_cell)
      do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
         ghost_dim(1) = i < 1 .or. i > f4%bx(1)
         ghost_dim(2) = j < 1 .or. j > f4%bx(2)
