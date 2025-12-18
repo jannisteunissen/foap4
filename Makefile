@@ -8,7 +8,7 @@ LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
 CFLAGS := -Wall -O2 -g
 TARGETS_2D := build/test_refinement_2d build/test_advection_2d build/test_xdmf_writer_2d \
-	build/test_euler_2d build/benchmark_ghostcell_2d
+	build/test_euler_2d build/test_benchmark_ghostcell_2d
 TARGETS_3D := build/test_refinement_3d build/test_advection_3d build/test_euler_3d \
 	build/test_xdmf_writer_3d
 

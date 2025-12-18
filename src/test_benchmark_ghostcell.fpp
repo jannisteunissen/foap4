@@ -11,6 +11,7 @@ program benchmark_gc
   type(CFG_t)   :: cfg
   integer       :: n_output, min_level, n_refine_steps
   integer       :: n_iterations, max_blocks, bx(2)
+  integer       :: n_gc
   logical       :: write_grid
 
   call f4_initialize(f4, "error")
@@ -22,6 +23,7 @@ program benchmark_gc
   max_blocks     = 40000
   write_grid     = .false.
   bx(:)          = 32
+  n_gc           = 1
 
   call CFG_update_from_arguments(cfg)
   call CFG_add_get(cfg, 'write_grid', write_grid, 'Write grid to file')
@@ -31,10 +33,11 @@ program benchmark_gc
   call CFG_add_get(cfg, 'n_refine_steps', n_refine_steps, &
        'Number of refinement steps')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
+  call CFG_add_get(cfg, 'n_gc', n_gc, 'Number of ghost cells')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
   call CFG_check(cfg)
 
-  call benchmark_ghostcell(f4, bx, n_iterations, [1e-2_dp, 1e-2_dp], &
+  call benchmark_ghostcell(f4, n_gc, bx, n_iterations, [1e-2_dp, 1e-2_dp], &
        min_level, n_refine_steps, max_blocks, write_grid, &
        "output/benchmark_gc", n_output)
 
@@ -43,9 +46,10 @@ program benchmark_gc
 
 contains
 
-  subroutine benchmark_ghostcell(f4, bx, n_iterations, refine_location, &
+  subroutine benchmark_ghostcell(f4, n_gc, bx, n_iterations, refine_location, &
        min_level, n_refine_steps, max_blocks, write_grid, base_name, n_output)
     type(foap4_t), intent(inout) :: f4
+    integer, intent(in)          :: n_gc
     integer, intent(in)          :: bx(2)
     integer, intent(in)          :: n_iterations
     real(dp), intent(in)         :: refine_location(2)
@@ -57,11 +61,11 @@ contains
     integer, intent(inout)       :: n_output
     integer, parameter           :: n_blocks_per_dim(2) = [1, 1]
     real(dp), parameter          :: block_length(2)     = [1.0_dp, 1.0_dp]
-    integer, parameter           :: n_gc                = 1
     integer, parameter           :: n_vars              = 2
+    integer, parameter           :: i_vars(n_vars)      = [1, 2]
     character(len=20)            :: var_names(n_vars)   = ['rho', 'phi']
     logical, parameter           :: periodic(2)         = [.false., .false.]
-    integer                      :: n, n_ghostcells, n_blocks_global
+    integer                      :: n, n_ghostcells_per_block, n_blocks_global
     real(dp)                     :: t0, t1
     real(dp)                     :: t_total, ghostcells_per_ns
 
@@ -70,12 +74,12 @@ contains
          max_blocks, f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
-    call f4_update_ghostcells(f4, 2, [1, 2])
+    call f4_update_ghostcells(f4, n_vars, i_vars)
 
     do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location)
        call f4_adjust_refinement(f4, .true.)
-       call f4_update_ghostcells(f4, 2, [1, 2])
+       call f4_update_ghostcells(f4, n_vars, i_vars)
     end do
 
     if (write_grid) then
@@ -85,17 +89,22 @@ contains
 
     t0 = MPI_Wtime()
     do n = 1, n_iterations
-       call f4_update_ghostcells(f4, 2, [1, 2])
+       call f4_update_ghostcells(f4, n_vars, i_vars)
     end do
     t1 = MPI_Wtime()
 
     t_total = (t1 - t0)
     n_blocks_global = f4_get_num_global_blocks(f4)
-    n_ghostcells = n_blocks_global * n_vars * 2 * n_gc * sum(f4%bx)
-    ghostcells_per_ns = 1e-9_dp * n_iterations/t_total * n_ghostcells
+
+    ! 2 * NDIM sides, each with bx * n_gc ghost cells, for n_vars variables
+    n_ghostcells_per_block = 2 * sum(f4%bx) * n_gc * n_vars
+    ghostcells_per_ns = (1e-9_dp * n_ghostcells_per_block) * n_blocks_global * &
+         (n_iterations/t_total)
 
     if (f4%mpirank == 0) then
        write(*, "(A,F14.3)") " Ghostcells/ns:        ", ghostcells_per_ns
+       write(*, "(A,F14.3)") " GByte/s:              ", ghostcells_per_ns * &
+            8 * (1e9_dp/2.0**30)
        write(*, "(A,I14)")   " n_blocks_global:      ", n_blocks_global
        write(*, "(A,F14.3)") " Global mesh size (MB):", n_blocks_global * &
             n_vars * 0.5_dp**20 * product(f4%bx + 2 * f4%n_gc)
