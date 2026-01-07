@@ -358,16 +358,6 @@ module m_foap4_${NDIM}$d
        integer(c_int64_t), intent(out)   :: gfq_new(*)
      end subroutine pw_partition
 
-     !> Transfer block data between MPI ranks
-     subroutine pw_partition_transfer(pw, gfq_old, src_data, dest_data, data_size) bind(c)
-       import c_int, c_int64_t, c_ptr
-       type(c_ptr), intent(in), value    :: pw
-       integer(c_int64_t), intent(in)    :: gfq_old(*)
-       type(c_ptr), value                :: src_data
-       type(c_ptr), value                :: dest_data
-       integer(c_int), intent(in), value :: data_size
-     end subroutine pw_partition_transfer
-
      !> Interface for a generic forward Euler scheme for time integration
      !>
      !> This method should advance the solution over a time dt. The method

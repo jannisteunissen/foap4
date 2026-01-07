@@ -433,14 +433,3 @@ void pw_partition(pw_state_t *pw, int *n_changed, int64_t *gfq_old,
     gfq_new[rank] = pw->p4est->global_first_quadrant[rank];
   }
 }
-
-/* Transfer user data after partitioning */
-void pw_partition_transfer(pw_state_t *pw, const int64_t *gfq_old,
-                           const void *src_data, void *dest_data,
-                           const int data_size) {
-  const int tag = 0;
-
-  p4est_transfer_fixed (pw->p4est->global_first_quadrant, gfq_old,
-                        pw->p4est->mpicomm, tag,
-                        dest_data, src_data, data_size);
-}
