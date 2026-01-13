@@ -1,104 +1,201 @@
 .SUFFIXES:
 
+# ==============================================================================
+# Compiler and tool definitions
+# ==============================================================================
 F90C ?= mpif90
 CC := mpicc
-FYPPFLAGS := -n
-INCDIRS := p4est/build/local/include
-LIBDIRS := p4est/build/local/lib
-LIBS := p4est sc z m
-CFLAGS := -Wall -O2 -g
-TARGETS_2D := build/test_refinement_2d build/test_advection_2d build/test_xdmf_writer_2d \
-	build/test_euler_2d build/test_benchmark_ghostcell_2d
-TARGETS_3D := build/test_refinement_3d build/test_advection_3d build/test_euler_3d \
-	build/test_xdmf_writer_3d
+FYPP := fypp
 
+# ==============================================================================
+# Directory structure
+# ==============================================================================
 OBJDIR := build
 SRCDIR := src
 
-.PHONY: all clean
-all: $(TARGETS_2D) $(TARGETS_3D)
+# ==============================================================================
+# External libraries
+# ==============================================================================
+INCDIRS := p4est/build/local/include
+LIBDIRS := p4est/build/local/lib
+LIBS := p4est sc z m
 
-# Determine compiler brand
-compiler_version = $(shell $(F90C) --version)
-compiler_brand = $(word 1, $(compiler_version))
+# ==============================================================================
+# Preprocessor flags
+# ==============================================================================
+FYPPFLAGS := -n
 
-ifeq ($(compiler_brand), GNU)
-	FFLAGS ?= -Wall -O2 -g -J$(OBJDIR) -cpp $(FFLAGS_USER) -Wno-unused-dummy-argument -Wl,--no-warn-execstack
-	ifeq ($(DEBUG), 1)
-		FFLAGS += -O0 -fcheck=all -ffpe-trap=invalid,zero,overflow -finit-real=snan
-		CFLAGS += -O0
-	endif
-else ifeq ($(compiler_brand), nvfortran)
-	FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
-	-static-nvidia -g -module $(OBJDIR) $(FFLAGS_USER)
-else ifeq ($(compiler_brand), pgfortran)
-	FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
-	-static-nvidia -g -module $(OBJDIR) $(FFLAGS_USER)
-else ifeq ($(compiler_brand), Cray)
-# Description of some relevant flags
-# -J dir_name Specifies an alternate directory for the module information files.
-# -h [no]acc Enables or disables the compiler recognition of OpenACC accelerator directives.
-# -g     When  specified  the  debug level is determined by the optimization level.
-# -G debug_lvl from 0 (most) to 2 (least)
-# -M msgs suppress warnings and lower their severity
-# -e enable / -d disable
-# a      Aborts compilation after encountering the first error.
-# D      The -eD option enables all debugging options.
-# f      When this option is enabled, module files are created with lowercase names
-# n      Generates messages to note nonstandard Fortran usage.
-# o      Display to stderr the optimization options the compiler used for this compilation.
-# T      Controls  preprocessing of Fortran source files.  When enabled, source preprocessing is performed.
-# w      Enables support for automatic memory allocation for allocatable variables and arrays
-	FFLAGS ?= -M878 -O2 -eT -ea -ef -ffree -h acc \
-	-h acc_model=auto_async_none:fast_addr:no_deep_copy -J$(OBJDIR) $(FFLAGS_USER)
+# ==============================================================================
+# C compiler flags
+# ==============================================================================
+CFLAGS := -Wall -O2 -g
+
+# ==============================================================================
+# Compiler detection and Fortran flags
+# ==============================================================================
+compiler_version := $(shell $(F90C) --version 2>/dev/null)
+compiler_brand := $(word 1, $(compiler_version))
+
+ifeq ($(compiler_brand),GNU)
+    FFLAGS ?= -Wall -O2 -g -J$(OBJDIR) -cpp -Wno-unused-dummy-argument -Wl,--no-warn-execstack $(FFLAGS_USER)
+    ifeq ($(DEBUG),1)
+        FFLAGS += -O0 -fcheck=all -ffpe-trap=invalid,zero,overflow -finit-real=snan
+        CFLAGS += -O0
+    endif
+else ifeq ($(compiler_brand),nvfortran)
+    FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
+        -static-nvidia -g -module $(OBJDIR) $(FFLAGS_USER)
+else ifeq ($(compiler_brand),pgfortran)
+    FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
+        -static-nvidia -g -module $(OBJDIR) $(FFLAGS_USER)
+else ifeq ($(compiler_brand),Cray)
+    # -J dir_name: Specifies an alternate directory for module information files
+    # -h [no]acc: Enables/disables OpenACC accelerator directives
+    # -g: Debug level determined by optimization level
+    # -M msgs: Suppress warnings and lower their severity
+    # -e/-d: Enable/disable options
+    # -eT: Enable source preprocessing
+    # -ea: Abort after first error
+    # -ef: Create module files with lowercase names
+    FFLAGS ?= -M878 -O2 -eT -ea -ef -ffree -h acc \
+        -h acc_model=auto_async_none:fast_addr:no_deep_copy -J$(OBJDIR) $(FFLAGS_USER)
+else
+    $(warning Unknown compiler "$(compiler_brand)", using default flags)
+    FFLAGS ?= -O2 -g -J$(OBJDIR) $(FFLAGS_USER)
 endif
 
-# General dependencies
-$(TARGETS_2D): $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/p4est_wrapper_2d.o $(OBJDIR)/m_config.o
-$(TARGETS_3D): $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/p4est_wrapper_3d.o $(OBJDIR)/m_config.o
-$(addsuffix .o,$(TARGETS_2D)): $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o
-$(addsuffix .o,$(TARGETS_3D)): $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o
+# ==============================================================================
+# Target definitions
+# ==============================================================================
+TARGETS_2D := $(addprefix $(OBJDIR)/,\
+    test_refinement_2d \
+    test_advection_2d \
+    test_xdmf_writer_2d \
+    test_euler_2d \
+    test_benchmark_ghostcell_2d)
 
-# Dependencies for 2D targets
-$(OBJDIR)/test_advection_2d: $(OBJDIR)/m_physics_advection.o
-$(OBJDIR)/test_advection_2d.o: $(OBJDIR)/m_physics_advection.o
-$(OBJDIR)/test_euler_2d: $(OBJDIR)/m_physics_euler_2d.o
-$(OBJDIR)/test_euler_2d.o: $(OBJDIR)/m_physics_euler_2d.o
+TARGETS_3D := $(addprefix $(OBJDIR)/,\
+    test_refinement_3d \
+    test_advection_3d \
+    test_euler_3d \
+    test_xdmf_writer_3d)
 
-# Dependencies for 3D targets
-$(OBJDIR)/test_advection_3d: $(OBJDIR)/m_physics_advection.o
-$(OBJDIR)/test_advection_3d.o: $(OBJDIR)/m_physics_advection.o
-$(OBJDIR)/test_euler_3d: $(OBJDIR)/m_physics_euler_3d.o
-$(OBJDIR)/test_euler_3d.o: $(OBJDIR)/m_physics_euler_3d.o
+# ==============================================================================
+# Common object files
+# ==============================================================================
+COMMON_OBJS_2D := $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/p4est_wrapper_2d.o $(OBJDIR)/m_config.o
+COMMON_OBJS_3D := $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/p4est_wrapper_3d.o $(OBJDIR)/m_config.o
 
-# Ensure build directory exists
-$(OBJDIR):
-	mkdir -p $(OBJDIR)
+# ==============================================================================
+# Phony targets
+# ==============================================================================
+.PHONY: all clean 2d 3d help
 
-# Compile Fortran source files to object files
-$(OBJDIR)/%.o: $(SRCDIR)/%.f90 | $(OBJDIR)
-	$(F90C) -c -o $@ $< $(FFLAGS) $(addprefix -I,$(INCDIRS))
+all: $(TARGETS_2D) $(TARGETS_3D)
 
-# Compile Fortran executables from .o object files
-$(OBJDIR)/%: $(OBJDIR)/%.o
-	$(F90C) -o $@ $^ $(FFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
+2d: $(TARGETS_2D)
 
-# Compile C source files to object files for 2D
-$(OBJDIR)/%_2d.o: $(SRCDIR)/%.c | $(OBJDIR)
-	$(CC) -c -o $@ $< $(CFLAGS) -DNDIM=2 $(addprefix -I,$(INCDIRS))
+3d: $(TARGETS_3D)
 
-# Compile C source files to object files for 3D
-$(OBJDIR)/%_3d.o: $(SRCDIR)/%.c | $(OBJDIR)
-	$(CC) -c -o $@ $< $(CFLAGS) -DNDIM=3 $(addprefix -I,$(INCDIRS))
+help:
+	@echo "Usage: make [target] [options]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all      - Build all 2D and 3D targets (default)"
+	@echo "  2d       - Build only 2D targets"
+	@echo "  3d       - Build only 3D targets"
+	@echo "  clean    - Remove all build artifacts"
+	@echo "  help     - Show this help message"
+	@echo ""
+	@echo "Options:"
+	@echo "  DEBUG=1      - Enable debug flags"
+	@echo "  F90C=<comp>  - Set Fortran compiler (default: mpif90)"
+	@echo "  FFLAGS_USER= - Additional Fortran flags"
+	@echo "  FYPP_USER=   - Additional fypp flags"
+	@echo ""
+	@echo "Detected compiler: $(compiler_brand)"
 
-# Clean target
 clean:
-	$(RM) $(OBJDIR)/*
+	$(RM) -r $(OBJDIR)
 
+# ==============================================================================
+# Directory creation
+# ==============================================================================
+$(OBJDIR):
+	mkdir -p "$@"
+
+# ==============================================================================
+# Fypp preprocessing rules
+# ==============================================================================
 .PRECIOUS: $(SRCDIR)/%.f90 $(SRCDIR)/%_2d.f90 $(SRCDIR)/%_3d.f90
+
 $(SRCDIR)/%.f90: $(SRCDIR)/%.fpp
-	fypp $(FYPPFLAGS) $(FYPP_USER) $< $@
+	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) "$<" "$@"
+
 $(SRCDIR)/%_2d.f90: $(SRCDIR)/%.fpp
-	fypp $(FYPPFLAGS) $(FYPP_USER) -D NDIM=2 $< $@
+	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) -D NDIM=2 "$<" "$@"
+
 $(SRCDIR)/%_3d.f90: $(SRCDIR)/%.fpp
-	fypp $(FYPPFLAGS) $(FYPP_USER) -D NDIM=3 $< $@
+	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) -D NDIM=3 "$<" "$@"
+
+# ==============================================================================
+# Fortran compilation rules
+# ==============================================================================
+$(OBJDIR)/%.o: $(SRCDIR)/%.f90 | $(OBJDIR)
+	$(F90C) -c -o "$@" "$<" $(FFLAGS) $(addprefix -I,$(INCDIRS))
+
+# ==============================================================================
+# C compilation rules
+# ==============================================================================
+$(OBJDIR)/%_2d.o: $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) -c -o "$@" "$<" $(CFLAGS) -DNDIM=2 $(addprefix -I,$(INCDIRS))
+
+$(OBJDIR)/%_3d.o: $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) -c -o "$@" "$<" $(CFLAGS) -DNDIM=3 $(addprefix -I,$(INCDIRS))
+
+# ==============================================================================
+# Linking rules
+# ==============================================================================
+LDFLAGS := $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
+
+# Generic linking rule for 2D targets
+$(OBJDIR)/%_2d: $(OBJDIR)/%_2d.o $(COMMON_OBJS_2D)
+	$(F90C) -o "$@" $^ $(FFLAGS) $(LDFLAGS)
+
+# Generic linking rule for 3D targets
+$(OBJDIR)/%_3d: $(OBJDIR)/%_3d.o $(COMMON_OBJS_3D)
+	$(F90C) -o "$@" $^ $(FFLAGS) $(LDFLAGS)
+
+# ==============================================================================
+# Special dependencies for 2D targets
+# ==============================================================================
+$(OBJDIR)/test_advection_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o $(OBJDIR)/m_physics_advection.o
+$(OBJDIR)/test_advection_2d: $(OBJDIR)/m_physics_advection.o
+
+$(OBJDIR)/test_euler_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o $(OBJDIR)/m_physics_euler_2d.o
+$(OBJDIR)/test_euler_2d: $(OBJDIR)/m_physics_euler_2d.o
+
+$(OBJDIR)/test_refinement_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o
+$(OBJDIR)/test_xdmf_writer_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o
+$(OBJDIR)/test_benchmark_ghostcell_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o
+
+# ==============================================================================
+# Special dependencies for 3D targets
+# ==============================================================================
+$(OBJDIR)/test_advection_3d.o: $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o $(OBJDIR)/m_physics_advection.o
+$(OBJDIR)/test_advection_3d: $(OBJDIR)/m_physics_advection.o
+
+$(OBJDIR)/test_euler_3d.o: $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o $(OBJDIR)/m_physics_euler_3d.o
+$(OBJDIR)/test_euler_3d: $(OBJDIR)/m_physics_euler_3d.o
+
+$(OBJDIR)/test_refinement_3d.o: $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o
+$(OBJDIR)/test_xdmf_writer_3d.o: $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o
+
+# ==============================================================================
+# Module dependencies
+# ==============================================================================
+$(OBJDIR)/m_foap4_2d.o: $(OBJDIR)/m_config.o $(OBJDIR)/p4est_wrapper_2d.o
+$(OBJDIR)/m_foap4_3d.o: $(OBJDIR)/m_config.o $(OBJDIR)/p4est_wrapper_3d.o
+$(OBJDIR)/m_physics_euler_2d.o: $(OBJDIR)/m_config.o
+$(OBJDIR)/m_physics_euler_3d.o: $(OBJDIR)/m_config.o
+$(OBJDIR)/m_physics_advection.o: $(OBJDIR)/m_config.o
