@@ -154,9 +154,9 @@ module m_foap4_${NDIM}$d
 
      !> Storage of block data uu(i, j, [k,] i_var, i_block)
      real(dp), allocatable :: uu(@{DTIMES(:)}@, :, :)
-     !> Storage of boundary flux * dt, as bflux(i, [j,] face, i_var, i_block)
+     !> Storage of boundary flux * dt, as bflux(i, [j,] i_var, i_face)
      real(dp), allocatable :: bflux(@{DTIMES(:)}@, :)
-     !> Storage of boundary condition data bc_data(i, [j,] face, i_var, i_block)
+     !> Storage of boundary condition data bc_data(i, [j,] i_var, i_face)
      real(dp), allocatable :: bc_data(@{DTIMES(:)}@, :)
 
      ! For communication
