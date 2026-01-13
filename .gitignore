@@ -5,6 +5,4 @@
 *.visit
 *.o
 *.mod
-/src/*_2d.f90
-/src/*_3d.f90
 /build/

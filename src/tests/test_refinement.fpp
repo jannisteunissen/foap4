@@ -1,4 +1,4 @@
-#:include 'definitions.fpp'
+#:include '../core/definitions.fpp'
 program test_ref
   use m_config
   use m_foap4_${NDIM}$d

@@ -10,8 +10,19 @@ FYPP := fypp
 # ==============================================================================
 # Directory structure
 # ==============================================================================
-OBJDIR := build
+BUILDDIR := build
+OBJDIR := $(BUILDDIR)/obj
+BINDIR := $(BUILDDIR)/bin
+GENDIR := $(BUILDDIR)/generated
+
 SRCDIR := src
+COREDIR := $(SRCDIR)/core
+PHYSICSDIR := $(SRCDIR)/physics
+NUMERICSDIR := $(SRCDIR)/numerics
+TESTSDIR := $(SRCDIR)/tests
+UTILSDIR := $(SRCDIR)/utils
+
+VPATH := $(COREDIR):$(PHYSICSDIR):$(TESTSDIR):$(GENDIR):$(UTILSDIR)
 
 # ==============================================================================
 # External libraries
@@ -23,7 +34,7 @@ LIBS := p4est sc z m
 # ==============================================================================
 # Preprocessor flags
 # ==============================================================================
-FYPPFLAGS := -n
+FYPPFLAGS := -n -I$(COREDIR) -I$(PHYSICSDIR) -I$(UTILSDIR) -I$(NUMERICSDIR)
 
 # ==============================================================================
 # C compiler flags
@@ -49,14 +60,6 @@ else ifeq ($(compiler_brand),pgfortran)
     FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
         -static-nvidia -g -module $(OBJDIR) $(FFLAGS_USER)
 else ifeq ($(compiler_brand),Cray)
-    # -J dir_name: Specifies an alternate directory for module information files
-    # -h [no]acc: Enables/disables OpenACC accelerator directives
-    # -g: Debug level determined by optimization level
-    # -M msgs: Suppress warnings and lower their severity
-    # -e/-d: Enable/disable options
-    # -eT: Enable source preprocessing
-    # -ea: Abort after first error
-    # -ef: Create module files with lowercase names
     FFLAGS ?= -M878 -O2 -eT -ea -ef -ffree -h acc \
         -h acc_model=auto_async_none:fast_addr:no_deep_copy -J$(OBJDIR) $(FFLAGS_USER)
 else
@@ -64,17 +67,20 @@ else
     FFLAGS ?= -O2 -g -J$(OBJDIR) $(FFLAGS_USER)
 endif
 
+# Enable include statements without specyfing the path to these folders
+FFLAGS += -I$(COREDIR) -I$(PHYSICSDIR) -I$(UTILSDIR) -I$(NUMERICSDIR)
+
 # ==============================================================================
 # Target definitions
 # ==============================================================================
-TARGETS_2D := $(addprefix $(OBJDIR)/,\
+TARGETS_2D := $(addprefix $(BINDIR)/,\
     test_refinement_2d \
     test_advection_2d \
     test_xdmf_writer_2d \
     test_euler_2d \
     test_benchmark_ghostcell_2d)
 
-TARGETS_3D := $(addprefix $(OBJDIR)/,\
+TARGETS_3D := $(addprefix $(BINDIR)/,\
     test_refinement_3d \
     test_advection_3d \
     test_euler_3d \
@@ -113,44 +119,56 @@ help:
 	@echo "  FFLAGS_USER= - Additional Fortran flags"
 	@echo "  FYPP_USER=   - Additional fypp flags"
 	@echo ""
+	@echo "Directory structure:"
+	@echo "  $(SRCDIR)/core/     - Core framework files"
+	@echo "  $(SRCDIR)/physics/  - Physics modules"
+	@echo "  $(SRCDIR)/tests/    - Test programs"
+	@echo "  $(BUILDDIR)/        - All build artifacts"
+	@echo ""
 	@echo "Detected compiler: $(compiler_brand)"
 
 clean:
-	$(RM) -r $(OBJDIR)
+	$(RM) -r $(BUILDDIR)
 
 # ==============================================================================
 # Directory creation
 # ==============================================================================
-$(OBJDIR):
+$(OBJDIR) $(BINDIR) $(GENDIR):
 	mkdir -p "$@"
 
 # ==============================================================================
 # Fypp preprocessing rules
 # ==============================================================================
-.PRECIOUS: $(SRCDIR)/%.f90 $(SRCDIR)/%_2d.f90 $(SRCDIR)/%_3d.f90
+.PRECIOUS: $(GENDIR)/%.f90 $(GENDIR)/%_2d.f90 $(GENDIR)/%_3d.f90
 
-$(SRCDIR)/%.f90: $(SRCDIR)/%.fpp
+# Generic fypp rule (no dimension)
+$(GENDIR)/%.f90: %.fpp | $(GENDIR)
 	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) "$<" "$@"
 
-$(SRCDIR)/%_2d.f90: $(SRCDIR)/%.fpp
+# 2D fypp rule
+$(GENDIR)/%_2d.f90: %.fpp | $(GENDIR)
 	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) -D NDIM=2 "$<" "$@"
 
-$(SRCDIR)/%_3d.f90: $(SRCDIR)/%.fpp
+# 3D fypp rule
+$(GENDIR)/%_3d.f90: %.fpp | $(GENDIR)
 	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) -D NDIM=3 "$<" "$@"
 
 # ==============================================================================
 # Fortran compilation rules
 # ==============================================================================
-$(OBJDIR)/%.o: $(SRCDIR)/%.f90 | $(OBJDIR)
+$(OBJDIR)/%.o: %.f90 | $(OBJDIR)
+	$(F90C) -c -o "$@" "$<" $(FFLAGS) $(addprefix -I,$(INCDIRS))
+
+$(OBJDIR)/%.o: $(GENDIR)/%.f90 | $(OBJDIR)
 	$(F90C) -c -o "$@" "$<" $(FFLAGS) $(addprefix -I,$(INCDIRS))
 
 # ==============================================================================
 # C compilation rules
 # ==============================================================================
-$(OBJDIR)/%_2d.o: $(SRCDIR)/%.c | $(OBJDIR)
+$(OBJDIR)/%_2d.o: %.c | $(OBJDIR)
 	$(CC) -c -o "$@" "$<" $(CFLAGS) -DNDIM=2 $(addprefix -I,$(INCDIRS))
 
-$(OBJDIR)/%_3d.o: $(SRCDIR)/%.c | $(OBJDIR)
+$(OBJDIR)/%_3d.o: %.c | $(OBJDIR)
 	$(CC) -c -o "$@" "$<" $(CFLAGS) -DNDIM=3 $(addprefix -I,$(INCDIRS))
 
 # ==============================================================================
@@ -159,21 +177,21 @@ $(OBJDIR)/%_3d.o: $(SRCDIR)/%.c | $(OBJDIR)
 LDFLAGS := $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
 
 # Generic linking rule for 2D targets
-$(OBJDIR)/%_2d: $(OBJDIR)/%_2d.o $(COMMON_OBJS_2D)
+$(BINDIR)/%_2d: $(OBJDIR)/%_2d.o $(COMMON_OBJS_2D) | $(BINDIR)
 	$(F90C) -o "$@" $^ $(FFLAGS) $(LDFLAGS)
 
 # Generic linking rule for 3D targets
-$(OBJDIR)/%_3d: $(OBJDIR)/%_3d.o $(COMMON_OBJS_3D)
+$(BINDIR)/%_3d: $(OBJDIR)/%_3d.o $(COMMON_OBJS_3D) | $(BINDIR)
 	$(F90C) -o "$@" $^ $(FFLAGS) $(LDFLAGS)
 
 # ==============================================================================
 # Special dependencies for 2D targets
 # ==============================================================================
 $(OBJDIR)/test_advection_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o $(OBJDIR)/m_physics_advection.o
-$(OBJDIR)/test_advection_2d: $(OBJDIR)/m_physics_advection.o
+$(BINDIR)/test_advection_2d: $(OBJDIR)/m_physics_advection.o
 
 $(OBJDIR)/test_euler_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o $(OBJDIR)/m_physics_euler_2d.o
-$(OBJDIR)/test_euler_2d: $(OBJDIR)/m_physics_euler_2d.o
+$(BINDIR)/test_euler_2d: $(OBJDIR)/m_physics_euler_2d.o
 
 $(OBJDIR)/test_refinement_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o
 $(OBJDIR)/test_xdmf_writer_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_config.o
@@ -183,10 +201,10 @@ $(OBJDIR)/test_benchmark_ghostcell_2d.o: $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/m_conf
 # Special dependencies for 3D targets
 # ==============================================================================
 $(OBJDIR)/test_advection_3d.o: $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o $(OBJDIR)/m_physics_advection.o
-$(OBJDIR)/test_advection_3d: $(OBJDIR)/m_physics_advection.o
+$(BINDIR)/test_advection_3d: $(OBJDIR)/m_physics_advection.o
 
 $(OBJDIR)/test_euler_3d.o: $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o $(OBJDIR)/m_physics_euler_3d.o
-$(OBJDIR)/test_euler_3d: $(OBJDIR)/m_physics_euler_3d.o
+$(BINDIR)/test_euler_3d: $(OBJDIR)/m_physics_euler_3d.o
 
 $(OBJDIR)/test_refinement_3d.o: $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o
 $(OBJDIR)/test_xdmf_writer_3d.o: $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/m_config.o

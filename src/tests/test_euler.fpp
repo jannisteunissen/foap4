@@ -1,4 +1,4 @@
-#:include 'definitions.fpp'
+#:include '../core/definitions.fpp'
 #:set LIMITER = 'vanleer'
 #:set FLUX_SCHEME = 'tvdlf'
 
