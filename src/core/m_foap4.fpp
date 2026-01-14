@@ -238,7 +238,6 @@ module m_foap4_${NDIM}$d
 
      ! Performance information
      real(dp) :: wtime_t0 = 0.0_dp
-     real(dp) :: wtime_initialization = 0.0_dp
      real(dp) :: wtime_gc_fill_round1 = 0.0_dp
      real(dp) :: wtime_gc_fill_round2 = 0.0_dp
      real(dp) :: wtime_gc_fill_buff_round1 = 0.0_dp
@@ -523,7 +522,6 @@ contains
     type(foap4_t), intent(inout) :: f4
 
     f4%wtime_t0 = MPI_Wtime()
-    f4%wtime_initialization = 0.0_dp
     f4%wtime_gc_fill_round1 = 0.0_dp
     f4%wtime_gc_fill_round2 = 0.0_dp
     f4%wtime_gc_fill_buff_round1 = 0.0_dp
@@ -545,8 +543,6 @@ contains
     t_total = MPI_Wtime() - f4%wtime_t0
     fac     = 1e2_dp / t_total
     write(*, "(I6,A25,F9.2,' s')") f4%mpirank, "total_runtime", t_total
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "initialization", &
-         f4%wtime_initialization * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_round1", &
          f4%wtime_gc_fill_round1 * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_round2", &
@@ -571,7 +567,6 @@ contains
          f4%wtime_flux_fix * fac
     write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "sum_of_above", &
          fac * ( &
-         f4%wtime_initialization + &
          f4%wtime_gc_fill_round1 + &
          f4%wtime_gc_fill_round2 + &
          f4%wtime_gc_fill_buff_round1 + &
@@ -768,7 +763,6 @@ contains
     if (associated(f4%bc_callback)) call f4%bc_callback(f4)
 
     t1 = MPI_Wtime()
-    f4%wtime_initialization = f4%wtime_initialization + t1 - t0
 
   end subroutine f4_construct_brick
 
