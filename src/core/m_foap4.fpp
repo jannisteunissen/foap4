@@ -2297,7 +2297,7 @@ contains
        if (ihi >= ilo) then
           n_send = n_send + 1
           call mpi_isend_wrapper(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
-               MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, &
+               rank, tag, f4%mpicomm, &
                send_req(n_send), ierr)
        end if
 
@@ -2307,7 +2307,7 @@ contains
        if (ihi >= ilo) then
           n_recv = n_recv + 1
           call mpi_irecv_wrapper(f4%recv_buffer(ilo:ihi), ihi-ilo+1, &
-               MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, &
+               rank, tag, f4%mpicomm, &
                recv_req(n_recv), ierr)
        end if
     end do
@@ -2324,30 +2324,28 @@ contains
   !> Wrapper for MPI_Isend. This was done because of problems with the
   !> use_device clause combined with an index offset and NVHPC-v25. With this
   !> wrapper, there is no offset in "buf".
-  subroutine mpi_isend_wrapper(buf, count, datatype, dest, tag, comm, request, ierror)
-    real(dp), intent(in)           :: buf(*)
+  subroutine mpi_isend_wrapper(buf, count, dest, tag, comm, request, ierror)
     integer, intent(in)            :: count, dest, tag
-    type(mpi_datatype), intent(in) :: datatype
+    real(dp), intent(in)           :: buf(count)
     type(mpi_comm), intent(in)     :: comm
     type(mpi_request), intent(out) :: request
     integer, optional, intent(out) :: ierror
 
     !$acc host_data use_device(buf)
-    call mpi_isend(buf, count, datatype, dest, tag, comm, request, ierror)
+    call mpi_isend(buf, count, MPI_DOUBLE_PRECISION, dest, tag, comm, request, ierror)
     !$acc end host_data
   end subroutine mpi_isend_wrapper
 
   !> Wrapper for MPI_Irecv, see mpi_isend_wrapper
-  subroutine mpi_irecv_wrapper(buf, count, datatype, source, tag, comm, request, ierror)
-    real(dp), intent(inout)         :: buf(*)
+  subroutine mpi_irecv_wrapper(buf, count, source, tag, comm, request, ierror)
     integer, intent(in)             :: count, source, tag
-    type(mpi_datatype), intent(in)  :: datatype
+    real(dp), intent(inout)         :: buf(count)
     type(mpi_comm), intent(in)      :: comm
     type(mpi_request), intent(out) :: request
     integer, optional, intent(out)  :: ierror
 
     !$acc host_data use_device(buf)
-    call mpi_irecv(buf, count, datatype, source, tag, comm, request, ierror)
+    call mpi_irecv(buf, count, MPI_DOUBLE_PRECISION, source, tag, comm, request, ierror)
     !$acc end host_data
   end subroutine mpi_irecv_wrapper
 
@@ -3843,7 +3841,7 @@ contains
              n_recv = n_recv + 1
              call mpi_irecv_wrapper(f4%uu(@{DTIMES(:)}@, :, block_ix), &
                   dsize*n_blocks_transfer, &
-                  MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, recv_req(n_recv), ierr)
+                  rank, tag, f4%mpicomm, recv_req(n_recv), ierr)
              block_ix = block_ix + n_blocks_transfer
           end if
        end do
@@ -3865,7 +3863,7 @@ contains
              n_send = n_send + 1
              call mpi_isend_wrapper(f4%uu(@{DTIMES(:)}@, :, block_ix), &
                   dsize*n_blocks_transfer, &
-                  MPI_DOUBLE_PRECISION, rank, tag, f4%mpicomm, send_req(n_send), ierr)
+                  rank, tag, f4%mpicomm, send_req(n_send), ierr)
              block_ix = block_ix + n_blocks_transfer
           end if
        end do
