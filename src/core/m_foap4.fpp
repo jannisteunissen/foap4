@@ -514,6 +514,8 @@ contains
        my_device = host_rank
     endif
 
+    call acc_set_device_num(my_device, dev_type)
+
   end subroutine set_openacc_device
 #endif
 
