@@ -136,7 +136,6 @@ contains
 
     call set_init_cond(f4)
     call f4_update_ghostcells(f4, 1, [i_phi])
-    call local_average(f4)
     call compute_error(f4)
 
     if (write_output) then
@@ -144,21 +143,16 @@ contains
        call f4_write_grid(f4, base_name, n_output)
     end if
 
-    call check_error_magnitude(f4)
-
     do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location, refine_everywhere)
        call f4_adjust_refinement(f4, partition)
        call f4_update_ghostcells(f4, 1, [i_phi])
-       call local_average(f4)
        call compute_error(f4)
 
        if (write_output) then
           n_output = n_output + 1
           call f4_write_grid(f4, base_name, n_output)
        end if
-
-       call check_error_magnitude(f4)
     end do
 
     if (test_coarsening) then
@@ -169,7 +163,6 @@ contains
           call f4_adjust_refinement(f4, partition)
 
           call f4_update_ghostcells(f4, 1, [i_phi])
-          call local_average(f4)
           call compute_error(f4)
 
           if (write_output) then
@@ -177,7 +170,6 @@ contains
              call f4_write_grid(f4, base_name, n_output)
           end if
 
-          call check_error_magnitude(f4)
           if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
        end do
     end if
@@ -276,75 +268,50 @@ contains
     f4%refinement_flags(1:f4%n_blocks) = -1
   end subroutine set_coarsening_flag
 
-  subroutine local_average(f4)
-    type(foap4_t), intent(inout) :: f4
-    integer                      :: n, ${IJK}$, iv
-    real(dp), allocatable        :: tmp(@{DTIMES(:)}@)
-
-    allocate(tmp(@{DINDEX(f4%bx)}@))
-    iv = i_phi
-
-    !$acc parallel loop private(tmp) present(f4%uu)
-    do n = 1, f4%n_blocks
-       !$acc loop collapse(${NDIM}$)
-       do @{KJI_LOOP_1_to_array(f4%bx)}@
-#:if NDIM == 2
-          tmp(i, j) = 0.25_dp * ( &
-               f4%uu(i-1, j, iv, n) + &
-               f4%uu(i+1, j, iv, n) + &
-               f4%uu(i, j-1, iv, n) + &
-               f4%uu(i, j+1, iv, n))
-#:elif NDIM == 3
-          tmp(i, j, k) = (1/6.0_dp) * ( &
-               f4%uu(i-1, j, k, iv, n) + &
-               f4%uu(i+1, j, k, iv, n) + &
-               f4%uu(i, j-1, k, iv, n) + &
-               f4%uu(i, j+1, k, iv, n) + &
-               f4%uu(i, j, k-1, iv, n) + &
-               f4%uu(i, j, k+1, iv, n))
-#:endif
-       end do; ${KJI_CLOSE_LOOP}$
-
-       !$acc loop collapse(NDIM)
-       do @{KJI_LOOP_1_to_array(f4%bx)}@
-          f4%uu(${IJK}$, iv, n) = tmp(${IJK}$)
-       end do; ${KJI_CLOSE_LOOP}$
-    end do
-  end subroutine local_average
-
   subroutine compute_error(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: n, ${IJK}$, iv
+    integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM), sol
-
-    iv = i_phi
+    logical                      :: ghost_dim(NDIM), valid_cell
+    real(dp), parameter          :: max_difference = 1e-15_dp
 
     !$acc parallel loop present(f4%uu)
     do n = 1, f4%n_blocks
-       !$acc loop collapse(${NDIM}$) private(rr, sol)
-       do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
-          sol = phi_init(@{DINDEX(rr)}@)
-          f4%uu(${IJK}$, i_err, n) = abs(f4%uu(${IJK}$, i_phi, n) - sol)
+       !$acc loop collapse(${NDIM}$) private(rr, sol, ghost_dim, valid_cell)
+       do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
+
+          ghost_dim(1) = i < 1 .or. i > f4%bx(1)
+          ghost_dim(2) = j < 1 .or. j > f4%bx(2)
+#:if NDIM == 3
+          ghost_dim(3) = k < 1 .or. k > f4%bx(3)
+#:endif
+
+#:if NDIM == 2
+          valid_cell = .not. (ghost_dim(1) .and. ghost_dim(2))
+#:elif NDIM == 3
+          valid_cell = .not. ( &
+               (ghost_dim(1) .and. ghost_dim(2)) .or. &
+               (ghost_dim(1) .and. ghost_dim(3)) .or. &
+               (ghost_dim(2) .and. ghost_dim(3)))
+#:endif
+
+          if (valid_cell) then
+             rr = f4_cell_coord(f4, n, ${IJK}$)
+             sol = phi_init(@{DINDEX(rr)}@)
+             f4%uu(${IJK}$, i_err, n) = abs(f4%uu(${IJK}$, i_phi, n) - sol)
+          else
+             f4%uu(${IJK}$, i_err, n) = 0.0_dp
+          end if
+
+          if (abs(f4%uu(${IJK}$, i_err, n)) > max_difference) then
+             print *, "Numerical error:", f4%uu(${IJK}$, i_err, n)
+             if (abort_on_error) then
+                stop "Too large error"
+             end if
+          end if
+
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine compute_error
-
-  subroutine check_error_magnitude(f4)
-    type(foap4_t), intent(in) :: f4
-    real(dp)                  :: max_err
-    real(dp), parameter       :: max_difference = 1e-15_dp
-
-    call f4_compute_max(f4, i_err, max_err)
-
-    if (max_err > max_difference) then
-       if (f4%mpirank == 0) then
-          print *, "Numerical error:", max_err
-          if (abort_on_error) then
-             error stop "Too large error"
-          end if
-       end if
-    end if
-  end subroutine check_error_magnitude
 
 end program test_ref
