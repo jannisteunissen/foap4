@@ -2351,23 +2351,10 @@ contains
 
   !> After buffers have been communicated, handle all ghost cells for "round
   !> one", which excludes coarse-to-fine interpolation
-  subroutine fill_ghostcells_round_one(f4, n_vars, i_vars, bx, n_gc, &
-       ilo, ihi, max_vars, max_blocks, uu)
+  subroutine fill_ghostcells_round_one(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer, intent(in)          :: bx(NDIM)
-    integer, intent(in)          :: n_gc
-    integer, intent(in)          :: ilo(NDIM)
-    integer, intent(in)          :: ihi(NDIM)
-    integer, intent(in)          :: max_vars
-    integer, intent(in)          :: max_blocks
-#:if NDIM == 2
-    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
-#:elif NDIM == 3
-    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), ilo(3):ihi(3), &
-         max_vars, max_blocks)
-#:endif
     integer                      :: n, i, j, iq, jq, i_f, j_f
     integer                      :: i_buf, i_buf0, iv, ivar, i_bc_data
     integer                      :: half_bx(NDIM), offset(NDIM-1), bc_type, level
@@ -2382,8 +2369,8 @@ contains
     &i2=0, j2=0, k2=0)
     !$acc loop private(iq, jq)
     do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
-       iq   = f4%gc_srl_local(1, n) + 1
-       jq   = f4%gc_srl_local(2, n) + 1
+       iq = f4%gc_srl_local(1, n) + 1
+       jq = f4%gc_srl_local(2, n) + 1
 
 #:if NDIM == 2
        !$acc loop collapse(3) private(ivar)
@@ -2391,10 +2378,10 @@ contains
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
-                uu(${i0}$+i, ${j0}$+j, ivar, iq) = &
-                     uu(i, j, ivar, jq)
-                uu(${i1}$+i, ${j1}$+j, ivar, jq) = &
-                     uu(${i2}$+i, ${j2}$+j, ivar, iq)
+                f4%uu(${i0}$+i, ${j0}$+j, ivar, iq) = &
+                     f4%uu(i, j, ivar, jq)
+                f4%uu(${i1}$+i, ${j1}$+j, ivar, jq) = &
+                     f4%uu(${i2}$+i, ${j2}$+j, ivar, iq)
              end do
           end do
        end do
@@ -2405,10 +2392,10 @@ contains
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
-                   uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = &
-                        uu(i, j, k, ivar, jq)
-                   uu(${i1}$+i, ${j1}$+j, ${k1}$+k, ivar, jq) = &
-                        uu(${i2}$+i, ${j2}$+j, ${k2}$+k, ivar, iq)
+                   f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = &
+                        f4%uu(i, j, k, ivar, jq)
+                   f4%uu(${i1}$+i, ${j1}$+j, ${k1}$+k, ivar, jq) = &
+                        f4%uu(${i2}$+i, ${j2}$+j, ${k2}$+k, ivar, iq)
                 end do
              end do
           end do
@@ -2450,48 +2437,48 @@ contains
                 select case (bc_type)
                 case (f4_bc_dirichlet)
 #:if face == '0'
-                   uu(1-i, j, ivar, iq) = &
-                        2 * bc_value - uu(i, j, ivar, iq)
+                   f4%uu(1-i, j, ivar, iq) = &
+                        2 * bc_value - f4%uu(i, j, ivar, iq)
 #:elif face == '1'
-                   uu(bx(1)+i, j, ivar, iq) = &
-                        2 * bc_value - uu(bx(1)+1-i, j, ivar, iq)
+                   f4%uu(f4%bx(1)+i, j, ivar, iq) = &
+                        2 * bc_value - f4%uu(f4%bx(1)+1-i, j, ivar, iq)
 #:elif face == '2'
-                   uu(i, 1-j, ivar, iq) = &
-                        2 * bc_value - uu(i, j, ivar, iq)
+                   f4%uu(i, 1-j, ivar, iq) = &
+                        2 * bc_value - f4%uu(i, j, ivar, iq)
 #:elif face == '3'
-                   uu(i, bx(2)+j, ivar, iq) = &
-                        2 * bc_value - uu(i, bx(2)+1-j, ivar, iq)
+                   f4%uu(i, f4%bx(2)+j, ivar, iq) = &
+                        2 * bc_value - f4%uu(i, f4%bx(2)+1-j, ivar, iq)
 #:endif
                 case (f4_bc_neumann)
 #:if face == '0'
-                   uu(1-i, j, ivar, iq) = uu(i, j, ivar, iq) - &
+                   f4%uu(1-i, j, ivar, iq) = f4%uu(i, j, ivar, iq) - &
                         (2*i-1) * dr(1) * bc_value
 #:elif face == '1'
-                   uu(bx(1)+i, j, ivar, iq) = uu(bx(1)+1-i, j, ivar, iq) + &
+                   f4%uu(f4%bx(1)+i, j, ivar, iq) = f4%uu(f4%bx(1)+1-i, j, ivar, iq) + &
                         (2*i-1) * dr(1) * bc_value
 #:elif face == '2'
-                   uu(i, 1-j, ivar, iq) = uu(i, j, ivar, iq) - &
+                   f4%uu(i, 1-j, ivar, iq) = f4%uu(i, j, ivar, iq) - &
                         (2*j-1) * dr(2) * bc_value
 #:elif face == '3'
-                   uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2)+1-j, ivar, iq) + &
+                   f4%uu(i, f4%bx(2)+j, ivar, iq) = f4%uu(i, f4%bx(2)+1-j, ivar, iq) + &
                         (2*j-1) * dr(2) * bc_value
 #:endif
 
                 case (f4_bc_linear_extrap)
 #:if face == '0'
-                   slope = (uu(2, j, ivar, iq) - uu(1, j, ivar, iq))
-                   uu(1-i, j, ivar, iq) = uu(1, j, ivar, iq) - i * slope
+                   slope = (f4%uu(2, j, ivar, iq) - f4%uu(1, j, ivar, iq))
+                   f4%uu(1-i, j, ivar, iq) = f4%uu(1, j, ivar, iq) - i * slope
 #:elif face == '1'
-                   slope = (uu(bx(1), j, ivar, iq) - uu(bx(1)-1, j, ivar, iq))
-                   uu(bx(1)+i, j, ivar, iq) = uu(bx(1), j, ivar, iq) + i * slope
+                   slope = (f4%uu(f4%bx(1), j, ivar, iq) - f4%uu(f4%bx(1)-1, j, ivar, iq))
+                   f4%uu(f4%bx(1)+i, j, ivar, iq) = f4%uu(f4%bx(1), j, ivar, iq) + i * slope
 
 #:elif face == '2'
-                   slope = (uu(i, 2, ivar, iq) - uu(i, 1, ivar, iq))
-                   uu(i, 1-j, ivar, iq) = uu(i, 1, ivar, iq) - j * slope
+                   slope = (f4%uu(i, 2, ivar, iq) - f4%uu(i, 1, ivar, iq))
+                   f4%uu(i, 1-j, ivar, iq) = f4%uu(i, 1, ivar, iq) - j * slope
 
 #:elif face == '3'
-                   slope = (uu(i, bx(2), ivar, iq) - uu(i, bx(2)-1, ivar, iq))
-                   uu(i, bx(2)+j, ivar, iq) = uu(i, bx(2), ivar, iq) + j * slope
+                   slope = (f4%uu(i, f4%bx(2), ivar, iq) - f4%uu(i, f4%bx(2)-1, ivar, iq))
+                   f4%uu(i, f4%bx(2)+j, ivar, iq) = f4%uu(i, f4%bx(2), ivar, iq) + j * slope
 #:endif
                 end select
              end do
@@ -2523,66 +2510,66 @@ contains
                    select case (bc_type)
                    case (f4_bc_dirichlet)
 #:if face == '0'
-                      uu(1-i, j, k, ivar, iq) = &
-                           2 * bc_value - uu(i, j, k, ivar, iq)
+                      f4%uu(1-i, j, k, ivar, iq) = &
+                           2 * bc_value - f4%uu(i, j, k, ivar, iq)
 #:elif face == '1'
-                      uu(bx(1)+i, j, k, ivar, iq) = &
-                           2 * bc_value - uu(bx(1)+1-i, j, k, ivar, iq)
+                      f4%uu(f4%bx(1)+i, j, k, ivar, iq) = &
+                           2 * bc_value - f4%uu(f4%bx(1)+1-i, j, k, ivar, iq)
 #:elif face == '2'
-                      uu(i, 1-j, k, ivar, iq) = &
-                           2 * bc_value - uu(i, j, k, ivar, iq)
+                      f4%uu(i, 1-j, k, ivar, iq) = &
+                           2 * bc_value - f4%uu(i, j, k, ivar, iq)
 #:elif face == '3'
-                      uu(i, bx(2)+j, k, ivar, iq) = &
-                           2 * bc_value - uu(i, bx(2)+1-j, k, ivar, iq)
+                      f4%uu(i, f4%bx(2)+j, k, ivar, iq) = &
+                           2 * bc_value - f4%uu(i, f4%bx(2)+1-j, k, ivar, iq)
 #:elif face == '4'
-                      uu(i, j, 1-k, ivar, iq) = &
-                           2 * bc_value - uu(i, j, k, ivar, iq)
+                      f4%uu(i, j, 1-k, ivar, iq) = &
+                           2 * bc_value - f4%uu(i, j, k, ivar, iq)
 #:elif face == '5'
-                      uu(i, j, bx(3)+k, ivar, iq) = &
-                           2 * bc_value - uu(i, j, bx(3)+1-k, ivar, iq)
+                      f4%uu(i, j, f4%bx(3)+k, ivar, iq) = &
+                           2 * bc_value - f4%uu(i, j, f4%bx(3)+1-k, ivar, iq)
 #:endif
                    case (f4_bc_neumann)
 #:if face == '0'
-                      uu(1-i, j, k, ivar, iq) = uu(i, j, k, ivar, iq) - &
+                      f4%uu(1-i, j, k, ivar, iq) = f4%uu(i, j, k, ivar, iq) - &
                            (2*i-1) * dr(1) * bc_value
 #:elif face == '1'
-                      uu(bx(1)+i, j, k, ivar, iq) = uu(bx(1)+1-i, j, k, ivar, iq) + &
+                      f4%uu(f4%bx(1)+i, j, k, ivar, iq) = f4%uu(f4%bx(1)+1-i, j, k, ivar, iq) + &
                            (2*i-1) * dr(1) * bc_value
 #:elif face == '2'
-                      uu(i, 1-j, k, ivar, iq) = uu(i, j, k, ivar, iq) - &
+                      f4%uu(i, 1-j, k, ivar, iq) = f4%uu(i, j, k, ivar, iq) - &
                            (2*j-1) * dr(2) * bc_value
 #:elif face == '3'
-                      uu(i, bx(2)+j, k, ivar, iq) = uu(i, bx(2)+1-j, k, ivar, iq) + &
+                      f4%uu(i, f4%bx(2)+j, k, ivar, iq) = f4%uu(i, f4%bx(2)+1-j, k, ivar, iq) + &
                            (2*j-1) * dr(2) * bc_value
 #:elif face == '4'
-                      uu(i, j, 1-k, ivar, iq) = uu(i, j, k, ivar, iq) - &
+                      f4%uu(i, j, 1-k, ivar, iq) = f4%uu(i, j, k, ivar, iq) - &
                            (2*k-1) * dr(3) * bc_value
 #:elif face == '5'
-                      uu(i, j, bx(3)+k, ivar, iq) = uu(i, j, bx(3)+1-k, ivar, iq) + &
+                      f4%uu(i, j, f4%bx(3)+k, ivar, iq) = f4%uu(i, j, f4%bx(3)+1-k, ivar, iq) + &
                            (2*k-1) * dr(3) * bc_value
 #:endif
 
                    case (f4_bc_linear_extrap)
 #:if face == '0'
-                      slope = (uu(2, j, k, ivar, iq) - uu(1, j, k, ivar, iq))
-                      uu(1-i, j, k, ivar, iq) = uu(1, j, k, ivar, iq) - i * slope
+                      slope = (f4%uu(2, j, k, ivar, iq) - f4%uu(1, j, k, ivar, iq))
+                      f4%uu(1-i, j, k, ivar, iq) = f4%uu(1, j, k, ivar, iq) - i * slope
 #:elif face == '1'
-                      slope = (uu(bx(1), j, k, ivar, iq) - uu(bx(1)-1, j, k, ivar, iq))
-                      uu(bx(1)+i, j, k, ivar, iq) = uu(bx(1), j, k, ivar, iq) + i * slope
+                      slope = (f4%uu(f4%bx(1), j, k, ivar, iq) - f4%uu(f4%bx(1)-1, j, k, ivar, iq))
+                      f4%uu(f4%bx(1)+i, j, k, ivar, iq) = f4%uu(f4%bx(1), j, k, ivar, iq) + i * slope
 
 #:elif face == '2'
-                      slope = (uu(i, 2, k, ivar, iq) - uu(i, 1, k, ivar, iq))
-                      uu(i, 1-j, k, ivar, iq) = uu(i, 1, k, ivar, iq) - j * slope
+                      slope = (f4%uu(i, 2, k, ivar, iq) - f4%uu(i, 1, k, ivar, iq))
+                      f4%uu(i, 1-j, k, ivar, iq) = f4%uu(i, 1, k, ivar, iq) - j * slope
 
 #:elif face == '3'
-                      slope = (uu(i, bx(2), k, ivar, iq) - uu(i, bx(2)-1, k, ivar, iq))
-                      uu(i, bx(2)+j, k, ivar, iq) = uu(i, bx(2), k, ivar, iq) + j * slope
+                      slope = (f4%uu(i, f4%bx(2), k, ivar, iq) - f4%uu(i, f4%bx(2)-1, k, ivar, iq))
+                      f4%uu(i, f4%bx(2)+j, k, ivar, iq) = f4%uu(i, f4%bx(2), k, ivar, iq) + j * slope
 #:elif face == '4'
-                      slope = (uu(i, j, 2, ivar, iq) - uu(i, j, 1, ivar, iq))
-                      uu(i, j, 1-k, ivar, iq) = uu(i, j, 1, ivar, iq) - k * slope
+                      slope = (f4%uu(i, j, 2, ivar, iq) - f4%uu(i, j, 1, ivar, iq))
+                      f4%uu(i, j, 1-k, ivar, iq) = f4%uu(i, j, 1, ivar, iq) - k * slope
 #:elif face == '5'
-                      slope = (uu(i, j, bx(3), ivar, iq) - uu(i, j, bx(3)-1, ivar, iq))
-                      uu(i, j, bx(3)+k, ivar, iq) = uu(i, j, bx(3), ivar, iq) + k * slope
+                      slope = (f4%uu(i, j, f4%bx(3), ivar, iq) - f4%uu(i, j, f4%bx(3)-1, ivar, iq))
+                      f4%uu(i, j, f4%bx(3)+k, ivar, iq) = f4%uu(i, j, f4%bx(3), ivar, iq) + k * slope
 #:endif
                    end select
                 end do
@@ -2612,11 +2599,11 @@ contains
                 ivar = i_vars(iv)
                 j_f = ${jf0}$ + 2 * j - 1
                 i_f = ${if0}$ + 2 * i - 1
-                uu(${i0}$+i, ${j0}$+j, ivar, jq) = 0.25_dp * ( &
-                     uu(i_f,   j_f,   ivar, iq) + &
-                     uu(i_f+1, j_f,   ivar, iq) + &
-                     uu(i_f,   j_f+1, ivar, iq) + &
-                     uu(i_f+1, j_f+1, ivar, iq) )
+                f4%uu(${i0}$+i, ${j0}$+j, ivar, jq) = 0.25_dp * ( &
+                     f4%uu(i_f,   j_f,   ivar, iq) + &
+                     f4%uu(i_f+1, j_f,   ivar, iq) + &
+                     f4%uu(i_f,   j_f+1, ivar, iq) + &
+                     f4%uu(i_f+1, j_f+1, ivar, iq) )
              end do
           end do
        end do
@@ -2630,15 +2617,15 @@ contains
                    k_f = ${kf0}$ + 2 * k - 1
                    j_f = ${jf0}$ + 2 * j - 1
                    i_f = ${if0}$ + 2 * i - 1
-                   uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, jq) = 0.125_dp * ( &
-                        uu(i_f,   j_f,   k_f,   ivar, iq) + &
-                        uu(i_f+1, j_f,   k_f,   ivar, iq) + &
-                        uu(i_f,   j_f+1, k_f,   ivar, iq) + &
-                        uu(i_f+1, j_f+1, k_f,   ivar, iq) + &
-                        uu(i_f,   j_f,   k_f+1, ivar, iq) + &
-                        uu(i_f+1, j_f,   k_f+1, ivar, iq) + &
-                        uu(i_f,   j_f+1, k_f+1, ivar, iq) + &
-                        uu(i_f+1, j_f+1, k_f+1, ivar, iq) )
+                   f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, jq) = 0.125_dp * ( &
+                        f4%uu(i_f,   j_f,   k_f,   ivar, iq) + &
+                        f4%uu(i_f+1, j_f,   k_f,   ivar, iq) + &
+                        f4%uu(i_f,   j_f+1, k_f,   ivar, iq) + &
+                        f4%uu(i_f+1, j_f+1, k_f,   ivar, iq) + &
+                        f4%uu(i_f,   j_f,   k_f+1, ivar, iq) + &
+                        f4%uu(i_f+1, j_f,   k_f+1, ivar, iq) + &
+                        f4%uu(i_f,   j_f+1, k_f+1, ivar, iq) + &
+                        f4%uu(i_f+1, j_f+1, k_f+1, ivar, iq) )
                 end do
              end do
           end do
@@ -2660,7 +2647,7 @@ contains
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$)
-                uu(${i0}$+i, ${j0}$+j, ivar, iq) = f4%recv_buffer(i_buf+1)
+                f4%uu(${i0}$+i, ${j0}$+j, ivar, iq) = f4%recv_buffer(i_buf+1)
              end do
           end do
        end do
@@ -2673,7 +2660,7 @@ contains
                    ivar = i_vars(iv)
                    i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
                         ${klim}$, ${jlim}$, ${ilim}$)
-                   uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = f4%recv_buffer(i_buf+1)
+                   f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = f4%recv_buffer(i_buf+1)
                 end do
              end do
           end do
@@ -2701,7 +2688,7 @@ contains
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
-                uu(${i0}$+i, ${j0}$+j, ivar, iq) = &
+                f4%uu(${i0}$+i, ${j0}$+j, ivar, iq) = &
                      f4%recv_buffer(i_buf)
              end do
           end do
@@ -2715,7 +2702,7 @@ contains
                    ivar = i_vars(iv)
                    i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
                         ${klim}$, ${jlim}$, ${ilim}$) + 1
-                   uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = &
+                   f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = &
                         f4%recv_buffer(i_buf)
                 end do
              end do
@@ -2725,7 +2712,7 @@ contains
     end do
 #:enddef
 
-    !$acc parallel present(uu, f4%bx, f4%gc_srl_local_iface, f4%gc_srl_local, &
+    !$acc parallel present(f4%uu, f4%bx, f4%gc_srl_local_iface, f4%gc_srl_local, &
     !$acc &f4%gc_phys_iface, f4%gc_phys, f4%bc_data, f4%block_level, &
     !$acc &f4%block_level, f4%dr_level, f4%gc_srl_from_buf_iface, f4%gc_srl_from_buf, &
     !$acc &f4%recv_buffer, f4%gc_c2f_from_buf_iface,f4%bc_type, f4%bc_data_ix, &
@@ -2734,84 +2721,84 @@ contains
 
     ! Fill local boundaries at the same refinement level
 #:if NDIM == 2
-    @:fyp_srl_local(1, n_gc,  bx(2), i0=bx(1), i1=-n_gc, i2=bx(1)-n_gc)
-    @:fyp_srl_local(3, bx(1), n_gc,  j0=bx(2), j1=-n_gc, j2=bx(2)-n_gc)
+    @:fyp_srl_local(1, f4%n_gc,  f4%bx(2), i0=f4%bx(1), i1=-f4%n_gc, i2=f4%bx(1)-f4%n_gc)
+    @:fyp_srl_local(3, f4%bx(1), f4%n_gc,  j0=f4%bx(2), j1=-f4%n_gc, j2=f4%bx(2)-f4%n_gc)
 #:elif NDIM == 3
-    @:fyp_srl_local(1, n_gc,  bx(2), bx(3), i0=bx(1), i1=-n_gc, i2=bx(1)-n_gc)
-    @:fyp_srl_local(3, bx(1), n_gc,  bx(3), j0=bx(2), j1=-n_gc, j2=bx(2)-n_gc)
-    @:fyp_srl_local(5, bx(1), bx(2), n_gc,  k0=bx(3), k1=-n_gc, k2=bx(3)-n_gc)
+    @:fyp_srl_local(1, f4%n_gc,  f4%bx(2), f4%bx(3), i0=f4%bx(1), i1=-f4%n_gc, i2=f4%bx(1)-f4%n_gc)
+    @:fyp_srl_local(3, f4%bx(1), f4%n_gc,  f4%bx(3), j0=f4%bx(2), j1=-f4%n_gc, j2=f4%bx(2)-f4%n_gc)
+    @:fyp_srl_local(5, f4%bx(1), f4%bx(2), f4%n_gc,  k0=f4%bx(3), k1=-f4%n_gc, k2=f4%bx(3)-f4%n_gc)
 #:endif
 
     ! Fill ghost cells at physical boundaries
 #:if NDIM == 2
-    @:fyp_phys(0, n_gc, bx(2))
-    @:fyp_phys(1, n_gc, bx(2))
-    @:fyp_phys(2, bx(1), n_gc)
-    @:fyp_phys(3, bx(1), n_gc)
+    @:fyp_phys(0, f4%n_gc, f4%bx(2))
+    @:fyp_phys(1, f4%n_gc, f4%bx(2))
+    @:fyp_phys(2, f4%bx(1), f4%n_gc)
+    @:fyp_phys(3, f4%bx(1), f4%n_gc)
 #:elif NDIM == 3
-    @:fyp_phys(0, n_gc, bx(2), bx(3))
-    @:fyp_phys(1, n_gc, bx(2), bx(3))
-    @:fyp_phys(2, bx(1), n_gc, bx(3))
-    @:fyp_phys(3, bx(1), n_gc, bx(3))
-    @:fyp_phys(4, bx(1), bx(2), n_gc)
-    @:fyp_phys(5, bx(1), bx(2), n_gc)
+    @:fyp_phys(0, f4%n_gc, f4%bx(2), f4%bx(3))
+    @:fyp_phys(1, f4%n_gc, f4%bx(2), f4%bx(3))
+    @:fyp_phys(2, f4%bx(1), f4%n_gc, f4%bx(3))
+    @:fyp_phys(3, f4%bx(1), f4%n_gc, f4%bx(3))
+    @:fyp_phys(4, f4%bx(1), f4%bx(2), f4%n_gc)
+    @:fyp_phys(5, f4%bx(1), f4%bx(2), f4%n_gc)
 #:endif
 
     ! Fill coarse side of local fine-to-coarse refinement boundaries
 #:if NDIM == 2
-    @:fyp_f2c_local(0, n_gc, half_bx(2), i0=bx(1), j0=offset(1)*half_bx(2))
-    @:fyp_f2c_local(1, n_gc, half_bx(2), i0=-n_gc, j0=offset(1)*half_bx(2), if0=bx(1) - 2*n_gc)
-    @:fyp_f2c_local(2, half_bx(1), n_gc, i0=offset(1)*half_bx(1), j0=bx(2))
-    @:fyp_f2c_local(3, half_bx(1), n_gc, i0=offset(1)*half_bx(1), j0=-n_gc, jf0=bx(2) -2*n_gc)
+    @:fyp_f2c_local(0, f4%n_gc, half_bx(2), i0=f4%bx(1), j0=offset(1)*half_bx(2))
+    @:fyp_f2c_local(1, f4%n_gc, half_bx(2), i0=-f4%n_gc, j0=offset(1)*half_bx(2), if0=f4%bx(1) - 2*f4%n_gc)
+    @:fyp_f2c_local(2, half_bx(1), f4%n_gc, i0=offset(1)*half_bx(1), j0=f4%bx(2))
+    @:fyp_f2c_local(3, half_bx(1), f4%n_gc, i0=offset(1)*half_bx(1), j0=-f4%n_gc, jf0=f4%bx(2) -2*f4%n_gc)
 #:elif NDIM == 3
-    @:fyp_f2c_local(0, n_gc, half_bx(2), half_bx(3), i0=bx(1), &
+    @:fyp_f2c_local(0, f4%n_gc, half_bx(2), half_bx(3), i0=f4%bx(1), &
          &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
-    @:fyp_f2c_local(1, n_gc, half_bx(2), half_bx(3), i0=-n_gc, &
-         &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3), if0=bx(1) - 2*n_gc)
-    @:fyp_f2c_local(2, half_bx(1), n_gc, half_bx(3), &
-         &i0=offset(1)*half_bx(1), j0=bx(2), k0=offset(2)*half_bx(3))
-    @:fyp_f2c_local(3, half_bx(1), n_gc, half_bx(3), &
-         i0=offset(1)*half_bx(1), j0=-n_gc, k0=offset(2)*half_bx(3), jf0=bx(2) -2*n_gc)
-    @:fyp_f2c_local(4, half_bx(1), half_bx(2), n_gc, &
-         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=bx(3))
-    @:fyp_f2c_local(5, half_bx(1), half_bx(2), n_gc, &
-         i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=-n_gc, kf0=bx(3) -2*n_gc)
+    @:fyp_f2c_local(1, f4%n_gc, half_bx(2), half_bx(3), i0=-f4%n_gc, &
+         &j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3), if0=f4%bx(1) - 2*f4%n_gc)
+    @:fyp_f2c_local(2, half_bx(1), f4%n_gc, half_bx(3), &
+         &i0=offset(1)*half_bx(1), j0=f4%bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_f2c_local(3, half_bx(1), f4%n_gc, half_bx(3), &
+         i0=offset(1)*half_bx(1), j0=-f4%n_gc, k0=offset(2)*half_bx(3), jf0=f4%bx(2) -2*f4%n_gc)
+    @:fyp_f2c_local(4, half_bx(1), half_bx(2), f4%n_gc, &
+         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=f4%bx(3))
+    @:fyp_f2c_local(5, half_bx(1), half_bx(2), f4%n_gc, &
+         i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=-f4%n_gc, kf0=f4%bx(3) -2*f4%n_gc)
 #:endif
 
     ! Fill ghost cells at the same refinement level from the buffer
 #:if NDIM == 2
-    @:fyp_srl_from_buf(0, n_gc, bx(2), i0=-n_gc)
-    @:fyp_srl_from_buf(1, n_gc, bx(2), i0=bx(1))
-    @:fyp_srl_from_buf(2, bx(1), n_gc, j0=-n_gc)
-    @:fyp_srl_from_buf(3, bx(1), n_gc, j0=bx(2))
+    @:fyp_srl_from_buf(0, f4%n_gc, f4%bx(2), i0=-f4%n_gc)
+    @:fyp_srl_from_buf(1, f4%n_gc, f4%bx(2), i0=f4%bx(1))
+    @:fyp_srl_from_buf(2, f4%bx(1), f4%n_gc, j0=-f4%n_gc)
+    @:fyp_srl_from_buf(3, f4%bx(1), f4%n_gc, j0=f4%bx(2))
 #:elif NDIM == 3
-    @:fyp_srl_from_buf(0, n_gc, bx(2), bx(3), i0=-n_gc)
-    @:fyp_srl_from_buf(1, n_gc, bx(2), bx(3), i0=bx(1))
-    @:fyp_srl_from_buf(2, bx(1), n_gc, bx(3), j0=-n_gc)
-    @:fyp_srl_from_buf(3, bx(1), n_gc, bx(3), j0=bx(2))
-    @:fyp_srl_from_buf(4, bx(1), bx(2), n_gc, k0=-n_gc)
-    @:fyp_srl_from_buf(5, bx(1), bx(2), n_gc, k0=bx(3))
+    @:fyp_srl_from_buf(0, f4%n_gc, f4%bx(2), f4%bx(3), i0=-f4%n_gc)
+    @:fyp_srl_from_buf(1, f4%n_gc, f4%bx(2), f4%bx(3), i0=f4%bx(1))
+    @:fyp_srl_from_buf(2, f4%bx(1), f4%n_gc, f4%bx(3), j0=-f4%n_gc)
+    @:fyp_srl_from_buf(3, f4%bx(1), f4%n_gc, f4%bx(3), j0=f4%bx(2))
+    @:fyp_srl_from_buf(4, f4%bx(1), f4%bx(2), f4%n_gc, k0=-f4%n_gc)
+    @:fyp_srl_from_buf(5, f4%bx(1), f4%bx(2), f4%n_gc, k0=f4%bx(3))
 #:endif
 
     ! Update coarse side from buffers at coarse-to-fine buffer
 #:if NDIM == 2
-    @:fyp_c2f_from_buf(0, n_gc, half_bx(2), i0=-n_gc, j0=offset(1)*half_bx(2))
-    @:fyp_c2f_from_buf(1, n_gc, half_bx(2), i0=bx(1), j0=offset(1)*half_bx(2))
-    @:fyp_c2f_from_buf(2, half_bx(1), n_gc, i0=offset(1)*half_bx(1), j0=-n_gc)
-    @:fyp_c2f_from_buf(3, half_bx(1), n_gc, i0=offset(1)*half_bx(1), j0=bx(2))
+    @:fyp_c2f_from_buf(0, f4%n_gc, half_bx(2), i0=-f4%n_gc, j0=offset(1)*half_bx(2))
+    @:fyp_c2f_from_buf(1, f4%n_gc, half_bx(2), i0=f4%bx(1), j0=offset(1)*half_bx(2))
+    @:fyp_c2f_from_buf(2, half_bx(1), f4%n_gc, i0=offset(1)*half_bx(1), j0=-f4%n_gc)
+    @:fyp_c2f_from_buf(3, half_bx(1), f4%n_gc, i0=offset(1)*half_bx(1), j0=f4%bx(2))
 #:elif NDIM == 3
-    @:fyp_c2f_from_buf(0, n_gc, half_bx(2), half_bx(3), &
-         &i0=-n_gc, j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
-    @:fyp_c2f_from_buf(1, n_gc, half_bx(2), half_bx(3), &
-         &i0=bx(1), j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
-    @:fyp_c2f_from_buf(2, half_bx(1), n_gc, half_bx(3), &
-         &i0=offset(1)*half_bx(1), j0=-n_gc, k0=offset(2)*half_bx(3))
-    @:fyp_c2f_from_buf(3, half_bx(1), n_gc, half_bx(3), &
-         &i0=offset(1)*half_bx(1), j0=bx(2), k0=offset(2)*half_bx(3))
-    @:fyp_c2f_from_buf(4, half_bx(1), half_bx(2), n_gc, &
-         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=-n_gc)
-    @:fyp_c2f_from_buf(5, half_bx(1), half_bx(2), n_gc, &
-         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=bx(3))
+    @:fyp_c2f_from_buf(0, f4%n_gc, half_bx(2), half_bx(3), &
+         &i0=-f4%n_gc, j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_c2f_from_buf(1, f4%n_gc, half_bx(2), half_bx(3), &
+         &i0=f4%bx(1), j0=offset(1)*half_bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_c2f_from_buf(2, half_bx(1), f4%n_gc, half_bx(3), &
+         &i0=offset(1)*half_bx(1), j0=-f4%n_gc, k0=offset(2)*half_bx(3))
+    @:fyp_c2f_from_buf(3, half_bx(1), f4%n_gc, half_bx(3), &
+         &i0=offset(1)*half_bx(1), j0=f4%bx(2), k0=offset(2)*half_bx(3))
+    @:fyp_c2f_from_buf(4, half_bx(1), half_bx(2), f4%n_gc, &
+         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=-f4%n_gc)
+    @:fyp_c2f_from_buf(5, half_bx(1), half_bx(2), f4%n_gc, &
+         &i0=offset(1)*half_bx(1), j0=offset(2)*half_bx(2), k0=f4%bx(3))
 #:endif
 
     !$acc end parallel
@@ -2819,22 +2806,11 @@ contains
   end subroutine fill_ghostcells_round_one
 
   !> Handle coarse-to-fine ghost cells on the fine side
-  subroutine fill_ghostcells_round_two(f4, n_vars, i_vars, bx, n_gc, &
-       ilo, ihi, max_vars, max_blocks, uu)
+  subroutine fill_ghostcells_round_two(f4, n_vars, i_vars)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_vars
     integer, intent(in)          :: i_vars(n_vars)
-    integer, intent(in)          :: bx(NDIM)
-    integer, intent(in)          :: n_gc
-    integer, intent(in)          :: ilo(NDIM)
-    integer, intent(in)          :: ihi(NDIM)
-    integer, intent(in)          :: max_vars
-    integer, intent(in)          :: max_blocks
-#:if NDIM == 2
-    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), max_vars, max_blocks)
-#:elif NDIM == 3
-    real(dp), intent(inout)      :: uu(ilo(1):ihi(1), ilo(2):ihi(2), ilo(3):ihi(3), &
-         max_vars, max_blocks)
+#:if NDIM == 3
     integer                      :: k, k_c, k_f
 #:endif
     integer                      :: n, i, j, iq, jq, i_c, j_c, i_f, j_f
@@ -2869,13 +2845,13 @@ contains
                 j_f = ${jf0}$ + 2 * j - 1
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + j
-                call prolong_minmod(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f+1, j_f  , ivar, iq) = fine(2)
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
-                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
+                call prolong_minmod(f4%uu(i_c, j_c, iv, jq), &
+                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
+                f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
+                f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
              end do
           end do
        end do
@@ -2892,12 +2868,12 @@ contains
                 i_c = ${ic0}$ + 0
                 j_c = ${jc0}$ + j
 
-                call prolong_minmod(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+                call prolong_minmod(f4%uu(i_c, j_c, iv, jq), &
+                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
 
-                uu(i_f+1, j_f  , ivar, iq) = fine(2)
-                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
+                f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
              end do
 #:elif face == '1'
              do j = 1, ${jlim}$
@@ -2908,12 +2884,12 @@ contains
                 i_c = ${ic0}$ + (half_n_gc + 1)
                 j_c = ${jc0}$ + j
 
-                call prolong_minmod(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+                call prolong_minmod(f4%uu(i_c, j_c, iv, jq), &
+                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
 
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
+                f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
              end do
 #:elif face == '2'
              do i = 1, ${ilim}$
@@ -2924,12 +2900,12 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + 0
 
-                call prolong_minmod(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+                call prolong_minmod(f4%uu(i_c, j_c, iv, jq), &
+                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
 
-                uu(i_f  , j_f+1, ivar, iq) = fine(3)
-                uu(i_f+1, j_f+1, ivar, iq) = fine(4)
+                f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
+                f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
              end do
 #:elif face == '3'
              do i = 1, ${ilim}$
@@ -2940,12 +2916,12 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + (half_n_gc + 1)
 
-                call prolong_minmod(uu(i_c, j_c, iv, jq), &
-                     uu(i_c-1, j_c, iv, jq), uu(i_c+1, j_c, iv, jq), &
-                     uu(i_c, j_c-1, iv, jq), uu(i_c, j_c+1, iv, jq), fine)
+                call prolong_minmod(f4%uu(i_c, j_c, iv, jq), &
+                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
+                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
 
-                uu(i_f  , j_f  , ivar, iq) = fine(1)
-                uu(i_f+1, j_f  , ivar, iq) = fine(2)
+                f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
+                f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
              end do
 #:endif
           end do
@@ -2973,19 +2949,19 @@ contains
                    i_c = ${ic0}$ + i
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
-                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
-                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
-                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
-                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong_minmod(f4%uu(i_c, j_c, k_c, iv, jq), &
+                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
+                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
+                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
                         fine)
-                   uu(i_f  , j_f  , k_f,   ivar, iq) = fine(1)
-                   uu(i_f+1, j_f  , k_f,   ivar, iq) = fine(2)
-                   uu(i_f  , j_f+1, k_f,   ivar, iq) = fine(3)
-                   uu(i_f+1, j_f+1, k_f,   ivar, iq) = fine(4)
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
-                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
-                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
-                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+                   f4%uu(i_f  , j_f  , k_f,   ivar, iq) = fine(1)
+                   f4%uu(i_f+1, j_f  , k_f,   ivar, iq) = fine(2)
+                   f4%uu(i_f  , j_f+1, k_f,   ivar, iq) = fine(3)
+                   f4%uu(i_f+1, j_f+1, k_f,   ivar, iq) = fine(4)
+                   f4%uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   f4%uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                   f4%uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                   f4%uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
                 end do
              end do
           end do
@@ -3006,16 +2982,16 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
-                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
-                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
-                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong_minmod(f4%uu(i_c, j_c, k_c, iv, jq), &
+                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
+                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
+                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
                         fine)
 
-                   uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
-                   uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
-                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
-                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+                   f4%uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
+                   f4%uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
+                   f4%uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                   f4%uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
                 end do
              end do
 #:elif face == '1'
@@ -3030,16 +3006,16 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
-                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
-                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
-                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong_minmod(f4%uu(i_c, j_c, k_c, iv, jq), &
+                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
+                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
+                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
                         fine)
 
-                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
-                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
-                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                   f4%uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                   f4%uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                   f4%uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   f4%uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
                 end do
              end do
 #:elif face == '2'
@@ -3054,16 +3030,16 @@ contains
                    j_c = ${jc0}$ + 0
                    k_c = ${kc0}$ + k
 
-                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
-                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
-                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
-                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong_minmod(f4%uu(i_c, j_c, k_c, iv, jq), &
+                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
+                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
+                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
                         fine)
 
-                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
-                   uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
-                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
-                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+                   f4%uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                   f4%uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
+                   f4%uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                   f4%uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
                 end do
              end do
 #:elif face == '3'
@@ -3078,16 +3054,16 @@ contains
                    j_c = ${jc0}$ + (half_n_gc + 1)
                    k_c = ${kc0}$ + k
 
-                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
-                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
-                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
-                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong_minmod(f4%uu(i_c, j_c, k_c, iv, jq), &
+                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
+                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
+                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
                         fine)
 
-                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
-                   uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
-                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                   f4%uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                   f4%uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
+                   f4%uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   f4%uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
                 end do
              end do
 #:elif face == '4'
@@ -3102,16 +3078,16 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + 0
 
-                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
-                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
-                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
-                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong_minmod(f4%uu(i_c, j_c, k_c, iv, jq), &
+                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
+                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
+                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
                         fine)
 
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
-                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
-                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
-                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
+                   f4%uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
+                   f4%uu(i_f+1, j_f  , k_f+1, ivar, iq) = fine(6)
+                   f4%uu(i_f  , j_f+1, k_f+1, ivar, iq) = fine(7)
+                   f4%uu(i_f+1, j_f+1, k_f+1, ivar, iq) = fine(8)
                 end do
              end do
 #:elif face == '5'
@@ -3126,16 +3102,16 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + (half_n_gc + 1)
 
-                   call prolong_minmod(uu(i_c, j_c, k_c, iv, jq), &
-                        uu(i_c-1, j_c, k_c, iv, jq), uu(i_c+1, j_c, k_c, iv, jq), &
-                        uu(i_c, j_c-1, k_c, iv, jq), uu(i_c, j_c+1, k_c, iv, jq), &
-                        uu(i_c, j_c, k_c-1, iv, jq), uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong_minmod(f4%uu(i_c, j_c, k_c, iv, jq), &
+                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
+                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
+                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
                         fine)
 
-                   uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
-                   uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
-                   uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
-                   uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
+                   f4%uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
+                   f4%uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
+                   f4%uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
+                   f4%uu(i_f+1, j_f+1, k_f, ivar, iq) = fine(4)
                 end do
              end do
 #:endif
@@ -3161,10 +3137,10 @@ contains
                 j_f = ${jf0}$ + 2 * j - 1
 
                 i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, ${jlim}$, ${ilim}$)
-                uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
-                uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
-                uu(i_f  , j_f+1, ivar, iq) = f4%recv_buffer(i_buf+3)
-                uu(i_f+1, j_f+1, ivar, iq) = f4%recv_buffer(i_buf+4)
+                f4%uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
+                f4%uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
+                f4%uu(i_f  , j_f+1, ivar, iq) = f4%recv_buffer(i_buf+3)
+                f4%uu(i_f+1, j_f+1, ivar, iq) = f4%recv_buffer(i_buf+4)
              end do
           end do
        end do
@@ -3176,12 +3152,12 @@ contains
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 ivar = i_vars(iv)
-                i_f = -n_gc + 1
+                i_f = -f4%n_gc + 1
                 j_f = 2 * j - 1
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
-                uu(i_f, j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
-                uu(i_f, j_f+1, ivar, iq) = f4%recv_buffer(i_buf+2)
+                f4%uu(i_f, j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
+                f4%uu(i_f, j_f+1, ivar, iq) = f4%recv_buffer(i_buf+2)
              end do
           end do
 #:elif face == '1'
@@ -3189,12 +3165,12 @@ contains
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 ivar = i_vars(iv)
-                i_f = bx(1) + n_gc
+                i_f = f4%bx(1) + f4%n_gc
                 j_f = 2 * j - 1
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
-                uu(i_f, j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
-                uu(i_f, j_f+1, ivar, iq) = f4%recv_buffer(i_buf+2)
+                f4%uu(i_f, j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
+                f4%uu(i_f, j_f+1, ivar, iq) = f4%recv_buffer(i_buf+2)
              end do
           end do
 #:elif face == '2'
@@ -3203,11 +3179,11 @@ contains
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
                 i_f = 2 * i - 1
-                j_f = -n_gc + 1
+                j_f = -f4%n_gc + 1
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
-                uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
-                uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
+                f4%uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
+                f4%uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
              end do
           end do
 #:elif face == '3'
@@ -3216,11 +3192,11 @@ contains
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
                 i_f = 2 * i - 1
-                j_f = bx(2) + n_gc
+                j_f = f4%bx(2) + f4%n_gc
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
-                uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
-                uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
+                f4%uu(i_f  , j_f  , ivar, iq) = f4%recv_buffer(i_buf+1)
+                f4%uu(i_f+1, j_f  , ivar, iq) = f4%recv_buffer(i_buf+2)
              end do
           end do
 #:endif
@@ -3247,14 +3223,14 @@ contains
 
                    i_buf = i_buf0 + 8 * ix_offset4(iv, k, j, i, &
                         ${klim}$, ${jlim}$, ${ilim}$)
-                   uu(i_f  , j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
-                   uu(i_f+1, j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+2)
-                   uu(i_f  , j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+3)
-                   uu(i_f+1, j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+4)
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+5)
-                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+6)
-                   uu(i_f  , j_f+1, k_f+1, ivar, iq) = f4%recv_buffer(i_buf+7)
-                   uu(i_f+1, j_f+1, k_f+1, ivar, iq) = f4%recv_buffer(i_buf+8)
+                   f4%uu(i_f  , j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
+                   f4%uu(i_f+1, j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+2)
+                   f4%uu(i_f  , j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+3)
+                   f4%uu(i_f+1, j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+4)
+                   f4%uu(i_f  , j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+5)
+                   f4%uu(i_f+1, j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+6)
+                   f4%uu(i_f  , j_f+1, k_f+1, ivar, iq) = f4%recv_buffer(i_buf+7)
+                   f4%uu(i_f+1, j_f+1, k_f+1, ivar, iq) = f4%recv_buffer(i_buf+8)
                 end do
              end do
           end do
@@ -3269,18 +3245,18 @@ contains
                 do j = 1, ${jlim}$
                    ivar = i_vars(iv)
 #:if face == '0'
-                   i_f = -n_gc + 1
+                   i_f = -f4%n_gc + 1
 #:else
-                   i_f = bx(1) + n_gc
+                   i_f = f4%bx(1) + f4%n_gc
 #:endif
                    j_f = 2 * j - 1
                    k_f = 2 * k - 1
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, k, j, ${klim}$, ${jlim}$)
-                   uu(i_f, j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
-                   uu(i_f, j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+2)
-                   uu(i_f, j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+3)
-                   uu(i_f, j_f+1, k_f+1, ivar, iq) = f4%recv_buffer(i_buf+4)
+                   f4%uu(i_f, j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
+                   f4%uu(i_f, j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+2)
+                   f4%uu(i_f, j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+3)
+                   f4%uu(i_f, j_f+1, k_f+1, ivar, iq) = f4%recv_buffer(i_buf+4)
                 end do
              end do
           end do
@@ -3292,17 +3268,17 @@ contains
                    ivar = i_vars(iv)
                    i_f = 2 * i - 1
 #:if face == '2'
-                   j_f = -n_gc + 1
+                   j_f = -f4%n_gc + 1
 #:else
-                   j_f = bx(2) + n_gc
+                   j_f = f4%bx(2) + f4%n_gc
 #:endif
                    k_f = 2 * k - 1
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, k, i, ${klim}$, ${ilim}$)
-                   uu(i_f  , j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
-                   uu(i_f+1, j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+2)
-                   uu(i_f  , j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+3)
-                   uu(i_f+1, j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+4)
+                   f4%uu(i_f  , j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
+                   f4%uu(i_f+1, j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+2)
+                   f4%uu(i_f  , j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+3)
+                   f4%uu(i_f+1, j_f  , k_f+1, ivar, iq) = f4%recv_buffer(i_buf+4)
                 end do
              end do
           end do
@@ -3315,16 +3291,16 @@ contains
                    i_f = 2 * i - 1
                    j_f = 2 * j - 1
 #:if face == '4'
-                   k_f = -n_gc + 1
+                   k_f = -f4%n_gc + 1
 #:else
-                   k_f = bx(3) + n_gc
+                   k_f = f4%bx(3) + f4%n_gc
 #:endif
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, ${jlim}$, ${ilim}$)
-                   uu(i_f  , j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
-                   uu(i_f+1, j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+2)
-                   uu(i_f  , j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+3)
-                   uu(i_f+1, j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+4)
+                   f4%uu(i_f  , j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+1)
+                   f4%uu(i_f+1, j_f  , k_f, ivar, iq) = f4%recv_buffer(i_buf+2)
+                   f4%uu(i_f  , j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+3)
+                   f4%uu(i_f+1, j_f+1, k_f, ivar, iq) = f4%recv_buffer(i_buf+4)
                 end do
              end do
           end do
@@ -3334,7 +3310,7 @@ contains
 #:enddef
 #:endif
 
-    !$acc parallel present(uu, f4, f4%bx, f4%gc_f2c_local_iface, f4%gc_f2c_local, &
+    !$acc parallel present(f4%uu, f4, f4%bx, f4%gc_f2c_local_iface, f4%gc_f2c_local, &
     !$acc &f4%gc_f2c_from_buf_iface, f4%gc_f2c_from_buf, f4%recv_buffer)
 
     ! ----------------------------------------
@@ -3342,27 +3318,27 @@ contains
     ! ----------------------------------------
 
 #:if NDIM == 2
-    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
+    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=f4%bx(1)-half_n_gc, &
          &jc0=offset(1)*half_bx(2), if0=-2*half_n_gc)
     @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
-         &jc0=offset(1)*half_bx(2), if0=bx(1))
+         &jc0=offset(1)*half_bx(2), if0=f4%bx(1))
     @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=bx(2)-half_n_gc, jf0=-2*half_n_gc)
+         &jc0=f4%bx(2)-half_n_gc, jf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
-         &ic0=offset(1)*half_bx(1), jf0=bx(2))
+         &ic0=offset(1)*half_bx(1), jf0=f4%bx(2))
 #:elif NDIM == 3
-    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=bx(1)-half_n_gc, &
+    @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=f4%bx(1)-half_n_gc, &
          &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3), if0=-2*half_n_gc)
     @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
-         &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3), if0=bx(1))
+         &jc0=offset(1)*half_bx(2), kc0=offset(2)*half_bx(3), if0=f4%bx(1))
     @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=bx(2)-half_n_gc, kc0=offset(2)*half_bx(3), jf0=-2*half_n_gc)
+         &jc0=f4%bx(2)-half_n_gc, kc0=offset(2)*half_bx(3), jf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
-         &ic0=offset(1)*half_bx(1), kc0=offset(2)*half_bx(3), jf0=bx(2))
+         &ic0=offset(1)*half_bx(1), kc0=offset(2)*half_bx(3), jf0=f4%bx(2))
     @:fyp_f2c_local_fine(4, klim=half_n_gc, ic0=offset(1)*half_bx(1), &
-         &jc0=offset(2)*half_bx(2), kc0=bx(3)-half_n_gc, kf0=-2*half_n_gc)
+         &jc0=offset(2)*half_bx(2), kc0=f4%bx(3)-half_n_gc, kf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(5, klim=half_n_gc, &
-         &ic0=offset(1)*half_bx(1), jc0=offset(2)*half_bx(2), kf0=bx(3))
+         &ic0=offset(1)*half_bx(1), jc0=offset(2)*half_bx(2), kf0=f4%bx(3))
 #:endif
 
     ! ----------------------------------------
@@ -3371,16 +3347,16 @@ contains
 
 #:if NDIM == 2
     @:fyp_f2c_from_buf(0, ilim=half_n_gc, if0=-2*half_n_gc)
-    @:fyp_f2c_from_buf(1, ilim=half_n_gc, if0=bx(1))
+    @:fyp_f2c_from_buf(1, ilim=half_n_gc, if0=f4%bx(1))
     @:fyp_f2c_from_buf(2, jlim=half_n_gc, jf0=-2*half_n_gc)
-    @:fyp_f2c_from_buf(3, jlim=half_n_gc, jf0=bx(2))
+    @:fyp_f2c_from_buf(3, jlim=half_n_gc, jf0=f4%bx(2))
 #:elif NDIM == 3
     @:fyp_f2c_from_buf(0, ilim=half_n_gc, if0=-2*half_n_gc)
-    @:fyp_f2c_from_buf(1, ilim=half_n_gc, if0=bx(1))
+    @:fyp_f2c_from_buf(1, ilim=half_n_gc, if0=f4%bx(1))
     @:fyp_f2c_from_buf(2, jlim=half_n_gc, jf0=-2*half_n_gc)
-    @:fyp_f2c_from_buf(3, jlim=half_n_gc, jf0=bx(2))
+    @:fyp_f2c_from_buf(3, jlim=half_n_gc, jf0=f4%bx(2))
     @:fyp_f2c_from_buf(4, klim=half_n_gc, kf0=-2*half_n_gc)
-    @:fyp_f2c_from_buf(5, klim=half_n_gc, kf0=bx(2))
+    @:fyp_f2c_from_buf(5, klim=half_n_gc, kf0=f4%bx(2))
 #:endif
     !$acc end parallel
 
@@ -3402,8 +3378,7 @@ contains
     t1 = MPI_Wtime()
     f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t1 - t0
 
-    call fill_ghostcells_round_one(f4, n_vars, i_vars, f4%bx, f4%n_gc, &
-         f4%ilo, f4%ihi, f4%n_vars_all, f4%max_blocks, f4%uu)
+    call fill_ghostcells_round_one(f4, n_vars, i_vars)
 
     t0 = MPI_Wtime()
     f4%wtime_gc_fill_round1 = f4%wtime_gc_fill_round1 + t0 - t1
@@ -3420,8 +3395,7 @@ contains
     t0 = MPI_Wtime()
     f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
 
-    call fill_ghostcells_round_two(f4, n_vars, i_vars, f4%bx, f4%n_gc, &
-         f4%ilo, f4%ihi, f4%n_vars_all, f4%max_blocks, f4%uu)
+    call fill_ghostcells_round_two(f4, n_vars, i_vars)
 
     t1 = MPI_Wtime()
     f4%wtime_gc_fill_round2 = f4%wtime_gc_fill_round2 + t1 - t0
