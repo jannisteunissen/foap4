@@ -33,7 +33,7 @@ program euler
   real(dp)          :: c_refine           = 0.8_dp
   real(dp)          :: c_derefine         = 0.2_dp
   real(dp)          :: c_eps              = 0.01_dp
-  real(dp)          :: c_abs              = 1e-5_dp
+  real(dp)          :: c_abs              = 1e-10_dp
   integer           :: n_steps_refinement = 4
   real(dp)          :: cfl_number         = 0.5_dp
   character(len=10) :: test_case          = "sod"
@@ -84,7 +84,6 @@ contains
     real(dp), intent(in)         :: end_time
     character(len=40), intent(in) :: integrator_name
     real(dp), parameter          :: block_length(NDIM) = 1.0_dp
-    logical                      :: periodic(NDIM) = .true.
     integer                      :: n_output
     integer                      :: n, n_iterations, ierr, prev_mesh_revision
     integer(int64)               :: sum_local_blocks, sum_global_blocks

@@ -39,6 +39,26 @@ module m_foap4_types_${NDIM}$d
 #:endif
   !$acc declare create(f4_face_dim)
 
+  !> Index of the face pointing to -x
+  integer, parameter, public :: f4_face_xlo = 0
+
+  !> Index of the face pointing to +x
+  integer, parameter, public :: f4_face_xhi = 1
+
+  !> Index of the face pointing to -y
+  integer, parameter, public :: f4_face_ylo = 2
+
+  !> Index of the face pointing to +y
+  integer, parameter, public :: f4_face_yhi = 3
+
+#:if NDIM == 3
+  !> Index of the face pointing to -z
+  integer, parameter, public :: f4_face_zlo = 4
+
+  !> Index of the face pointing to +z
+  integer, parameter, public :: f4_face_zhi = 5
+#:endif
+
   !> Value indicating a physical boundary at a block face
   integer, parameter, public :: FACE_BOUNDARY = 0
 

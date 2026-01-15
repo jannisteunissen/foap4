@@ -18,6 +18,11 @@ module m_foap4_${NDIM}$d
   public :: ndim
   public :: foap4_t
   public :: f4_bc_dirichlet, f4_bc_neumann, f4_bc_linear_extrap
+  public :: f4_face_xlo, f4_face_xhi
+  public :: f4_face_ylo, f4_face_yhi
+#:if NDIM == 3
+  public :: f4_face_zlo, f4_face_zhi
+#:endif
 
   ! Public methods
   public :: f4_initialize
