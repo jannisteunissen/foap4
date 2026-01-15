@@ -9,6 +9,7 @@ program test_adv
   use m_physics_advection_${NDIM}$d
   use m_rk_${NDIM}$d
   use m_io_${NDIM}$d
+  use m_amr_flags_${NDIM}$d
   use m_config
 
   implicit none
@@ -112,7 +113,7 @@ contains
        do n = 1, 10
           prev_mesh_revision = f4_get_mesh_revision(f4)
           call f4_update_ghostcells(f4, n_vars, i_vars)
-          call f4_set_refinement_flags_diff2(f4, min_refinement_level, &
+          call amr_flags_diff2(f4, min_refinement_level, &
                max_refinement_level, i_rho, c_refine, c_derefine, c_eps)
           call f4_adjust_refinement(f4, .true.)
           call set_init_cond(f4)
@@ -150,7 +151,7 @@ contains
 
        if (do_refinement) then
           call f4_update_ghostcells(f4, n_vars, i_vars)
-          call f4_set_refinement_flags_diff2(f4, min_refinement_level, &
+          call amr_flags_diff2(f4, min_refinement_level, &
                max_refinement_level, i_rho, c_refine, c_derefine, c_eps)
           call f4_adjust_refinement(f4, .true.)
           call f4_get_global_highest_level(f4, highest_level)

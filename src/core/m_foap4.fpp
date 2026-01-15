@@ -14,7 +14,7 @@ module m_foap4_${NDIM}$d
 
   integer, parameter, private :: dp = kind(0.0d0)
 
-  ! Public types (from m_foap4_types_${NDIM}$d)
+  ! Public types exported from m_foap4_types
   public :: ndim
   public :: foap4_t
   public :: f4_bc_dirichlet, f4_bc_neumann, f4_bc_linear_extrap
@@ -40,7 +40,6 @@ module m_foap4_${NDIM}$d
   public :: f4_fix_c2f_flux
   public :: f4_compute_sum
   public :: f4_compute_max
-  public :: f4_set_refinement_flags_diff2
 
 contains
 
@@ -3805,97 +3804,6 @@ contains
          MPI_MAX, f4%mpicomm, ierror)
 
   end subroutine f4_compute_max
-
-  !> Set refinement flags based on an estimate of the second derivative. This
-  !> is similar to the FLASH code but not equivalent, since we do not compute
-  !> cross derivatives.
-  subroutine f4_set_refinement_flags_diff2(f4, min_level, max_level, iv, &
-       c_refine, c_derefine, c_eps)
-    type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: min_level
-    integer, intent(in)          :: max_level
-    integer, intent(in)          :: iv
-    real(dp), intent(in)         :: c_refine
-    real(dp), intent(in)         :: c_derefine
-    real(dp), intent(in)         :: c_eps
-
-    integer             :: n, ${IJK}$, level
-    real(dp)            :: diff(NDIM), diff_norm
-    real(dp), parameter :: small_number = 1e-20_dp
-
-    !$acc parallel loop private(level, diff_norm) &
-    !$acc &present(f4, f4%uu, f4%bx, f4%block_level, f4%refinement_flags)
-    do n = 1, f4%n_blocks
-       level = f4%block_level(n)
-       diff_norm = 0.0_dp
-
-#:if NDIM == 2
-       !$acc loop collapse(2) private(diff) reduction(max: diff_norm)
-       do j = 1, f4%bx(2)
-          do i = 1, f4%bx(1)
-             diff(1) = abs(f4%uu(i+1, j, iv, n) - 2 * f4%uu(i, j, iv, n) + &
-                  f4%uu(i-1, j, iv, n)) / (small_number + &
-                  abs(f4%uu(i+1, j, iv, n) - f4%uu(i, j, iv, n)) + &
-                  abs(f4%uu(i, j, iv, n) - f4%uu(i-1, j, iv, n)) + &
-                  c_eps * (abs(f4%uu(i+1, j, iv, n)) + &
-                  2 * abs(f4%uu(i, j, iv, n)) + abs(f4%uu(i-1, j, iv, n))))
-
-             diff(2) = abs(f4%uu(i, j+1, iv, n) - 2 * f4%uu(i, j, iv, n) + &
-                  f4%uu(i, j-1, iv, n)) / (small_number + &
-                  abs(f4%uu(i, j+1, iv, n) - f4%uu(i, j, iv, n)) + &
-                  abs(f4%uu(i, j, iv, n) - f4%uu(i, j-1, iv, n)) + &
-                  c_eps * (abs(f4%uu(i, j+1, iv, n)) + &
-                  2 * abs(f4%uu(i, j, iv, n)) + abs(f4%uu(i, j-1, iv, n))))
-
-             diff_norm = max(diff_norm, sqrt(diff(1)**2 + diff(2)**2))
-          end do
-       end do
-#:elif NDIM == 3
-       !$acc loop collapse(3) private(diff) reduction(max: diff_norm)
-       do k = 1, f4%bx(3)
-          do j = 1, f4%bx(2)
-             do i = 1, f4%bx(1)
-                diff(1) = abs(f4%uu(i+1, j, k, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
-                     f4%uu(i-1, j, k, iv, n)) / (small_number + &
-                     abs(f4%uu(i+1, j, k, iv, n) - f4%uu(i, j, k, iv, n)) + &
-                     abs(f4%uu(i, j, k, iv, n) - f4%uu(i-1, j, k, iv, n)) + &
-                     c_eps * (abs(f4%uu(i+1, j, k, iv, n)) + &
-                     2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i-1, j, k, iv, n))))
-
-                diff(2) = abs(f4%uu(i, j+1, k, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
-                     f4%uu(i, j-1, k, iv, n)) / (small_number + &
-                     abs(f4%uu(i, j+1, k, iv, n) - f4%uu(i, j, k, iv, n)) + &
-                     abs(f4%uu(i, j, k, iv, n) - f4%uu(i, j-1, k, iv, n)) + &
-                     c_eps * (abs(f4%uu(i, j+1, k, iv, n)) + &
-                     2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i, j-1, k, iv, n))))
-
-                diff(3) = abs(f4%uu(i, j, k+1, iv, n) - 2 * f4%uu(i, j, k, iv, n) + &
-                     f4%uu(i, j, k-1, iv, n)) / (small_number + &
-                     abs(f4%uu(i, j, k+1, iv, n) - f4%uu(i, j, k, iv, n)) + &
-                     abs(f4%uu(i, j, k, iv, n) - f4%uu(i, j, k-1, iv, n)) + &
-                     c_eps * (abs(f4%uu(i, j, k+1, iv, n)) + &
-                     2 * abs(f4%uu(i, j, k, iv, n)) + abs(f4%uu(i, j, k-1, iv, n))))
-
-                diff_norm = max(diff_norm, &
-                     sqrt(diff(1)**2 + diff(2)**2 + diff(3)**2))
-             end do
-          end do
-       end do
-#:endif
-
-       if ((diff_norm > c_refine .and. level < max_level) .or. &
-            level < min_level) then
-          f4%refinement_flags(n) = 1
-       else if ((diff_norm < c_derefine .and. level > min_level) .or. &
-            level > max_level) then
-          f4%refinement_flags(n) = -1
-       else
-          f4%refinement_flags(n) = 0
-       end if
-    end do
-
-    !$acc update host(f4%refinement_flags(1:f4%n_blocks))
-  end subroutine f4_set_refinement_flags_diff2
 
   !> Compute index offset for indexing in 4D array shaped (*, n2, n3, n4)
   pure integer function ix_offset4(i1, i2, i3, i4, n2, n3, n4)
