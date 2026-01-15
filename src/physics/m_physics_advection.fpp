@@ -1,4 +1,4 @@
-module m_physics_advection
+module m_physics_advection_${NDIM}$d
 
   implicit none
   public
@@ -10,7 +10,7 @@ module m_physics_advection
   integer, parameter           :: i_vars0           = i_rho - 1
   character(len=10), parameter :: var_names(n_vars) = &
        [character(len=10)      :: "rho"]
-  real(dp)                     :: velocity(3)       = 1.0_dp
+  real(dp)                     :: velocity(${NDIM}$) = 1.0_dp
   !$acc declare create(velocity)
 
-end module m_physics_advection
+end module m_physics_advection_${NDIM}$d

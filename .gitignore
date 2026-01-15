@@ -5,4 +5,5 @@
 *.visit
 *.o
 *.mod
+*.emacsbackup
 /build/

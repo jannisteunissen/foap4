@@ -6,14 +6,14 @@ program test_adv
   use iso_fortran_env, only: int64
   use mpi_f08
   use m_foap4_${NDIM}$d
+  use m_physics_advection_${NDIM}$d
+  use m_rk_${NDIM}$d
   use m_config
-  use m_physics_advection
 
   implicit none
 
   include 'limiter_${LIMITER}$_definitions.f90'
   integer, parameter :: dp   = kind(0.0d0)
-  integer, parameter :: NDIM = ${NDIM}$
   integer, parameter :: n_gc = limiter_num_ghostcells
 
   logical, parameter :: temporal(n_vars) = .true.
@@ -98,8 +98,8 @@ contains
     n_iterations = 0
     sum_local_blocks = 0
 
-    integrator = f4_get_time_integrator(trim(integrator_name))
-    n_time_states = f4_advance_num_copies(integrator)
+    integrator = rk_get_integrator_by_name(trim(integrator_name))
+    n_time_states = rk_advance_num_copies(integrator)
 
     call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
          n_vars, var_names, temporal, n_time_states, periodic, &
@@ -135,7 +135,7 @@ contains
        write_this_step = (time + dt >= n_output * dt_output)
        if (write_this_step) dt = n_output * dt_output - time
 
-       call f4_advance(f4, dt, dt_lim, time, integrator, feuler_finite_volume)
+       call rk_advance(f4, dt, dt_lim, time, integrator, feuler_finite_volume)
 
        if (write_this_step) then
           call f4_write_grid(f4, base_name, n_output, time)

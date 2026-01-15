@@ -6,6 +6,8 @@
 F90C ?= mpif90
 CC := mpicc
 FYPP := fypp
+AR := ar
+ARFLAGS := rcs
 
 # ==============================================================================
 # Directory structure
@@ -13,6 +15,7 @@ FYPP := fypp
 BUILDDIR := build
 OBJDIR := $(BUILDDIR)/obj
 BINDIR := $(BUILDDIR)/bin
+LIBDIR := $(BUILDDIR)/lib
 GENDIR := $(BUILDDIR)/generated
 
 SRCDIR := src
@@ -68,8 +71,31 @@ else
     FFLAGS ?= -O2 -g -J$(OBJDIR)
 endif
 
-# Add user flags
 FFLAGS += $(FFLAGS_USER)
+
+# ==============================================================================
+# Library definitions
+# ==============================================================================
+LIB_2D := $(LIBDIR)/libfoap4_2d.a
+LIB_3D := $(LIBDIR)/libfoap4_3d.a
+
+LIB_OBJS_2D := \
+    $(OBJDIR)/m_foap4_2d.o \
+    $(OBJDIR)/m_foap4_types_2d.o \
+    $(OBJDIR)/p4est_wrapper_2d.o \
+    $(OBJDIR)/m_rk_2d.o \
+    $(OBJDIR)/m_physics_advection_2d.o \
+    $(OBJDIR)/m_physics_euler_2d.o \
+    $(OBJDIR)/m_config.o
+
+LIB_OBJS_3D := \
+    $(OBJDIR)/m_foap4_3d.o \
+    $(OBJDIR)/m_foap4_types_3d.o \
+    $(OBJDIR)/p4est_wrapper_3d.o \
+    $(OBJDIR)/m_rk_3d.o \
+    $(OBJDIR)/m_physics_advection_3d.o \
+    $(OBJDIR)/m_physics_euler_3d.o \
+    $(OBJDIR)/m_config.o
 
 # ==============================================================================
 # Target definitions
@@ -88,29 +114,32 @@ TARGETS_3D := $(addprefix $(BINDIR)/,\
     test_xdmf_writer_3d)
 
 # ==============================================================================
-# Common object files
-# ==============================================================================
-COMMON_OBJS_2D := $(OBJDIR)/m_foap4_2d.o $(OBJDIR)/p4est_wrapper_2d.o $(OBJDIR)/m_config.o
-COMMON_OBJS_3D := $(OBJDIR)/m_foap4_3d.o $(OBJDIR)/p4est_wrapper_3d.o $(OBJDIR)/m_config.o
-
-# ==============================================================================
 # Phony targets
 # ==============================================================================
-.PHONY: all clean 2d 3d help
+.PHONY: all clean 2d 3d libs lib2d lib3d help
 
-all: $(TARGETS_2D) $(TARGETS_3D)
+all: libs $(TARGETS_2D) $(TARGETS_3D)
 
-2d: $(TARGETS_2D)
+2d: lib2d $(TARGETS_2D)
 
-3d: $(TARGETS_3D)
+3d: lib3d $(TARGETS_3D)
+
+libs: lib2d lib3d
+
+lib2d: $(LIB_2D)
+
+lib3d: $(LIB_3D)
 
 help:
 	@echo "Usage: make [target] [options]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  all      - Build all 2D and 3D targets (default)"
-	@echo "  2d       - Build only 2D targets"
-	@echo "  3d       - Build only 3D targets"
+	@echo "  all      - Build all libraries and targets (default)"
+	@echo "  2d       - Build 2D library and targets"
+	@echo "  3d       - Build 3D library and targets"
+	@echo "  libs     - Build both static libraries"
+	@echo "  lib2d    - Build 2D static library ($(LIB_2D))"
+	@echo "  lib3d    - Build 3D static library ($(LIB_3D))"
 	@echo "  clean    - Remove all build artifacts"
 	@echo "  help     - Show this help message"
 	@echo ""
@@ -120,13 +149,6 @@ help:
 	@echo "  FFLAGS_USER= - Additional Fortran flags"
 	@echo "  FYPP_USER=   - Additional fypp flags"
 	@echo ""
-	@echo "Directory structure:"
-	@echo "  $(SRCDIR)/core/     - Core framework files"
-	@echo "  $(SRCDIR)/physics/  - Physics modules"
-	@echo "  $(SRCDIR)/tests/    - Test programs"
-	@echo "  $(SRCDIR)/numerics/ - Numerical methods"
-	@echo "  $(BUILDDIR)/        - All build artifacts"
-	@echo ""
 	@echo "Detected compiler: $(compiler_brand)"
 
 clean:
@@ -135,23 +157,29 @@ clean:
 # ==============================================================================
 # Directory creation
 # ==============================================================================
-$(OBJDIR) $(BINDIR) $(GENDIR):
+$(OBJDIR) $(BINDIR) $(GENDIR) $(LIBDIR):
 	mkdir -p $@
+
+# ==============================================================================
+# Static library rules
+# ==============================================================================
+$(LIB_2D): $(LIB_OBJS_2D) | $(LIBDIR)
+	$(AR) $(ARFLAGS) $@ $^
+
+$(LIB_3D): $(LIB_OBJS_3D) | $(LIBDIR)
+	$(AR) $(ARFLAGS) $@ $^
 
 # ==============================================================================
 # Fypp preprocessing rules
 # ==============================================================================
 .PRECIOUS: $(GENDIR)/%.f90 $(GENDIR)/%_2d.f90 $(GENDIR)/%_3d.f90
 
-# Generic fypp rule (no dimension)
 $(GENDIR)/%.f90: %.fpp | $(GENDIR)
 	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) $< $@
 
-# 2D fypp rule
 $(GENDIR)/%_2d.f90: %.fpp | $(GENDIR)
 	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) -D NDIM=2 $< $@
 
-# 3D fypp rule
 $(GENDIR)/%_3d.f90: %.fpp | $(GENDIR)
 	$(FYPP) $(FYPPFLAGS) $(FYPP_USER) -D NDIM=3 $< $@
 
@@ -178,43 +206,27 @@ $(OBJDIR)/%_3d.o: $(COREDIR)/%.c | $(OBJDIR)
 # ==============================================================================
 LDFLAGS := $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS))
 
-# Generic linking rule for 2D targets
-$(BINDIR)/%_2d: $(OBJDIR)/%_2d.o | $(BINDIR)
-	$(F90C) -o $@ $^ $(FFLAGS) $(LDFLAGS)
+$(BINDIR)/%_2d: $(OBJDIR)/%_2d.o $(LIB_2D) | $(BINDIR)
+	$(F90C) -o $@ $< $(LIB_2D) $(FFLAGS) $(LDFLAGS)
 
-# Generic linking rule for 3D targets
-$(BINDIR)/%_3d: $(OBJDIR)/%_3d.o | $(BINDIR)
-	$(F90C) -o $@ $^ $(FFLAGS) $(LDFLAGS)
+$(BINDIR)/%_3d: $(OBJDIR)/%_3d.o $(LIB_3D) | $(BINDIR)
+	$(F90C) -o $@ $< $(LIB_3D) $(FFLAGS) $(LDFLAGS)
 
 # ==============================================================================
-# Special dependencies for 2D targets
+# Dependencies for the library
 # ==============================================================================
-$(OBJDIR)/test_advection_2d.o: $(COMMON_OBJS_2D) $(OBJDIR)/m_physics_advection.o
-$(BINDIR)/test_advection_2d: $(COMMON_OBJS_2D) $(OBJDIR)/m_physics_advection.o
+$(OBJDIR)/m_foap4_2d.o: $(OBJDIR)/m_foap4_types_2d.o
+$(OBJDIR)/m_foap4_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
-$(OBJDIR)/test_euler_2d.o: $(COMMON_OBJS_2D) $(OBJDIR)/m_physics_euler_2d.o
-$(BINDIR)/test_euler_2d: $(COMMON_OBJS_2D) $(OBJDIR)/m_physics_euler_2d.o
-
-$(OBJDIR)/test_refinement_2d.o: $(COMMON_OBJS_2D)
-$(BINDIR)/test_refinement_2d: $(COMMON_OBJS_2D)
-
-$(OBJDIR)/test_xdmf_writer_2d.o: $(COMMON_OBJS_2D)
-$(BINDIR)/test_xdmf_writer_2d: $(COMMON_OBJS_2D)
-
-$(OBJDIR)/test_benchmark_ghostcell_2d.o: $(COMMON_OBJS_2D)
-$(BINDIR)/test_benchmark_ghostcell_2d: $(COMMON_OBJS_2D)
+$(OBJDIR)/m_rk_2d.o: $(OBJDIR)/m_foap4_types_2d.o
+$(OBJDIR)/m_rk_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
 # ==============================================================================
-# Special dependencies for 3D targets
+# Dependencies for the targets
 # ==============================================================================
-$(OBJDIR)/test_advection_3d.o: $(COMMON_OBJS_3D) $(OBJDIR)/m_physics_advection.o
-$(BINDIR)/test_advection_3d: $(COMMON_OBJS_3D) $(OBJDIR)/m_physics_advection.o
 
-$(OBJDIR)/test_euler_3d.o: $(COMMON_OBJS_3D) $(OBJDIR)/m_physics_euler_3d.o
-$(BINDIR)/test_euler_3d: $(COMMON_OBJS_3D) $(OBJDIR)/m_physics_euler_3d.o
+# All 2D target objects depend on 2D library
+$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_2D)): $(LIB_2D)
 
-$(OBJDIR)/test_refinement_3d.o: $(COMMON_OBJS_3D)
-$(BINDIR)/test_refinement_3d: $(COMMON_OBJS_3D)
-
-$(OBJDIR)/test_xdmf_writer_3d.o: $(COMMON_OBJS_3D)
-$(BINDIR)/test_xdmf_writer_3d: $(COMMON_OBJS_3D)
+# All 3D target objects depend on 3D library
+$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_3D)): $(LIB_3D)

@@ -5,7 +5,6 @@ program test_ref
 
   implicit none
   integer, parameter :: dp    = kind(0.0d0)
-  integer, parameter :: NDIM  = ${NDIM}$
   integer            :: i_phi = 1
   integer            :: i_err = 2
   type(CFG_t)        :: cfg
