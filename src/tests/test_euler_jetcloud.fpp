@@ -1,7 +1,7 @@
 !> Test case for jet-cloud problem, based on tests/hd/jet_cloud in MPI-AMRVAC
 #:include '../core/definitions.fpp'
 #:set LIMITER = 'minmod'
-#:set FLUX_SCHEME = 'hll'
+#:set FLUX_SCHEME = 'tvdlf'
 program test_euler_jetcloud
   use iso_fortran_env, only: int64
   use mpi_f08

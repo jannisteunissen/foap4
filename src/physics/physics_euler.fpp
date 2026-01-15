@@ -1,4 +1,4 @@
-subroutine to_primitive(u)
+pure subroutine to_primitive(u)
   !$acc routine seq
   real(dp), intent(inout) :: u(n_tvars)
   real(dp)                :: inv_rho, sum_v2
@@ -13,16 +13,6 @@ subroutine to_primitive(u)
 
   u(i_e) = (euler_gamma - 1.0_dp) * &
        (u(i_e) - 0.5_dp * u(i_rho) * sum_v2)
-
-  if (u(i_e) <= 0) then
-     print *, "Neg pressure", u
-     u(i_e) = 1e-6_dp
-  end if
-
-  if (u(i_rho) <= 0) then
-     print *, "Neg density", u
-     stop
-  end if
 end subroutine to_primitive
 
 pure subroutine to_conservative(u)
@@ -69,7 +59,7 @@ subroutine get_flux(flux_dim, u, flux)
        0.5_dp * u(i_rho) * sum_v2 + u(i_e))
 end subroutine get_flux
 
-pure subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
+subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
   real(dp), intent(in)  :: u_LR(n_tvars, 2)
@@ -80,22 +70,30 @@ pure subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
   cmax = max(abs(cmin), cmax)
 end subroutine get_max_wavespeed
 
+!> This implements formula (10.52) from "Riemann Solvers and Numerical Methods
+!> for Fluid Dynamics" by Toro.
 pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
   real(dp), intent(in)  :: u_LR(n_tvars, 2)
   real(dp), intent(out) :: cmin
   real(dp), intent(out) :: cmax
-  real(dp)              :: rho_sqrt(2), fac, umean, csound2(2), dmean
+  real(dp)              :: rho_sqrt(2), fac, eta2, umean, csound2(2), dmean
 
   rho_sqrt = sqrt(u_LR(i_rho, :))
-  fac      = 1/(rho_sqrt(1) + rho_sqrt(2))
+  fac = 1/(rho_sqrt(1) + rho_sqrt(2))
 
-  umean   = fac * sum(rho_sqrt * u_LR(i_mom0+flux_dim, :))
+  umean = fac * (&
+       rho_sqrt(1) * u_LR(i_mom0+flux_dim, 1) + &
+       rho_sqrt(1) * u_LR(i_mom0+flux_dim, 1))
+
+  ! Square of sound speed
   csound2 = euler_gamma * u_LR(i_e, :) / u_LR(i_rho, :)
-  dmean   = sqrt(fac * (rho_sqrt(1)*csound2(1) + rho_sqrt(2)*csound2(2)) &
-       + 0.5_dp * fac**2 * rho_sqrt(1) * rho_sqrt(2) * &
-       (u_LR(i_mom0+flux_dim, 2) - u_LR(i_mom0+flux_dim, 1)))
+
+  eta2 = 0.5_dp * fac**2 * rho_sqrt(1) * rho_sqrt(2)
+
+  dmean = sqrt(fac * (rho_sqrt(1)*csound2(1) + rho_sqrt(2)*csound2(2)) + &
+       eta2 * (u_LR(i_mom0+flux_dim, 2) - u_LR(i_mom0+flux_dim, 1))**2)
 
   cmin = umean - dmean
   cmax = umean + dmean
