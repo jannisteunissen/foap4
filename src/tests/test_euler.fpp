@@ -33,6 +33,7 @@ program euler
   real(dp)          :: c_refine           = 0.8_dp
   real(dp)          :: c_derefine         = 0.2_dp
   real(dp)          :: c_eps              = 0.01_dp
+  real(dp)          :: c_abs              = 1e-5_dp
   integer           :: n_steps_refinement = 4
   real(dp)          :: cfl_number         = 0.5_dp
   character(len=10) :: test_case          = "sod"
@@ -46,8 +47,9 @@ program euler
   call CFG_add_get(cfg, 'max_level', max_level, 'Maximum refinement level')
   call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
   call CFG_add_get(cfg, 'c_refine', c_refine, 'Coefficient for refinement')
-  call CFG_add_get(cfg, 'c_derefine', c_refine, 'Coefficient for derefinement')
-  call CFG_add_get(cfg, 'c_eps', c_refine, 'Used in refinement criterion')
+  call CFG_add_get(cfg, 'c_derefine', c_derefine, 'Coefficient for derefinement')
+  call CFG_add_get(cfg, 'c_eps', c_eps, 'Filter coefficient for AMR')
+  call CFG_add_get(cfg, 'c_abs', c_abs, 'Density threshold for AMR')
   call CFG_add_get(cfg, 'n_steps_refinement', n_steps_refinement, &
        'Perform refinement every N steps')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
@@ -86,7 +88,7 @@ contains
     integer                      :: n_output
     integer                      :: n, n_iterations, ierr, prev_mesh_revision
     integer(int64)               :: sum_local_blocks, sum_global_blocks
-    logical                      :: write_this_step, temporal(n_vars)
+    logical                      :: write_this_step
     integer                      :: integrator, n_time_states
     integer                      :: highest_level, prev_highest_level
     real(dp)                     :: dt, dt_lim, dt_output
@@ -98,7 +100,6 @@ contains
     n_iterations = 0
     sum_local_blocks = 0
     dt_lim = 0.0_dp
-    temporal(:) = .true.
 
     integrator = rk_get_integrator_by_name(trim(integrator_name))
     n_time_states = rk_advance_num_copies(integrator)
@@ -106,7 +107,7 @@ contains
     if (test_case == "rt") periodic(NDIM) = .false.
 
     call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
-         n_vars, var_names, temporal, n_time_states, periodic, &
+         n_vars_all, var_names, var_temporal, n_time_states, periodic, &
          min_level, max_blocks, f4_bc_neumann, 0.0_dp)
 
     if (test_case == "rt") then
@@ -126,9 +127,9 @@ contains
     if (do_refinement) then
        do n = 1, 10
           prev_mesh_revision = f4_get_mesh_revision(f4)
-          call f4_update_ghostcells(f4, n_vars, i_vars)
+          call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_level, max_level, &
-               i_rho, c_refine, c_derefine, c_eps)
+               i_rho, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, .true.)
           call set_initial_conditions(f4, test_case)
 
@@ -164,9 +165,9 @@ contains
        if (do_refinement .and. &
             mod(n_iterations, n_steps_refinement) == 0) then
           call f4_get_global_highest_level(f4, prev_highest_level)
-          call f4_update_ghostcells(f4, n_vars, i_vars)
+          call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_level, max_level, &
-               i_rho, c_refine, c_derefine, c_eps)
+               i_rho, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, .true.)
 
           call f4_get_global_highest_level(f4, highest_level)
@@ -213,7 +214,7 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
-    real(dp)                     :: u0(n_vars, 2)
+    real(dp)                     :: u0(n_tvars, 2)
 
     ! 1D Sod shock test case
     u0(i_rho, :) = [1.0_dp, 0.125_dp]
@@ -230,9 +231,9 @@ contains
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
           if (rr(1) < 0.5_dp) then
-             f4%uu(${IJK}$, i_vars, n) = u0(:, 1)
+             f4%uu(${IJK}$, i_tvars, n) = u0(:, 1)
           else
-             f4%uu(${IJK}$, i_vars, n) = u0(:, 2)
+             f4%uu(${IJK}$, i_tvars, n) = u0(:, 2)
           end if
        end do; ${KJI_CLOSE_LOOP}$
     end do
@@ -285,8 +286,8 @@ contains
   end subroutine set_initial_conditions_rt
 
   subroutine source_term(u_prim, source)
-    real(dp), intent(in)    :: u_prim(n_vars)
-    real(dp), intent(inout) :: source(n_vars)
+    real(dp), intent(in)    :: u_prim(n_tvars)
+    real(dp), intent(inout) :: source(n_tvars)
     source(i_mom0+NDIM) = -gravity_constant * u_prim(i_rho)
     source(i_e)         = -gravity_constant * source(i_mom0+NDIM)
   end subroutine source_term

@@ -10,20 +10,42 @@ module m_physics_euler_${NDIM}$d
   real(dp), parameter :: inv_gamma_m1 = 1/(euler_gamma-1.0_dp)
   !$acc declare create(inv_gamma_m1)
 
-  integer, parameter :: n_vars = 2 + ${NDIM}$
+  ! Number of temporal variables
+  integer, parameter :: n_tvars = 2 + ${NDIM}$
+
+  ! Total number of variables
+  integer, parameter :: n_vars_all = n_tvars
+
+  ! Density variable
   integer, parameter :: i_rho = 1
+
+  ! Index offset for momentum
   integer, parameter :: i_mom0 = 1
-  integer, parameter :: i_e = n_vars
-  integer, parameter :: i_vars0 = i_rho - 1
+
+  ! Energy variable
+  integer, parameter :: i_e = n_tvars
+
+  ! Index offset for temporal variables
+  integer, parameter :: i_tvars0 = i_rho - 1
+
 #:if NDIM == 2
-  integer, parameter :: i_vars(n_vars) = [i_rho, i_mom0+1, i_mom0+2, i_e]
-  character(len=10), parameter :: var_names(n_vars) = [character(len=10) :: &
+  ! Indices of temporal variables
+  integer, parameter :: i_tvars(n_tvars) = [i_rho, i_mom0+1, i_mom0+2, i_e]
+
+  ! Names of variables
+  character(len=10), parameter :: var_names(n_vars_all) = [character(len=10) :: &
        "rho", "momx", "momy", "e"]
 #:elif NDIM == 3
-  integer, parameter :: i_vars(n_vars) = [i_rho, i_mom0+1, i_mom0+2, i_mom0+3, i_e]
-  character(len=10), parameter :: var_names(n_vars) = [character(len=10) :: &
+  ! Indices of temporal variables
+  integer, parameter :: i_tvars(n_tvars) = [i_rho, i_mom0+1, i_mom0+2, i_mom0+3, i_e]
+
+  ! Names of variables
+  character(len=10), parameter :: var_names(n_vars_all) = [character(len=10) :: &
        "rho", "momx", "momy", "momz", "e"]
 #:endif
+
+  ! Which variables are temporal
+  logical, parameter :: var_temporal(n_vars_all) = .true.
 
   real(dp) :: gravity_constant = 0.0_dp
   !$acc declare create(gravity_constant)

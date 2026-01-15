@@ -18,12 +18,12 @@ program test_adv
   integer, parameter :: dp   = kind(0.0d0)
   integer, parameter :: n_gc = limiter_num_ghostcells
 
-  logical, parameter :: temporal(n_vars) = .true.
   real(dp)           :: cfl_number       = 0.5_dp
   real(dp)           :: end_time         = 1.0_dp
   real(dp)           :: c_refine         = 0.8_dp
   real(dp)           :: c_derefine       = 0.2_dp
   real(dp)           :: c_eps            = 0.01_dp
+  real(dp)           :: c_abs            = 1e-5_dp
 
   logical           :: do_refinement        = .true.
   integer           :: max_refinement_level = 3
@@ -47,8 +47,9 @@ program test_adv
   call CFG_add_get(cfg, 'max_level', max_refinement_level, &
        'Maximum refinement level in the domain')
   call CFG_add_get(cfg, 'c_refine', c_refine, 'Coefficient for refinement')
-  call CFG_add_get(cfg, 'c_derefine', c_refine, 'Coefficient for derefinement')
-  call CFG_add_get(cfg, 'c_eps', c_refine, 'Used in refinement criterion')
+  call CFG_add_get(cfg, 'c_derefine', c_derefine, 'Coefficient for derefinement')
+  call CFG_add_get(cfg, 'c_eps', c_eps, 'Filter coefficient for AMR')
+  call CFG_add_get(cfg, 'c_abs', c_abs, 'Density threshold for AMR')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
   call CFG_add_get(cfg, 'blocks_per_dim', blocks_per_dim, &
        'Number of blocks (per dimension) on coarse grid')
@@ -104,7 +105,7 @@ contains
     n_time_states = rk_advance_num_copies(integrator)
 
     call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
-         n_vars, var_names, temporal, n_time_states, periodic, &
+         n_vars_all, var_names, var_temporal, n_time_states, periodic, &
          min_refinement_level, max_blocks, f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
@@ -112,9 +113,9 @@ contains
     if (do_refinement) then
        do n = 1, 10
           prev_mesh_revision = f4_get_mesh_revision(f4)
-          call f4_update_ghostcells(f4, n_vars, i_vars)
-          call amr_flags_diff2(f4, min_refinement_level, &
-               max_refinement_level, i_rho, c_refine, c_derefine, c_eps)
+          call f4_update_ghostcells(f4, n_tvars, i_tvars)
+          call amr_flags_diff2_smooth(f4, i_amr_flag, 0, min_refinement_level, &
+               max_refinement_level, i_rho, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, .true.)
           call set_init_cond(f4)
 
@@ -150,9 +151,9 @@ contains
        end if
 
        if (do_refinement) then
-          call f4_update_ghostcells(f4, n_vars, i_vars)
-          call amr_flags_diff2(f4, min_refinement_level, &
-               max_refinement_level, i_rho, c_refine, c_derefine, c_eps)
+          call f4_update_ghostcells(f4, n_tvars, i_tvars)
+          call amr_flags_diff2_smooth(f4, i_amr_flag, 0, min_refinement_level, &
+               max_refinement_level, i_rho, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, .true.)
           call f4_get_global_highest_level(f4, highest_level)
 
@@ -227,31 +228,31 @@ contains
   pure subroutine get_flux(flux_dim, u, flux)
     !$acc routine seq
     integer, intent(in)   :: flux_dim
-    real(dp), intent(in)  :: u(n_vars)
-    real(dp), intent(out) :: flux(n_vars)
+    real(dp), intent(in)  :: u(n_tvars)
+    real(dp), intent(out) :: flux(n_tvars)
     flux(1) = velocity(flux_dim) * u(1)
   end subroutine get_flux
 
   pure subroutine to_primitive(u)
     !$acc routine seq
-    real(dp), intent(inout) :: u(n_vars)
+    real(dp), intent(inout) :: u(n_tvars)
   end subroutine to_primitive
 
   pure subroutine to_conservative(u)
     !$acc routine seq
-    real(dp), intent(inout) :: u(n_vars)
+    real(dp), intent(inout) :: u(n_tvars)
   end subroutine to_conservative
 
   subroutine source_term(u_prim, source)
-    real(dp), intent(in) :: u_prim(n_vars)
-    real(dp), intent(out) :: source(n_vars)
+    real(dp), intent(in) :: u_prim(n_tvars)
+    real(dp), intent(out) :: source(n_tvars)
     source = 0.0_dp
   end subroutine source_term
 
   pure subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
     !$acc routine seq
     integer, intent(in)   :: flux_dim
-    real(dp), intent(in)  :: u_LR(n_vars, 2)
+    real(dp), intent(in)  :: u_LR(n_tvars, 2)
     real(dp), intent(out) :: cmax
     cmax = abs(velocity(flux_dim))
   end subroutine get_max_wavespeed
@@ -259,7 +260,7 @@ contains
   pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
     !$acc routine seq
     integer, intent(in)   :: flux_dim
-    real(dp), intent(in)  :: u_LR(n_vars, 2)
+    real(dp), intent(in)  :: u_LR(n_tvars, 2)
     real(dp), intent(out) :: cmin
     real(dp), intent(out) :: cmax
     cmin = min(velocity(flux_dim), 0.0_dp)

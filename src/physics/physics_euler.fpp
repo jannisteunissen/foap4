@@ -1,6 +1,6 @@
 pure subroutine to_primitive(u)
   !$acc routine seq
-  real(dp), intent(inout) :: u(n_vars)
+  real(dp), intent(inout) :: u(n_tvars)
   real(dp)                :: inv_rho, sum_v2
   integer                 :: idim
 
@@ -17,7 +17,7 @@ end subroutine to_primitive
 
 pure subroutine to_conservative(u)
   !$acc routine seq
-  real(dp), intent(inout) :: u(n_vars)
+  real(dp), intent(inout) :: u(n_tvars)
   integer                 :: idim
   real(dp)                :: sum_v2
 
@@ -36,8 +36,8 @@ end subroutine to_conservative
 subroutine get_flux(flux_dim, u, flux)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u(n_vars)
-  real(dp), intent(out) :: flux(n_vars)
+  real(dp), intent(in)  :: u(n_tvars)
+  real(dp), intent(out) :: flux(n_tvars)
   integer               :: idim
   real(dp)              :: sum_v2
 
@@ -62,7 +62,7 @@ end subroutine get_flux
 pure subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u_LR(n_vars, 2)
+  real(dp), intent(in)  :: u_LR(n_tvars, 2)
   real(dp), intent(out) :: cmax
   real(dp)              :: cmin
 
@@ -73,7 +73,7 @@ end subroutine get_max_wavespeed
 pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u_LR(n_vars, 2)
+  real(dp), intent(in)  :: u_LR(n_tvars, 2)
   real(dp), intent(out) :: cmin
   real(dp), intent(out) :: cmax
   real(dp)              :: rho_sqrt(2), fac, umean, csound2(2), dmean

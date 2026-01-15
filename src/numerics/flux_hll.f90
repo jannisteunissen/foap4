@@ -1,8 +1,8 @@
 subroutine flux_cell_faces(flux_dim, u, flux, max_wavespeed)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
-  real(dp), intent(out) :: flux(n_vars, 2)
+  real(dp), intent(in)  :: u(1+2*n_gc, n_tvars)
+  real(dp), intent(out) :: flux(n_tvars, 2)
   real(dp), intent(out) :: max_wavespeed
   real(dp)              :: cmax(2)
 
@@ -15,11 +15,11 @@ subroutine flux_hll_one_side(flux_dim, i0, u, flux, max_wavespeed)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
   integer, intent(in)   :: i0
-  real(dp), intent(in)  :: u(1+2*n_gc, n_vars)
-  real(dp), intent(out) :: flux(n_vars)
+  real(dp), intent(in)  :: u(1+2*n_gc, n_tvars)
+  real(dp), intent(out) :: flux(n_tvars)
   real(dp), intent(out) :: max_wavespeed
-  real(dp)              :: u_LR(n_vars, 2)
-  real(dp)              :: flux_LR(n_vars, 2)
+  real(dp)              :: u_LR(n_tvars, 2)
+  real(dp)              :: flux_LR(n_tvars, 2)
   real(dp)              :: cmin, cmax
 
   call reconstruct(u, i0, u_LR)

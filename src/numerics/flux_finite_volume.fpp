@@ -12,21 +12,21 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
   integer, intent(in)          :: i_step         !< Step of the integrator
   integer, intent(in)          :: n_steps        !< Total number of steps
   integer                      :: n, ${IJK}$, m, level, iv, ierr
-  integer                      :: i_vars_deriv(n_vars)
+  integer                      :: i_tvars_deriv(n_tvars)
   logical                      :: ghost_dim(NDIM), valid_cell
   real(dp)                     :: inv_dr(NDIM), cmax, cfl_sum, max_cfl
-  real(dp)                     :: flux(n_vars, 2)
-  real(dp)                     :: tmp(1+2*n_gc, n_vars)
-  real(dp)                     :: dvar(n_vars), u(n_vars)
+  real(dp)                     :: flux(n_tvars, 2)
+  real(dp)                     :: tmp(1+2*n_gc, n_tvars)
+  real(dp)                     :: dvar(n_tvars), u(n_tvars)
 #:if NDIM == 2
-  real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), n_vars)
+  real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), n_tvars)
 #:elif NDIM == 3
   real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), &
-       f4%ilo(3):f4%ihi(3), n_vars)
+       f4%ilo(3):f4%ihi(3), n_tvars)
 #:endif
 
-  i_vars_deriv = i_vars + s_deriv
-  call f4_update_ghostcells(f4, n_vars, i_vars_deriv)
+  i_tvars_deriv = i_tvars + s_deriv
+  call f4_update_ghostcells(f4, n_tvars, i_tvars_deriv)
 
   max_cfl = 0.0_dp
 
@@ -57,7 +57,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
         if (valid_cell) then
            ! Convert to primitive, but not in corners
-           u = f4%uu(${IJK}$, i_vars0+1+s_deriv:i_vars0+n_vars+s_deriv, n)
+           u = f4%uu(${IJK}$, i_tvars0+1+s_deriv:i_tvars0+n_tvars+s_deriv, n)
            call to_primitive(u)
            uprim(${IJK}$, :) = u
         end if
@@ -81,9 +81,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
         ! Store refinement boundary fluxes
         if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
-             f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1)
+             f4%bflux(j, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(0, n)) = dt * flux(:, 1)
         if (f4%bflux_ix(1, n) > 0 .and. i == f4%bx(1)) &
-             f4%bflux(j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
+             f4%bflux(j, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
 
         ! Compute y-flux
         tmp = uprim(i, j-n_gc:j+n_gc, :)
@@ -93,9 +93,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
         ! Store refinement boundary fluxes
         if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
-             f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1)
+             f4%bflux(i, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(2, n)) = dt * flux(:, 1)
         if (f4%bflux_ix(3, n) > 0 .and. j == f4%bx(2)) &
-             f4%bflux(i, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
+             f4%bflux(i, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
 #:elif NDIM == 3
         ! Compute fluxes
         tmp = uprim(i-n_gc:i+n_gc, j, k, :)
@@ -105,9 +105,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
         ! Store refinement boundary fluxes
         if (f4%bflux_ix(0, n) > 0 .and. i == 1) &
-             f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(0, n)) = dt * flux(:, 1)
+             f4%bflux(j, k, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(0, n)) = dt * flux(:, 1)
         if (f4%bflux_ix(1, n) > 0 .and. i == f4%bx(1)) &
-             f4%bflux(j, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
+             f4%bflux(j, k, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
 
         tmp = uprim(i, j-n_gc:j+n_gc, k, :)
         call flux_cell_faces(2, tmp, flux, cmax)
@@ -116,9 +116,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
         ! Store refinement boundary fluxes
         if (f4%bflux_ix(2, n) > 0 .and. j == 1) &
-             f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(2, n)) = dt * flux(:, 1)
+             f4%bflux(i, k, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(2, n)) = dt * flux(:, 1)
         if (f4%bflux_ix(3, n) > 0 .and. j == f4%bx(2)) &
-             f4%bflux(i, k, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
+             f4%bflux(i, k, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
 
         tmp = uprim(i, j, k-n_gc:k+n_gc, :)
         call flux_cell_faces(3, tmp, flux, cmax)
@@ -127,26 +127,26 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
 
         ! Store refinement boundary fluxes
         if (f4%bflux_ix(4, n) > 0 .and. k == 1) &
-             f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(4, n)) = dt * flux(:, 1)
+             f4%bflux(i, j, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(4, n)) = dt * flux(:, 1)
         if (f4%bflux_ix(5, n) > 0 .and. k == f4%bx(3)) &
-             f4%bflux(i, j, i_vars0+1:i_vars0+n_vars, f4%bflux_ix(5, n)) = dt * flux(:, 2)
+             f4%bflux(i, j, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(5, n)) = dt * flux(:, 2)
 #:endif
 
         max_cfl = max(max_cfl, cfl_sum)
 
         ! Set output state
-        do iv = 1, n_vars
+        do iv = 1, n_tvars
            do m = 1, n_prev
               ! Add weighted previous states
               dvar(iv) = dvar(iv) + &
-                   f4%uu(${IJK}$, i_vars0+iv+s_prev(m), n) * w_prev(m)
+                   f4%uu(${IJK}$, i_tvars0+iv+s_prev(m), n) * w_prev(m)
            end do
-           f4%uu(${IJK}$, i_vars0+iv+s_out, n) = dvar(iv)
+           f4%uu(${IJK}$, i_tvars0+iv+s_out, n) = dvar(iv)
         end do
      end do; ${KJI_CLOSE_LOOP}$
   end do
 
-  call f4_fix_c2f_flux(f4, n_vars, i_vars, s_out)
+  call f4_fix_c2f_flux(f4, n_tvars, i_tvars, s_out)
 
   dt_lim = 1/max_cfl
   call MPI_Allreduce(MPI_IN_PLACE, dt_lim, 1, MPI_DOUBLE_PRECISION, &

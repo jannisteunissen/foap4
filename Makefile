@@ -222,8 +222,8 @@ $(OBJDIR)/m_rk_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 $(OBJDIR)/m_io_2d.o: $(OBJDIR)/m_foap4_types_2d.o
 $(OBJDIR)/m_io_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
-$(OBJDIR)/m_amr_flags_2d.o: $(OBJDIR)/m_foap4_types_2d.o
-$(OBJDIR)/m_amr_flags_3d.o: $(OBJDIR)/m_foap4_types_3d.o
+$(OBJDIR)/m_amr_flags_2d.o: $(OBJDIR)/m_foap4_2d.o
+$(OBJDIR)/m_amr_flags_3d.o: $(OBJDIR)/m_foap4_3d.o
 
 # ==============================================================================
 # Dependencies for the targets

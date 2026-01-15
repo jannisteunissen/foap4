@@ -1,11 +1,11 @@
 pure subroutine reconstruct(u, i0, u_LR)
   !$acc routine seq
-  real(dp), intent(in)  :: u(5, n_vars)
+  real(dp), intent(in)  :: u(5, n_tvars)
   integer, intent(in)   :: i0
-  real(dp), intent(out) :: u_LR(n_vars, 2)
+  real(dp), intent(out) :: u_LR(n_tvars, 2)
   integer               :: n
 
-  do n = 1, n_vars
+  do n = 1, n_tvars
      u_LR(n, 1) = weno3_reconstruct(u(i0+1:i0+3, n), -1)
      u_LR(n, 2) = weno3_reconstruct(u(i0+2:i0+4, n), 1)
   end do
