@@ -1,4 +1,4 @@
-pure subroutine to_primitive(u)
+subroutine to_primitive(u)
   !$acc routine seq
   real(dp), intent(inout) :: u(n_tvars)
   real(dp)                :: inv_rho, sum_v2
@@ -13,6 +13,16 @@ pure subroutine to_primitive(u)
 
   u(i_e) = (euler_gamma - 1.0_dp) * &
        (u(i_e) - 0.5_dp * u(i_rho) * sum_v2)
+
+  if (u(i_e) <= 0) then
+     print *, "Neg pressure", u
+     u(i_e) = 1e-6_dp
+  end if
+
+  if (u(i_rho) <= 0) then
+     print *, "Neg density", u
+     stop
+  end if
 end subroutine to_primitive
 
 pure subroutine to_conservative(u)
