@@ -2,6 +2,7 @@ program benchmark_gc
 
   use mpi_f08
   use m_foap4_2d
+  use m_io_2d
   use m_config
 
   implicit none
@@ -84,7 +85,7 @@ contains
 
     if (write_grid) then
        n_output = n_output + 1
-       call f4_write_grid(f4, base_name, n_output)
+       call io_write_grid(f4, base_name, n_output)
     end if
 
     t0 = MPI_Wtime()

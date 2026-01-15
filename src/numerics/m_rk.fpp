@@ -1,3 +1,4 @@
+!> Module for Runge-Kutta time integration
 module m_rk_${NDIM}$d
 
   use m_foap4_types_${NDIM}$d

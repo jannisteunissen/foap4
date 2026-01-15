@@ -1,6 +1,7 @@
 program test_xdmf_writer_${NDIM}$d
-  use m_foap4_${NDIM}$d
   use mpi_f08
+  use m_foap4_${NDIM}$d
+  use m_io_${NDIM}$d
 
   implicit none
   integer, parameter :: dp = kind(0.0d0)
@@ -70,7 +71,7 @@ contains
        end do
     end do
 
-    call f4_xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
+    call io_xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
          nx+2*n_gc, n_cc, cc_names, n_gc, origin, dr, cc_data, time=time)
 
   end subroutine multi_block_test_2d
@@ -122,7 +123,7 @@ contains
        end do
     end do
 
-    call f4_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
+    call io_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
          nx+2*n_gc, n_cc, cc_names, n_gc, origin, dr, cc_data, time=time)
 
   end subroutine multi_block_test_3d

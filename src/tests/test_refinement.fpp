@@ -2,6 +2,7 @@
 program test_ref
   use m_config
   use m_foap4_${NDIM}$d
+  use m_io_${NDIM}$d
 
   implicit none
   integer, parameter :: dp    = kind(0.0d0)
@@ -139,7 +140,7 @@ contains
 
     if (write_output) then
        n_output = n_output + 1
-       call f4_write_grid(f4, base_name, n_output)
+       call io_write_grid(f4, base_name, n_output)
     end if
 
     do n = 1, n_refine_steps
@@ -150,7 +151,7 @@ contains
 
        if (write_output) then
           n_output = n_output + 1
-          call f4_write_grid(f4, base_name, n_output)
+          call io_write_grid(f4, base_name, n_output)
        end if
     end do
 
@@ -166,7 +167,7 @@ contains
 
           if (write_output) then
              n_output = n_output + 1
-             call f4_write_grid(f4, base_name, n_output)
+             call io_write_grid(f4, base_name, n_output)
           end if
 
           if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit

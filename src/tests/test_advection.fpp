@@ -8,6 +8,7 @@ program test_adv
   use m_foap4_${NDIM}$d
   use m_physics_advection_${NDIM}$d
   use m_rk_${NDIM}$d
+  use m_io_${NDIM}$d
   use m_config
 
   implicit none
@@ -123,7 +124,7 @@ contains
     call f4_compute_sum(f4, i_rho, rho_initial_sum)
     call f4_get_global_highest_level(f4, prev_highest_level)
 
-    if (dt_output <= end_time) call f4_write_grid(f4, base_name, n_output, time)
+    if (dt_output <= end_time) call io_write_grid(f4, base_name, n_output, time)
     n_output = n_output + 1
 
     t0 = MPI_Wtime()
@@ -138,7 +139,7 @@ contains
        call rk_advance(f4, dt, dt_lim, time, integrator, feuler_finite_volume)
 
        if (write_this_step) then
-          call f4_write_grid(f4, base_name, n_output, time)
+          call io_write_grid(f4, base_name, n_output, time)
           call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &

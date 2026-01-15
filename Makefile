@@ -83,6 +83,7 @@ LIB_OBJS_2D := \
     $(OBJDIR)/m_foap4_2d.o \
     $(OBJDIR)/m_foap4_types_2d.o \
     $(OBJDIR)/p4est_wrapper_2d.o \
+    $(OBJDIR)/m_io_2d.o \
     $(OBJDIR)/m_rk_2d.o \
     $(OBJDIR)/m_physics_advection_2d.o \
     $(OBJDIR)/m_physics_euler_2d.o \
@@ -92,6 +93,7 @@ LIB_OBJS_3D := \
     $(OBJDIR)/m_foap4_3d.o \
     $(OBJDIR)/m_foap4_types_3d.o \
     $(OBJDIR)/p4est_wrapper_3d.o \
+    $(OBJDIR)/m_io_3d.o \
     $(OBJDIR)/m_rk_3d.o \
     $(OBJDIR)/m_physics_advection_3d.o \
     $(OBJDIR)/m_physics_euler_3d.o \
@@ -220,6 +222,9 @@ $(OBJDIR)/m_foap4_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
 $(OBJDIR)/m_rk_2d.o: $(OBJDIR)/m_foap4_types_2d.o
 $(OBJDIR)/m_rk_3d.o: $(OBJDIR)/m_foap4_types_3d.o
+
+$(OBJDIR)/m_io_2d.o: $(OBJDIR)/m_foap4_types_2d.o
+$(OBJDIR)/m_io_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
 # ==============================================================================
 # Dependencies for the targets
