@@ -1904,6 +1904,26 @@ contains
     !$acc end host_data
   end subroutine mpi_irecv_wrapper
 
+  !> Get index correspond to first temporal state
+  subroutine get_first_temporal_state(f4, n_vars, i_vars, i_vars_first)
+    type(foap4_t), intent(in) :: f4
+    integer, intent(in)       :: n_vars
+    integer, intent(in)       :: i_vars(n_vars)
+    integer, intent(out)      :: i_vars_first(n_vars)
+    integer                   :: n, iv
+
+    do n = 1, n_vars
+       iv = i_vars(n)
+
+       if (iv > f4%n_vars_nontemporal) then
+          iv = f4%n_vars_nontemporal + 1 + &
+               modulo(iv - 1 - f4%n_vars_nontemporal, f4%n_vars_temporal)
+       end if
+
+       i_vars_first(n) = iv
+    end do
+  end subroutine get_first_temporal_state
+
   !> After buffers have been communicated, handle all ghost cells for "round
   !> one", which excludes coarse-to-fine interpolation
   subroutine fill_ghostcells_round_one(f4, n_vars, i_vars)
@@ -1913,10 +1933,14 @@ contains
     integer                      :: n, i, j, iq, jq, i_f, j_f
     integer                      :: i_buf, i_buf0, iv, ivar, i_bc_data
     integer                      :: offset(NDIM-1), bc_type, level
+    integer                      :: i_vars_first(n_vars)
     real(dp)                     :: bc_value, dr(NDIM), slope
 #:if NDIM == 3
     integer                      :: k, k_f
 #:endif
+
+    ! Get index of first temporal state, potentially used for bc_data
+    call get_first_temporal_state(f4, n_vars, i_vars, i_vars_first)
 
 #:def fyp_srl_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
     &i2=0, j2=0, k2=0)
@@ -1978,9 +2002,9 @@ contains
                 if (i_bc_data > 0) then
                    ! Use array value
 #:if face in ['0', '1']
-                   bc_value = f4%bc_data(j, ivar, i_bc_data)
+                   bc_value = f4%bc_data(j, i_vars_first(iv), i_bc_data)
 #:else
-                   bc_value = f4%bc_data(i, ivar, i_bc_data)
+                   bc_value = f4%bc_data(i, i_vars_first(iv), i_bc_data)
 #:endif
                 else
                    ! Use stored scalar
@@ -2049,11 +2073,11 @@ contains
                    if (i_bc_data > 0) then
                    ! Use array value
 #:if face in ['0', '1']
-                   bc_value = f4%bc_data(j, k, ivar, i_bc_data)
+                   bc_value = f4%bc_data(j, k, i_vars_first(iv), i_bc_data)
 #:elif face in ['2', '3']
-                   bc_value = f4%bc_data(i, k, ivar, i_bc_data)
+                   bc_value = f4%bc_data(i, k, i_vars_first(iv), i_bc_data)
 #:else
-                   bc_value = f4%bc_data(i, j, ivar, i_bc_data)
+                   bc_value = f4%bc_data(i, j, i_vars_first(iv), i_bc_data)
 #:endif
                 else
                    ! Use stored scalar
@@ -2270,7 +2294,7 @@ contains
     !$acc &f4%block_level, f4%dr_level, f4%gc_srl_from_buf_iface, f4%gc_srl_from_buf, &
     !$acc &f4%recv_buffer, f4%gc_c2f_from_buf_iface,f4%bc_type, f4%bc_data_ix, &
     !$acc &f4%bc_value, f4%gc_f2c_local, f4%gc_srl_from_buf, f4%gc_c2f_from_buf, &
-    !$acc &f4%gc_f2c_local_iface) copyin(i_vars)
+    !$acc &f4%gc_f2c_local_iface) copyin(i_vars, i_vars_first)
 
     ! Fill local boundaries at the same refinement level
 #:if NDIM == 2
