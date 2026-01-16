@@ -1,3 +1,4 @@
+!> Definitions for Euler's equations of gas dynamics
 module m_physics_euler_${NDIM}$d
 
   implicit none

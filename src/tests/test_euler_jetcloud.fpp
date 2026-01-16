@@ -302,21 +302,18 @@ contains
           do i = 1, f4%bx(1)
              rr = f4_block_face_coord(f4, i_block, face, i, j)
              d_inlet = get_inlet_distance(rr, domain_length)
-             f4%bc_data(i, j, i_phi, ix) = phi_init(rr(1), rr(2), rr(3))
+
+             u(i_rho) = 1/eta_jet
+             u(i_mom0+1:i_mom0+ndim) = 0.0_dp
+             u(i_e) = ca**2 / (euler_gamma * eta_jet)
 
              if (d_inlet < 1) then
                 u(i_rho) = rho_jet
                 u(i_mom0+1) = mach * ca
-                u(i_mom0+2:i_mom0+ndim) = 0.0_dp
-                u(i_e) = ca**2 / (euler_gamma * eta_jet)
-             else
-                u(i_rho) = 1/eta_jet
-                u(i_mom0+1:i_mom0+ndim) = 0.0_dp
-                u(i_e) = ca**2 / (euler_gamma * eta_jet)
              end if
 
              call to_conservative(u)
-             f4%bc_data(i_tvars0+1:i_tvars0+n_tvars, ix) = u
+             f4%bc_data(i, j, i_tvars0+1:i_tvars0+n_tvars, ix) = u
           end do
        end do
 #:endif
