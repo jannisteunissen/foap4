@@ -113,6 +113,8 @@ module m_foap4_types_${NDIM}$d
      integer   :: n_vars_all         !< Total number of variables (incl. temporal copies)
      integer   :: n_temporal_states  !< Number of temporal states
      real(dp)  :: tree_length(ndim)                  !< Length of tree
+     !> Coefficient for generalized minmod limiter for prolongation
+     real(dp)  :: gminmod_theta_prolong = 1.0_dp
      integer   :: ilo(ndim)                          !< Minimum index in a block
      integer   :: ihi(ndim)                          !< Maximum index in a block
      real(dp)  :: dr_level(ndim, 0:p4est_maxlevel-1) !< Grid spacing per level

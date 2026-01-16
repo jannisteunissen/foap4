@@ -1549,7 +1549,7 @@ contains
                 ivar = i_vars(iv)
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + j
-                call prolong(f4%uu(i_c, j_c, iv, iq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
                      f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
                      f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
@@ -1571,7 +1571,7 @@ contains
                 i_c = ${ic0}$ + half_n_gc + 1
                 j_c = ${jc0}$ + j
 
-                call prolong(f4%uu(i_c, j_c, iv, iq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
                      f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
                      f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
@@ -1586,7 +1586,7 @@ contains
                 i_c = ${ic0}$ + 0
                 j_c = ${jc0}$ + j
 
-                call prolong(f4%uu(i_c, j_c, iv, iq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
                      f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
                      f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
@@ -1601,7 +1601,7 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + half_n_gc + 1
 
-                call prolong(f4%uu(i_c, j_c, iv, iq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
                      f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
                      f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
@@ -1616,7 +1616,7 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + 0
 
-                call prolong(f4%uu(i_c, j_c, iv, iq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
                      f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
                      f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
 
@@ -1648,7 +1648,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
                         f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
                         f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
                         f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
@@ -1676,7 +1676,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
                         f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
                         f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
                         f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
@@ -1697,7 +1697,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
                         f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
                         f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
                         f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
@@ -1719,7 +1719,7 @@ contains
                    j_c = ${jc0}$ + half_n_gc + 1
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
                         f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
                         f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
                         f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
@@ -1741,7 +1741,7 @@ contains
                    j_c = ${jc0}$ + 0
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
                         f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
                         f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
                         f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
@@ -1763,7 +1763,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + half_n_gc + 1
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
                         f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
                         f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
                         f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
@@ -1786,7 +1786,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + 0
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
                         f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
                         f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
                         f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
@@ -2448,7 +2448,7 @@ contains
                 j_f = ${jf0}$ + 2 * j - 1
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + j
-                call prolong(f4%uu(i_c, j_c, iv, jq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
                      f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
                      f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
                 f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
@@ -2471,7 +2471,7 @@ contains
                 i_c = ${ic0}$ + 0
                 j_c = ${jc0}$ + j
 
-                call prolong(f4%uu(i_c, j_c, iv, jq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
                      f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
                      f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
 
@@ -2487,7 +2487,7 @@ contains
                 i_c = ${ic0}$ + (half_n_gc + 1)
                 j_c = ${jc0}$ + j
 
-                call prolong(f4%uu(i_c, j_c, iv, jq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
                      f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
                      f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
 
@@ -2503,7 +2503,7 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + 0
 
-                call prolong(f4%uu(i_c, j_c, iv, jq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
                      f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
                      f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
 
@@ -2519,7 +2519,7 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + (half_n_gc + 1)
 
-                call prolong(f4%uu(i_c, j_c, iv, jq), &
+                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
                      f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
                      f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
 
@@ -2552,7 +2552,7 @@ contains
                    i_c = ${ic0}$ + i
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
                         f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
                         f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
                         f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
@@ -2585,7 +2585,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
                         f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
                         f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
                         f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
@@ -2609,7 +2609,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
                         f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
                         f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
                         f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
@@ -2633,7 +2633,7 @@ contains
                    j_c = ${jc0}$ + 0
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
                         f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
                         f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
                         f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
@@ -2657,7 +2657,7 @@ contains
                    j_c = ${jc0}$ + (half_n_gc + 1)
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
                         f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
                         f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
                         f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
@@ -2681,7 +2681,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + 0
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
                         f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
                         f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
                         f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
@@ -2705,7 +2705,7 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + (half_n_gc + 1)
 
-                   call prolong(f4%uu(i_c, j_c, k_c, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
                         f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
                         f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
                         f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
@@ -3107,7 +3107,8 @@ contains
                    j_f = 2 * j - 1
                    i_f = 2 * i - 1
 
-                   call prolong(f4%uu(i_c, j_c, iv, i_from), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, iv, i_from), &
                         f4%uu(i_c-1, j_c, iv, i_from), &
                         f4%uu(i_c+1, j_c, iv, i_from), &
                         f4%uu(i_c, j_c-1, iv, i_from), &
@@ -3136,7 +3137,8 @@ contains
                       j_f = 2 * j - 1
                       i_f = 2 * i - 1
 
-                      call prolong(f4%uu(i_c, j_c, k_c, iv, i_from), &
+                      call prolong(f4%gminmod_theta_prolong, &
+                           f4%uu(i_c, j_c, k_c, iv, i_from), &
                            f4%uu(i_c-1, j_c, k_c, iv, i_from), &
                            f4%uu(i_c+1, j_c, k_c, iv, i_from), &
                            f4%uu(i_c, j_c-1, k_c, iv, i_from), &
@@ -3272,8 +3274,9 @@ contains
 
   !> Method for prolongation (interpolation) of a coarse block to its children
 #:if NDIM == 2
-  subroutine prolong(center, xlo, xhi, ylo, yhi, fine)
+  subroutine prolong(theta, center, xlo, xhi, ylo, yhi, fine)
     !$acc routine seq
+    real(dp), intent(in)  :: theta
     real(dp), intent(in)  :: center ! Center value
     real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
     real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
@@ -3286,7 +3289,7 @@ contains
     slopes_b(1) = xhi - center
     slopes_b(2) = yhi - center
 
-    f(1:) = 0.25_dp * limiter_gminmod(slopes_a, slopes_b, 2.0_dp)
+    f(1:) = 0.25_dp * limiter_gminmod(slopes_a, slopes_b, theta)
 
     fine(1) = f(0) - f(1) - f(2)
     fine(2) = f(0) + f(1) - f(2)
@@ -3294,15 +3297,15 @@ contains
     fine(4) = f(0) + f(1) + f(2)
   end subroutine prolong
 #:elif NDIM == 3
-  subroutine prolong(center, xlo, xhi, ylo, yhi, zlo, zhi, fine)
+  subroutine prolong(theta, center, xlo, xhi, ylo, yhi, zlo, zhi, fine)
     !$acc routine seq
-    real(dp), intent(in)  :: center ! Center value
+    real(dp), intent(in)  :: theta
+    real(dp), intent(in)  :: center   ! Center value
     real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
     real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
     real(dp), intent(in)  :: zlo, zhi ! z-neighbors (-1, +1)
     real(dp), intent(out) :: fine(2**NDIM)
     real(dp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
-    real(dp), parameter   :: four_third = 4/3.0_dp
 
     f(0) = center
     slopes_a(1) = center - xlo
@@ -3312,7 +3315,7 @@ contains
     slopes_b(2) = yhi - center
     slopes_b(3) = zhi - center
 
-    f(1:) = 0.25_dp * limiter_gminmod(slopes_a, slopes_b, four_third)
+    f(1:) = 0.25_dp * limiter_gminmod(slopes_a, slopes_b, theta)
 
     fine(1) = f(0) - f(1) - f(2) - f(3)
     fine(2) = f(0) + f(1) - f(2) - f(3)
