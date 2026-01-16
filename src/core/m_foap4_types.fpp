@@ -71,14 +71,17 @@ module m_foap4_types_${NDIM}$d
   !> Value indicating a neighbor at a lower refinement level at a block face
   integer, parameter, public :: FACE_FINE_TO_COARSE = 3
 
-  !> Value indicating Dirichlet boundary condition
+  !> Dirichlet boundary condition
   integer, parameter, public :: f4_bc_dirichlet = 0
 
-  !> Value indicating Neumann boundary condition
+  !> Neumann boundary condition
   integer, parameter, public :: f4_bc_neumann = 1
 
-  !> Value indicating extrapolation boundary condition
+  !> extrapolation boundary condition
   integer, parameter, public :: f4_bc_linear_extrap = 2
+
+  !> values will be set in ghost cells directly
+  integer, parameter, public :: f4_bc_fixed_value = 3
 
   !> Type to store an array of integers
   type, public :: int_array_t

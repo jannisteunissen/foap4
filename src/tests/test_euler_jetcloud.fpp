@@ -140,7 +140,7 @@ contains
     ! Set boundary conditions
     do n = 1, n_tvars
        ! The values will be set by bc_callback
-       call f4_set_bc_scalar(f4, i_tvars(n), f4_face_xlo, f4_bc_dirichlet, 0.0_dp)
+       call f4_set_bc_scalar(f4, i_tvars(n), f4_face_xlo, f4_bc_fixed_value, 0.0_dp)
     end do
 
     call f4_set_bc_scalar(f4, i_mom0+2, f4_face_ylo, f4_bc_dirichlet, 0.0_dp)

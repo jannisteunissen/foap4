@@ -17,7 +17,8 @@ module m_foap4_${NDIM}$d
   ! Public types exported from m_foap4_types
   public :: ndim
   public :: foap4_t
-  public :: f4_bc_dirichlet, f4_bc_neumann, f4_bc_linear_extrap
+  public :: f4_bc_dirichlet, f4_bc_neumann
+  public :: f4_bc_linear_extrap, f4_bc_fixed_value
   public :: f4_face_xlo, f4_face_xhi
   public :: f4_face_ylo, f4_face_yhi
 #:if NDIM == 3
@@ -498,6 +499,8 @@ contains
          error stop "Must have 0 <= iface <= 2*NDIM-1"
     if (ivar < 1 .or. ivar > f4%n_vars) &
          error stop "Must have 1 <= ivar <= n_vars"
+    if (bc_type > f4_bc_fixed_value) &
+         error stop "Unsupported boundary condition type"
 
     f4%bc_type(ivar, iface) = bc_type
     f4%bc_value(ivar, iface) = bc_value
@@ -2057,6 +2060,16 @@ contains
                    slope = (f4%uu(i, f4%bx(2), ivar, iq) - f4%uu(i, f4%bx(2)-1, ivar, iq))
                    f4%uu(i, f4%bx(2)+j, ivar, iq) = f4%uu(i, f4%bx(2), ivar, iq) + j * slope
 #:endif
+                case (f4_bc_fixed_value)
+#:if face == '0'
+                   f4%uu(1-i, j, ivar, iq) = bc_value
+#:elif face == '1'
+                   f4%uu(f4%bx(1)+i, j, ivar, iq) = bc_value
+#:elif face == '2'
+                   f4%uu(i, 1-j, ivar, iq) = bc_value
+#:elif face == '3'
+                   f4%uu(i, f4%bx(2)+j, ivar, iq) = bc_value
+#:endif
                 end select
              end do
           end do
@@ -2147,6 +2160,20 @@ contains
 #:elif face == '5'
                       slope = (f4%uu(i, j, f4%bx(3), ivar, iq) - f4%uu(i, j, f4%bx(3)-1, ivar, iq))
                       f4%uu(i, j, f4%bx(3)+k, ivar, iq) = f4%uu(i, j, f4%bx(3), ivar, iq) + k * slope
+#:endif
+                   case (f4_bc_fixed_value)
+#:if face == '0'
+                      f4%uu(1-i, j, k, ivar, iq) = bc_value
+#:elif face == '1'
+                      f4%uu(f4%bx(1)+i, j, k, ivar, iq) = bc_value
+#:elif face == '2'
+                      f4%uu(i, 1-j, k, ivar, iq) = bc_value
+#:elif face == '3'
+                      f4%uu(i, f4%bx(2)+j, k, ivar, iq) = bc_value
+#:elif face == '4'
+                      f4%uu(i, j, 1-k, ivar, iq) = bc_value
+#:elif face == '5'
+                      f4%uu(i, j, f4%bx(3)+k, ivar, iq) = bc_value
 #:endif
                    end select
                 end do
