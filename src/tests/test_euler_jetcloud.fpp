@@ -1,7 +1,7 @@
 !> Test case for jet-cloud problem, based on tests/hd/jet_cloud in MPI-AMRVAC
 #:include '../core/definitions.fpp'
-#:set LIMITER = 'minmod'
-#:set FLUX_SCHEME = 'tvdlf'
+#:set LIMITER = 'vanleer'
+#:set FLUX_SCHEME = 'hll'
 program test_euler_jetcloud
   use iso_fortran_env, only: int64
   use mpi_f08
@@ -28,11 +28,12 @@ program test_euler_jetcloud
   integer           :: num_outputs        = 40
   logical           :: periodic(NDIM)     = .false.
   logical           :: do_refinement      = .false.
-  real(dp)          :: end_time           = 5.0_dp
+  real(dp)          :: end_time           = 10.0_dp
   real(dp)          :: c_refine           = 0.8_dp
   real(dp)          :: c_derefine         = 0.2_dp
   real(dp)          :: c_eps              = 0.01_dp
   real(dp)          :: c_abs              = 1e-10_dp
+  integer           :: i_var_refinement   = 1
   integer           :: n_steps_refinement = 4
   real(dp)          :: cfl_number         = 0.5_dp
   character(len=10) :: test_case          = "sod"
@@ -41,33 +42,37 @@ program test_euler_jetcloud
   integer  :: blocks_per_dim(NDIM)
   real(dp) :: domain_length(NDIM)
   real(dp) :: block_length(NDIM)
-  real(dp) :: beta, eta_jet, ca, mach, rc
+  real(dp) :: sound_speed_medium, jet_mach_number, jet_radius
   real(dp) :: r_cloud(NDIM), cloud_sigma
-  real(dp) :: rho_jet
+  real(dp) :: rho_jet, rho_cloud, rho_ambient
 
-  blocks_per_dim(1) = 2
-  blocks_per_dim(2:) = 1
-  domain_length(1) = 32.0_dp
-  domain_length(2:) = 16.0_dp
+  blocks_per_dim(:) = 2
+  domain_length(:) = 128.0_dp
   block_length = domain_length / blocks_per_dim
 
-  ! jet to cloud density ratio parameter
-  beta = 0.04d0
-  ! jet to ambient density
-  eta_jet = 3.00d0
-  ! ambient sound speed
-  ca      = 1.00d0
-  ! jet Mach number
-  mach    = 10.0d0
-  ! cloud to jet radii ratio
-  rc      = 1.5d0
-  ! Cloud location
-  r_cloud = 0.5_dp * domain_length
-  r_cloud(2) = r_cloud(2) + 0.075_dp * domain_length(2)
-  ! Cloud width
-  cloud_sigma = 0.75d0 * rc
   ! Jet density
   rho_jet = 1.0_dp
+
+  ! Cloud density
+  rho_cloud = 1e2_dp
+
+  ! Ambient medium density
+  rho_ambient = 1.0_dp/3
+
+  ! ambient sound speed
+  sound_speed_medium = 1.00d0
+
+  ! jet Mach number
+  jet_mach_number = 20.0d0
+
+  ! jet radius
+  jet_radius = 1.0_dp
+
+  ! Cloud location
+  r_cloud = 0.51_dp * domain_length
+
+  ! Cloud width
+  cloud_sigma = 5.0_dp
 
   call f4_initialize(f4, "error")
 
@@ -143,9 +148,11 @@ contains
        call f4_set_bc_scalar(f4, i_tvars(n), f4_face_xlo, f4_bc_fixed_value, 0.0_dp)
     end do
 
+    ! No outflow on y-direction
     call f4_set_bc_scalar(f4, i_mom0+2, f4_face_ylo, f4_bc_dirichlet, 0.0_dp)
     call f4_set_bc_scalar(f4, i_mom0+2, f4_face_yhi, f4_bc_dirichlet, 0.0_dp)
 #:if NDIM == 3
+    ! No outflow on z-direction
     call f4_set_bc_scalar(f4, i_mom0+3, f4_face_zlo, f4_bc_dirichlet, 0.0_dp)
     call f4_set_bc_scalar(f4, i_mom0+3, f4_face_zhi, f4_bc_dirichlet, 0.0_dp)
 #:endif
@@ -157,7 +164,7 @@ contains
           prev_mesh_revision = f4_get_mesh_revision(f4)
           call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_level, max_level, &
-               i_rho, c_refine, c_derefine, c_eps, c_abs)
+               i_var_refinement, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, .true.)
           call set_initial_conditions(f4)
 
@@ -188,7 +195,7 @@ contains
           call f4_get_global_highest_level(f4, prev_highest_level)
           call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_level, max_level, &
-               i_rho, c_refine, c_derefine, c_eps, c_abs)
+               i_var_refinement, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, .true.)
 
           call f4_get_global_highest_level(f4, highest_level)
@@ -233,13 +240,13 @@ contains
           d2_cloud = sum((rr - r_cloud)**2)
 
           ! Ambient medium
-          u(i_rho) = 1/eta_jet + (1/beta**2) * exp(-d2_cloud/cloud_sigma**2)
+          u(i_rho) = rho_ambient + rho_cloud * exp(-d2_cloud/cloud_sigma**2)
           u(i_mom0+1:i_mom0+NDIM) = 0.0_dp
-          u(i_e) = ca**2 / (euler_gamma * eta_jet)
+          u(i_e) = sound_speed_medium**2 * rho_ambient / euler_gamma
 
           if (d_inlet < 1.0_dp .and. rr(1) < 2.5_dp) then
              u(i_rho) = rho_jet
-             u(i_mom0+1) = mach * ca
+             u(i_mom0+1) = jet_mach_number * sound_speed_medium
           end if
 
           call to_conservative(u)
@@ -284,13 +291,13 @@ contains
           rr = f4_block_face_coord(f4, i_block, face, i)
           d_inlet = get_inlet_distance(rr, domain_length)
 
-          u(i_rho) = 1/eta_jet
+          u(i_rho) = rho_ambient
           u(i_mom0+1:i_mom0+ndim) = 0.0_dp
-          u(i_e) = ca**2 / (euler_gamma * eta_jet)
+          u(i_e) = sound_speed_medium**2 * rho_ambient / euler_gamma
 
           if (d_inlet < 1) then
              u(i_rho) = rho_jet
-             u(i_mom0+1) = mach * ca
+             u(i_mom0+1) = jet_mach_number * sound_speed_medium
           end if
 
           call to_conservative(u)
@@ -303,13 +310,13 @@ contains
              rr = f4_block_face_coord(f4, i_block, face, i, j)
              d_inlet = get_inlet_distance(rr, domain_length)
 
-             u(i_rho) = 1/eta_jet
+             u(i_rho) = rho_ambient
              u(i_mom0+1:i_mom0+ndim) = 0.0_dp
-             u(i_e) = ca**2 / (euler_gamma * eta_jet)
+             u(i_e) = sound_speed_medium**2 * rho_ambient / euler_gamma
 
-             if (d_inlet < 1) then
+             if (d_inlet < jet_radius) then
                 u(i_rho) = rho_jet
-                u(i_mom0+1) = mach * ca
+                u(i_mom0+1) = jet_mach_number * sound_speed_medium
              end if
 
              call to_conservative(u)
