@@ -62,17 +62,6 @@ subroutine get_flux(flux_dim, u, flux)
        0.5_dp * u(i_rho) * sum_v2 + u(i_e))
 end subroutine get_flux
 
-subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
-  !$acc routine seq
-  integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u_LR(n_tvars, 2)
-  real(dp), intent(out) :: cmax
-  real(dp)              :: cmin
-
-  call get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
-  cmax = max(abs(cmin), cmax)
-end subroutine get_max_wavespeed
-
 !> This implements formula (10.52) from "Riemann Solvers and Numerical Methods
 !> for Fluid Dynamics" by Toro.
 pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)

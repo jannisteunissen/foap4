@@ -249,14 +249,6 @@ contains
     source = 0.0_dp
   end subroutine source_term
 
-  pure subroutine get_max_wavespeed(flux_dim, u_LR, cmax)
-    !$acc routine seq
-    integer, intent(in)   :: flux_dim
-    real(dp), intent(in)  :: u_LR(n_tvars, 2)
-    real(dp), intent(out) :: cmax
-    cmax = abs(velocity(flux_dim))
-  end subroutine get_max_wavespeed
-
   pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
     !$acc routine seq
     integer, intent(in)   :: flux_dim

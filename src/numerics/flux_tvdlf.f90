@@ -18,14 +18,15 @@ subroutine flux_tvdlf_one_side(flux_dim, i0, u, flux, max_wavespeed)
   real(dp), intent(in)  :: u(1+2*n_gc, n_tvars)
   real(dp), intent(out) :: flux(n_tvars)
   real(dp), intent(out) :: max_wavespeed
-  real(dp)              :: u_LR(n_tvars, 2)
+  real(dp)              :: u_LR(n_tvars, 2), S_L, S_R
   real(dp)              :: flux_LR(n_tvars, 2)
 
   call reconstruct(u, i0, u_LR)
 
   call get_flux(flux_dim, u_LR(:, 1), flux_LR(:, 1))
   call get_flux(flux_dim, u_LR(:, 2), flux_LR(:, 2))
-  call get_max_wavespeed(flux_dim, u_LR, max_wavespeed)
+  call get_min_max_wavespeed(flux_dim, u_LR, S_L, S_R)
+  max_wavespeed = max(abs(S_L), abs(S_R))
 
   ! Convert to conservative
   call to_conservative(u_LR(:, 1))
