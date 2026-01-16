@@ -225,7 +225,7 @@ contains
 
     !$acc parallel loop present(f4%uu)
     do n = 1, f4%n_blocks
-       !$acc loop collapse(NDIM) private(rr)
+       !$acc loop collapse(NDIM) private(rr, d_inlet, d2_cloud, u)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
