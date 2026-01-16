@@ -1,3 +1,4 @@
+!> Convert conservative variables in-place to primitive ones
 pure subroutine to_primitive(u)
   !$acc routine seq
   real(dp), intent(inout) :: u(n_tvars)
@@ -15,6 +16,7 @@ pure subroutine to_primitive(u)
        (u(i_e) - 0.5_dp * u(i_rho) * sum_v2)
 end subroutine to_primitive
 
+!> Convert primitive variables in-place to conservative ones
 pure subroutine to_conservative(u)
   !$acc routine seq
   real(dp), intent(inout) :: u(n_tvars)
@@ -33,6 +35,7 @@ pure subroutine to_conservative(u)
   u(i_e) = u(i_e) * inv_gamma_m1 + 0.5_dp * u(i_rho) * sum_v2
 end subroutine to_conservative
 
+!> Compute flux (in conservative variables) from primitive variables
 subroutine get_flux(flux_dim, u, flux)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
@@ -75,7 +78,7 @@ end subroutine get_max_wavespeed
 pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u_LR(n_tvars, 2)
+  real(dp), intent(in)  :: u_LR(n_tvars, 2) !< Primitive variables
   real(dp), intent(out) :: cmin
   real(dp), intent(out) :: cmax
   real(dp)              :: rho_sqrt(2), fac, eta2, umean, csound2(2), dmean
@@ -85,9 +88,9 @@ pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
 
   umean = fac * (&
        rho_sqrt(1) * u_LR(i_mom0+flux_dim, 1) + &
-       rho_sqrt(1) * u_LR(i_mom0+flux_dim, 1))
+       rho_sqrt(2) * u_LR(i_mom0+flux_dim, 2))
 
-  ! Square of sound speed
+  ! Square of sound speed. Note that u_LR(i_e, :) is the pressure
   csound2 = euler_gamma * u_LR(i_e, :) / u_LR(i_rho, :)
 
   eta2 = 0.5_dp * fac**2 * rho_sqrt(1) * rho_sqrt(2)
