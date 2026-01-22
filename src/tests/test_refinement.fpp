@@ -211,6 +211,7 @@ contains
           do i = 1, f4%bx(1)
              rr = f4_block_face_coord(f4, i_block, face, i)
              f4%bc_data(i, i_phi, ix) = phi_init(rr(1), rr(2))
+             f4%bc_data_type(i, i_phi, ix) = f4_bc_dirichlet
           end do
 #:elif NDIM == 3
           !$acc loop collapse(2) private(rr)
@@ -218,6 +219,7 @@ contains
              do i = 1, f4%bx(1)
                 rr = f4_block_face_coord(f4, i_block, face, i, j)
                 f4%bc_data(i, j, i_phi, ix) = phi_init(rr(1), rr(2), rr(3))
+                f4%bc_data_type(i, j, i_phi, ix) = f4_bc_dirichlet
              end do
           end do
 #:endif

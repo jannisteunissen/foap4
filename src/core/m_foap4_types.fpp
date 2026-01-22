@@ -123,10 +123,10 @@ module m_foap4_types_${NDIM}$d
      integer :: n_blocks              !< Number of blocks used
      integer :: gc_mesh_revision = -1 !< Revision number (global) of the mesh
 
-     !> Array storing physical boundary conditions bc_type(ivar, iface)
-     integer, allocatable :: bc_type(:, :)
-     !> Array storing value of boundary conditions bc_value(ivar, iface)
-     real(dp), allocatable :: bc_value(:, :)
+     !> Array storing simple physical boundary conditions bc_simple_type(ivar, iface)
+     integer, allocatable :: bc_simple_type(:, :)
+     !> Array storing value of boundary conditions bc_simple(ivar, iface)
+     real(dp), allocatable :: bc_simple(:, :)
 
      !> Level of each block
      integer, allocatable  :: block_level(:)
@@ -146,6 +146,8 @@ module m_foap4_types_${NDIM}$d
      real(dp), allocatable :: bflux(@{DTIMES(:)}@, :)
      !> Storage of boundary condition data bc_data(i, [j,] i_var, i_face)
      real(dp), allocatable :: bc_data(@{DTIMES(:)}@, :)
+     !> Storage of boundary condition type bc_data_type(i, [j,] i_var, i_face)
+     integer, allocatable :: bc_data_type(@{DTIMES(:)}@, :)
 
      ! For communication
      type(MPI_comm)        :: mpicomm        !< MPI communicator

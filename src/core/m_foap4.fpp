@@ -201,10 +201,10 @@ contains
 
     ! OpenACC - Remove data from device
 
-    !$acc exit data delete(f4%bc_type, f4%bc_value)
+    !$acc exit data delete(f4%bc_simple_type, f4%bc_simple)
     !$acc exit data delete(f4%block_level, f4%block_origin)
     !$acc exit data delete(f4%uu, f4%refinement_flags)
-    !$acc exit data delete(f4%bc_data_ix, f4%bc_data, f4%bflux_ix, f4%bflux)
+    !$acc exit data delete(f4%bc_data_ix, f4%bc_data, f4%bc_data_type, f4%bflux_ix, f4%bflux)
     !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
     !$acc exit data delete(&
     !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
@@ -217,8 +217,8 @@ contains
     call pw_destroy(f4%pw)
 
     deallocate(f4%var_names)
-    deallocate(f4%bc_type)
-    deallocate(f4%bc_value)
+    deallocate(f4%bc_simple_type)
+    deallocate(f4%bc_simple)
     deallocate(f4%block_origin)
     deallocate(f4%block_level)
     deallocate(f4%refinement_flags)
@@ -227,6 +227,7 @@ contains
     deallocate(f4%bflux)
     deallocate(f4%bc_data_ix)
     deallocate(f4%bc_data)
+    deallocate(f4%bc_data_type)
     deallocate(f4%recv_buffer)
     deallocate(f4%send_buffer)
     deallocate(f4%recv_offset)
@@ -313,10 +314,10 @@ contains
        end do
     end do
 
-    allocate(f4%bc_type(f4%n_vars_all, 0:2*ndim-1))
-    allocate(f4%bc_value(f4%n_vars_all, 0:2*ndim-1))
-    f4%bc_type(:, :) = bc_type
-    f4%bc_value(:, :) = bc_value
+    allocate(f4%bc_simple_type(f4%n_vars_all, 0:2*ndim-1))
+    allocate(f4%bc_simple(f4%n_vars_all, 0:2*ndim-1))
+    f4%bc_simple_type(:, :) = bc_type
+    f4%bc_simple(:, :) = bc_value
 
     do i = 0, P4EST_MAXLEVEL-1
        f4%dr_level(:, i) = (tree_length/bx) * 0.5**i
@@ -336,6 +337,7 @@ contains
          f4%n_vars_all, max_blocks))
     allocate(f4%bflux(bx(1), n_vars, 0))
     allocate(f4%bc_data(bx(1), n_vars, 0))
+    allocate(f4%bc_data_type(bx(1), n_vars, 0))
     f4%gc_data_size = f4%bx(1) * f4%n_gc
     f4%gc_data_size_c2f = (f4%bx(1)/2) * f4%n_gc
     f4%gc_data_size_fluxfix = f4%bx(1)/2
@@ -344,6 +346,7 @@ contains
          f4%n_vars_all, max_blocks))
     allocate(f4%bflux(bx(1), bx(1), n_vars, 0))
     allocate(f4%bc_data(bx(1), bx(1), n_vars, 0))
+    allocate(f4%bc_data_type(bx(1), bx(1), n_vars, 0))
     f4%gc_data_size = f4%bx(1)**2 * f4%n_gc
     f4%gc_data_size_c2f = (f4%bx(1)/2)**2 * f4%n_gc
     f4%gc_data_size_fluxfix = (f4%bx(1)/2)**2
@@ -361,10 +364,10 @@ contains
 
     ! OpenACC - Copy data structure and create allocatable components
     !$acc enter data copyin(f4)
-    !$acc enter data copyin(f4%bc_type, f4%bc_value)
+    !$acc enter data copyin(f4%bc_simple_type, f4%bc_simple)
     !$acc enter data create(f4%block_level, f4%block_origin)
     !$acc enter data create(f4%uu, f4%refinement_flags)
-    !$acc enter data create(f4%bc_data_ix, f4%bc_data)
+    !$acc enter data create(f4%bc_data_ix, f4%bc_data, f4%bc_data_type)
     !$acc enter data create(f4%bflux_ix, f4%bflux)
     !$acc enter data create(f4%recv_buffer, f4%send_buffer)
     !$acc enter data create(&
@@ -403,13 +406,15 @@ contains
     if (n_face_bc > size(f4%bc_data, NDIM+1)) then
        ! Resize storage, and reserve extra space
        !$acc exit data delete(f4%bc_data)
-       deallocate(f4%bc_data)
+       deallocate(f4%bc_data, f4%bc_data_type)
 #:if NDIM == 2
        allocate(f4%bc_data(f4%bx(1), f4%n_vars, 2*n_face_bc))
+       allocate(f4%bc_data_type(f4%bx(1), f4%n_vars, 2*n_face_bc))
 #:elif NDIM == 3
        allocate(f4%bc_data(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_bc))
+       allocate(f4%bc_data_type(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_bc))
 #:endif
-       !$acc enter data create(f4%bc_data)
+       !$acc enter data create(f4%bc_data, f4%bc_data_type)
     end if
 
     if (n_face_rb > size(f4%bflux, NDIM+1)) then
@@ -502,17 +507,17 @@ contains
     if (bc_type > f4_bc_fixed_value) &
          error stop "Unsupported boundary condition type"
 
-    f4%bc_type(ivar, iface) = bc_type
-    f4%bc_value(ivar, iface) = bc_value
-    !$acc update device(f4%bc_type(ivar, iface), f4%bc_value(ivar, iface))
+    f4%bc_simple_type(ivar, iface) = bc_type
+    f4%bc_simple(ivar, iface) = bc_value
+    !$acc update device(f4%bc_simple_type(ivar, iface), f4%bc_simple(ivar, iface))
 
     ! Set for temporal copies
     if (ivar > f4%n_vars_nontemporal) then
        do k = 1, f4%n_temporal_states-1
           ix = ivar + k*f4%n_vars_temporal
-          f4%bc_type(ix, iface) = bc_type
-          f4%bc_value(ix, iface) = bc_value
-          !$acc update device(f4%bc_type(ix, iface), f4%bc_value(ix, iface))
+          f4%bc_simple_type(ix, iface) = bc_type
+          f4%bc_simple(ix, iface) = bc_value
+          !$acc update device(f4%bc_simple_type(ix, iface), f4%bc_simple(ix, iface))
        end do
     end if
 
@@ -2000,18 +2005,20 @@ contains
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
-                bc_type = f4%bc_type(ivar, ${face}$)
 
                 if (i_bc_data > 0) then
                    ! Use array value
 #:if face in ['0', '1']
                    bc_value = f4%bc_data(j, i_vars_first(iv), i_bc_data)
+                   bc_type = f4%bc_data_type(j, i_vars_first(iv), i_bc_data)
 #:else
                    bc_value = f4%bc_data(i, i_vars_first(iv), i_bc_data)
+                   bc_type = f4%bc_data_type(i, i_vars_first(iv), i_bc_data)
 #:endif
                 else
-                   ! Use stored scalar
-                   bc_value = f4%bc_value(ivar, ${face}$)
+                   ! Use scalar values
+                   bc_value = f4%bc_simple(ivar, ${face}$)
+                   bc_type = f4%bc_simple_type(ivar, ${face}$)
                 end if
 
                 select case (bc_type)
@@ -2081,20 +2088,23 @@ contains
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
-                   bc_type = f4%bc_type(ivar, ${face}$)
 
                    if (i_bc_data > 0) then
                    ! Use array value
 #:if face in ['0', '1']
                    bc_value = f4%bc_data(j, k, i_vars_first(iv), i_bc_data)
+                   bc_type = f4%bc_data_type(j, k, i_vars_first(iv), i_bc_data)
 #:elif face in ['2', '3']
                    bc_value = f4%bc_data(i, k, i_vars_first(iv), i_bc_data)
+                   bc_type = f4%bc_data_type(i, k, i_vars_first(iv), i_bc_data)
 #:else
                    bc_value = f4%bc_data(i, j, i_vars_first(iv), i_bc_data)
+                   bc_type = f4%bc_data_type(i, j, i_vars_first(iv), i_bc_data)
 #:endif
                 else
                    ! Use stored scalar
-                   bc_value = f4%bc_value(ivar, ${face}$)
+                   bc_value = f4%bc_simple(ivar, ${face}$)
+                   bc_type = f4%bc_simple_type(ivar, ${face}$)
                 end if
 
                    select case (bc_type)
@@ -2317,10 +2327,10 @@ contains
 #:enddef
 
     !$acc parallel present(f4%uu, f4%bx, f4%hbx, f4%gc_srl_local_iface, f4%gc_srl_local, &
-    !$acc &f4%gc_phys_iface, f4%gc_phys, f4%bc_data, f4%block_level, &
+    !$acc &f4%gc_phys_iface, f4%gc_phys, f4%bc_data, f4%bc_data_type, f4%block_level, &
     !$acc &f4%block_level, f4%dr_level, f4%gc_srl_from_buf_iface, f4%gc_srl_from_buf, &
-    !$acc &f4%recv_buffer, f4%gc_c2f_from_buf_iface,f4%bc_type, f4%bc_data_ix, &
-    !$acc &f4%bc_value, f4%gc_f2c_local, f4%gc_srl_from_buf, f4%gc_c2f_from_buf, &
+    !$acc &f4%recv_buffer, f4%gc_c2f_from_buf_iface,f4%bc_simple_type, f4%bc_data_ix, &
+    !$acc &f4%bc_simple, f4%gc_f2c_local, f4%gc_srl_from_buf, f4%gc_c2f_from_buf, &
     !$acc &f4%gc_f2c_local_iface) copyin(i_vars, i_vars_first)
 
     ! Fill local boundaries at the same refinement level
