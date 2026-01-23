@@ -6,9 +6,10 @@ module m_physics_euler_${NDIM}$d
 
   integer, parameter, private :: dp = kind(0.0d0)
 
-  real(dp), parameter :: euler_gamma  = 5.0_dp/3.0_dp
+  real(dp), protected :: euler_gamma = 1.4_dp
   !$acc declare create(euler_gamma)
-  real(dp), parameter :: inv_gamma_m1 = 1/(euler_gamma-1.0_dp)
+
+  real(dp), protected :: inv_gamma_m1 = 1/(1.4_dp - 1)
   !$acc declare create(inv_gamma_m1)
 
   ! Number of temporal variables
@@ -50,5 +51,16 @@ module m_physics_euler_${NDIM}$d
 
   real(dp) :: gravity_constant = 0.0_dp
   !$acc declare create(gravity_constant)
+
+contains
+
+  subroutine set_euler_gamma(gamma)
+    real(dp), intent(in) :: gamma
+
+    euler_gamma = gamma
+    inv_gamma_m1 = 1/(euler_gamma-1.0_dp)
+
+    !$acc update device(euler_gamma, inv_gamma_m1)
+  end subroutine set_euler_gamma
 
 end module m_physics_euler_${NDIM}$d
