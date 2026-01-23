@@ -124,9 +124,9 @@ contains
     integer                      :: integrator, n_time_states
     integer                      :: highest_level, prev_highest_level
     real(dp)                     :: dt, dt_lim, dt_output
-    real(dp)                     :: time, t0, t1
+    real(dp)                     :: t0, t1
 
-    time = 0.0_dp
+    f4%time = 0.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
     n_output = 0
     n_iterations = 0
@@ -172,21 +172,21 @@ contains
        end do
     end if
 
-    if (dt_output <= end_time) call io_write_grid(f4, base_name, n_output, time)
+    if (dt_output <= end_time) call io_write_grid(f4, base_name, n_output)
     n_output = n_output + 1
 
     t0 = MPI_Wtime()
 
-    do while (time < end_time)
+    do while (f4%time < end_time)
        n_iterations = n_iterations + 1
        dt = cfl_number * dt_lim
 
-       write_this_step = (time + dt > n_output * dt_output)
-       if (write_this_step) dt = n_output * dt_output - time
-       call rk_advance(f4, dt, dt_lim, time, integrator, feuler_finite_volume)
+       write_this_step = (f4%time + dt > n_output * dt_output)
+       if (write_this_step) dt = n_output * dt_output - f4%time
+       call rk_advance(f4, dt, dt_lim, integrator, feuler_finite_volume)
 
        if (write_this_step) then
-          call io_write_grid(f4, base_name, n_output, time)
+          call io_write_grid(f4, base_name, n_output)
           n_output = n_output + 1
        end if
 

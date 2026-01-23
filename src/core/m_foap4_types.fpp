@@ -119,6 +119,7 @@ module m_foap4_types_${NDIM}$d
      integer   :: ihi(ndim)                          !< Maximum index in a block
      real(dp)  :: dr_level(ndim, 0:p4est_maxlevel-1) !< Grid spacing per level
      character(len=32), allocatable :: var_names(:) !< Names of the variables
+     real(dp) :: time = 0.0_dp !< Time variable
 
      integer :: n_blocks              !< Number of blocks used
      integer :: gc_mesh_revision = -1 !< Revision number (global) of the mesh

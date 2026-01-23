@@ -56,13 +56,12 @@ module m_rk_${NDIM}$d
      !>
      !> If the index of the variable `y` is `i`, then the index of `y_out` is
      !> `i+s_out`, etc.
-     subroutine subr_feuler(f4, dt, dt_lim, time, s_deriv, n_prev, &
+     subroutine subr_feuler(f4, dt, dt_lim, s_deriv, n_prev, &
           s_prev, w_prev, s_out, i_step, n_steps)
        import
        type(foap4_t), intent(inout) :: f4
        real(dp), intent(in)         :: dt             !< Time step
        real(dp), intent(inout)      :: dt_lim         !< Computed time step limit
-       real(dp), intent(in)         :: time           !< Current time
        integer, intent(in)          :: s_deriv        !< State to compute derivatives from
        integer, intent(in)          :: n_prev         !< Number of previous states
        integer, intent(in)          :: s_prev(n_prev) !< Previous states
@@ -98,17 +97,17 @@ contains
 
   !> Advance solution over dt using time_integrator scheme, which can call
   !> forward_euler multiple times
-  subroutine rk_advance(f4, dt, dt_lim, time, time_integrator, forward_euler)
+  subroutine rk_advance(f4, dt, dt_lim, time_integrator, forward_euler)
     type(foap4_t), intent(inout) :: f4
     real(dp), intent(in)         :: dt     !< Current time step
     real(dp), intent(out)        :: dt_lim !< Time step limit
-    real(dp), intent(inout)      :: time   !< Current time
     !> One of the pre-defined time integrators (e.g. af_heuns_method)
     integer, intent(in)          :: time_integrator
     !> Forward Euler method provided by the user
     procedure(subr_feuler)       :: forward_euler
     integer                      :: n_steps, n_tvar
 
+    real(dp)            :: time_in
     real(dp), parameter :: third = 1/3.0_dp
     real(dp), parameter :: sixth = 1/6.0_dp
 
@@ -118,56 +117,68 @@ contains
     n_steps = rk_advance_num_steps(time_integrator)
     n_tvar = f4%n_vars_temporal
     dt_lim = 1e100_dp
+    time_in = f4%time
 
     select case (time_integrator)
     case (rk_forward_euler)
-       call forward_euler(f4, dt, dt_lim, time, 0, &
+       call forward_euler(f4, dt, dt_lim, 0, &
             1, [0], [1.0_dp], 0, 1, n_steps)
     case (rk_midpoint_method)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
             1, [0], [1.0_dp], n_tvar, 1, n_steps)
-       call forward_euler(f4, dt, dt_lim, time+0.5_dp*dt, n_tvar, &
+       f4%time = time_in + 0.5_dp*dt
+       call forward_euler(f4, dt, dt_lim, n_tvar, &
             1, [0], [1.0_dp], 0, 2, n_steps)
     case (rk_heuns_method)
-       call forward_euler(f4, dt, dt_lim, time, 0, &
+       call forward_euler(f4, dt, dt_lim, 0, &
             1, [0], [1.0_dp], n_tvar, 1, n_steps)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+dt, n_tvar, &
+       f4%time = time_in + dt
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, n_tvar, &
             2, [0, n_tvar], [0.5_dp, 0.5_dp], 0, 2, n_steps)
     case (rk_ssprk33_method)
-       call forward_euler(f4, dt, dt_lim, time, 0, &
+       call forward_euler(f4, dt, dt_lim, 0, &
             1, [0], [1.0_dp], n_tvar, 1, n_steps)
-       call forward_euler(f4, 0.25_dp*dt, dt_lim, time+dt, n_tvar, &
+       f4%time = time_in + dt
+       call forward_euler(f4, 0.25_dp*dt, dt_lim, n_tvar, &
             2, [0, n_tvar], [0.75_dp, 0.25_dp], 2*n_tvar, 2, n_steps)
-       call forward_euler(f4, 2*third*dt, dt_lim, time+0.5_dp*dt, 2*n_tvar, &
+       f4%time = time_in + 0.5_dp*dt
+       call forward_euler(f4, 2*third*dt, dt_lim, 2*n_tvar, &
             2, [0, 2*n_tvar], [third, 2*third], 0, 3, n_steps)
     case (rk_ssprk43_method)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
             1, [0], [1.0_dp], n_tvar, 1, n_steps)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, n_tvar, &
+       f4%time = time_in + 0.5_dp * dt
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, n_tvar, &
             1, [n_tvar], [1.0_dp], 2*n_tvar, 2, n_steps)
-       call forward_euler(f4, sixth*dt, dt_lim, time+dt, 2*n_tvar, &
+       f4%time = time_in + dt
+       call forward_euler(f4, sixth*dt, dt_lim, 2*n_tvar, &
             2, [0, 2*n_tvar], [2*third, third], 3*n_tvar, 3, n_steps)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, 3*n_tvar, &
+       f4%time = time_in + 0.5_dp * dt
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, 3*n_tvar, &
             1, [3*n_tvar], [1.0_dp], 0, 4, n_steps)
     case (rk_rk4_method)
        ! This looks different than the standard formulation in most textbooks.
        ! The idea is to construct the states needed for the derivatives, and
        ! then take a linear combination. Note the negative coefficient used in
        ! the last step.
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time, 0, &
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
             1, [0], [1.0_dp], n_tvar, 1, n_steps)
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, time+0.5_dp*dt, n_tvar, &
+       f4%time = time_in + 0.5_dp * dt
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, n_tvar, &
             1, [0], [1.0_dp], 2*n_tvar, 2, n_steps)
-       call forward_euler(f4, dt, dt_lim, time+0.5_dp*dt, 2*n_tvar, &
+       f4%time = time_in + 0.5_dp * dt
+       call forward_euler(f4, dt, dt_lim, 2*n_tvar, &
             1, [0], [1.0_dp], 3*n_tvar, 3, n_steps)
-       call forward_euler(f4, sixth*dt, dt_lim, time+dt, 3*n_tvar, &
+       f4%time = time_in + dt
+       call forward_euler(f4, sixth*dt, dt_lim, 3*n_tvar, &
             4, [0, n_tvar, 2*n_tvar, 3*n_tvar], &
             [-third, third, 2*third, third], 0, 4, n_steps)
     case default
        error stop "Unknown time integrator"
     end select
 
-    time = time + dt
+    f4%time = time_in + dt
   end subroutine rk_advance
 
 end module m_rk_${NDIM}$d
+

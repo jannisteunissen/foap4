@@ -91,10 +91,10 @@ contains
     logical                      :: write_this_step
     integer                      :: integrator, n_time_states
     real(dp)                     :: dt, dt_lim, dt_output
-    real(dp)                     :: time, t0, t1
+    real(dp)                     :: t0, t1
     real(dp)                     :: rho_initial_sum, rho_sum
 
-    time = 0.0_dp
+    f4%time = 0.0_dp
     dt_lim = 0.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
     n_output = 0
@@ -126,22 +126,22 @@ contains
     call f4_compute_sum(f4, i_rho, rho_initial_sum)
     call f4_get_global_highest_level(f4, prev_highest_level)
 
-    if (dt_output <= end_time) call io_write_grid(f4, base_name, n_output, time)
+    if (dt_output <= end_time) call io_write_grid(f4, base_name, n_output)
     n_output = n_output + 1
 
     t0 = MPI_Wtime()
 
-    do while (time <= end_time)
+    do while (f4%time <= end_time)
        n_iterations = n_iterations + 1
        dt = cfl_number * dt_lim
 
-       write_this_step = (time + dt >= n_output * dt_output)
-       if (write_this_step) dt = n_output * dt_output - time
+       write_this_step = (f4%time + dt >= n_output * dt_output)
+       if (write_this_step) dt = n_output * dt_output - f4%time
 
-       call rk_advance(f4, dt, dt_lim, time, integrator, feuler_finite_volume)
+       call rk_advance(f4, dt, dt_lim, integrator, feuler_finite_volume)
 
        if (write_this_step) then
-          call io_write_grid(f4, base_name, n_output, time)
+          call io_write_grid(f4, base_name, n_output)
           call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &

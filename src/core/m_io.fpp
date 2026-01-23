@@ -16,11 +16,10 @@ module m_io_${NDIM}$d
 contains
 
   !> Write the AMR grid to a file
-  subroutine io_write_grid(f4, fname, n_output, time, viewer, write_p4vtu)
+  subroutine io_write_grid(f4, fname, n_output, viewer, write_p4vtu)
     type(foap4_t), intent(inout)           :: f4
     character(len=*), intent(in)           :: fname    !< Base file name
     integer, intent(in)                    :: n_output !< Output index
-    real(dp), intent(in), optional         :: time     !< Simulation time
     character(len=*), intent(in), optional :: viewer   !< Optimize for viewer
     !> Also write p4est vtu file (default: false)
     logical, intent(in), optional          :: write_p4vtu
@@ -52,7 +51,7 @@ contains
          f4%n_blocks, f4%bx+2*f4%n_gc, f4%n_vars, &
          f4%var_names(1:f4%n_vars), f4%n_gc, &
          f4%block_origin(:, 1:f4%n_blocks), dr, &
-         get_block_cc_data=get_block_data, time=time, viewer=viewer)
+         get_block_cc_data=get_block_data, time=f4%time, viewer=viewer)
     t1 = MPI_Wtime()
     f4%wtime_write_grid = f4%wtime_write_grid + t1 - t0
 

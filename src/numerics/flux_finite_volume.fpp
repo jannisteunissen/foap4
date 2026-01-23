@@ -1,9 +1,8 @@
-subroutine feuler_finite_volume(f4, dt, dt_lim, time, s_deriv, &
+subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
      n_prev, s_prev, w_prev, s_out, i_step, n_steps)
   type(foap4_t), intent(inout) :: f4
   real(dp), intent(in)         :: dt
   real(dp), intent(inout)      :: dt_lim         !< Time step limit
-  real(dp), intent(in)         :: time           !< Current time
   integer, intent(in)          :: s_deriv        !< State to compute derivatives from
   integer, intent(in)          :: n_prev         !< Number of previous states
   integer, intent(in)          :: s_prev(n_prev) !< Previous states
