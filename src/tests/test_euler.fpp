@@ -114,12 +114,11 @@ contains
             f4_bc_dirichlet, 0.0_dp)
        call f4_set_bc_scalar(f4, i_mom0+NDIM, 2*(NDIM-1)+1, &
             f4_bc_dirichlet, 0.0_dp)
-       gravity_constant = 1.0_dp
+       call euler_initialize(5/3.0_dp, 1.0_dp, 1e-12_dp, 1e-12_dp)
     else
-       gravity_constant = 0.0_dp
+       call euler_initialize(5/3.0_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
     end if
 
-    !$acc update device(gravity_constant)
 
     call set_initial_conditions(f4, test_case)
 
@@ -278,7 +277,7 @@ contains
              f4%uu(${IJK}$, i_rho, n) = rho_low
           end if
 
-          f4%uu(${IJK}$, i_e, n) = inv_gamma_m1 * (p_interface - 1.0_dp * &
+          f4%uu(${IJK}$, i_e, n) = euler_inv_gamma_m1 * (p_interface - 1.0_dp * &
                f4%uu(${IJK}$, i_rho, n) * (rr(NDIM) - h0))
        end do; ${KJI_CLOSE_LOOP}$
     end do
@@ -287,8 +286,8 @@ contains
   subroutine source_term(u_prim, source)
     real(dp), intent(in)    :: u_prim(n_tvars)
     real(dp), intent(inout) :: source(n_tvars)
-    source(i_mom0+NDIM) = -gravity_constant * u_prim(i_rho)
-    source(i_e)         = -gravity_constant * source(i_mom0+NDIM)
+    source(i_mom0+NDIM) = -euler_gravity * u_prim(i_rho)
+    source(i_e)         = -euler_gravity * source(i_mom0+NDIM)
   end subroutine source_term
 
   #:include 'physics_euler.fpp'

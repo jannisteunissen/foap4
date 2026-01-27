@@ -6,11 +6,11 @@ module m_physics_euler_${NDIM}$d
 
   integer, parameter, private :: dp = kind(0.0d0)
 
-  real(dp), protected :: euler_gamma = 1.4_dp
+  real(dp), protected :: euler_gamma = 5/3.0_dp
   !$acc declare create(euler_gamma)
 
-  real(dp), protected :: inv_gamma_m1 = 1/(1.4_dp - 1)
-  !$acc declare create(inv_gamma_m1)
+  real(dp), protected :: euler_inv_gamma_m1 = 1/(5/3.0_dp - 1)
+  !$acc declare create(euler_inv_gamma_m1)
 
   ! Number of temporal variables
   integer, parameter :: n_tvars = 2 + ${NDIM}$
@@ -49,18 +49,34 @@ module m_physics_euler_${NDIM}$d
   ! Which variables are temporal
   logical, parameter :: var_temporal(n_vars_all) = .true.
 
-  real(dp) :: gravity_constant = 0.0_dp
-  !$acc declare create(gravity_constant)
+  real(dp) :: euler_gravity = 0.0_dp
+  !$acc declare create(euler_gravity)
+
+  real(dp) :: euler_rho_floor = 0.0_dp
+  !$acc declare create(euler_rho_floor)
+
+  real(dp) :: euler_p_floor = 0.0_dp
+  !$acc declare create(euler_p_floor)
 
 contains
 
-  subroutine set_euler_gamma(gamma)
+  subroutine euler_initialize(gamma, gravity, rho_floor, p_floor)
     real(dp), intent(in) :: gamma
+    real(dp), intent(in) :: gravity
+    real(dp), intent(in) :: rho_floor
+    real(dp), intent(in) :: p_floor
 
     euler_gamma = gamma
-    inv_gamma_m1 = 1/(euler_gamma-1.0_dp)
+    euler_inv_gamma_m1 = 1/(euler_gamma-1.0_dp)
 
-    !$acc update device(euler_gamma, inv_gamma_m1)
-  end subroutine set_euler_gamma
+    euler_gravity = gravity
+
+    euler_rho_floor = rho_floor
+    euler_p_floor = p_floor
+
+    !$acc update device(euler_gamma, euler_inv_gamma_m1)
+    !$acc update device(euler_gravity)
+    !$acc update device(euler_rho_floor, euler_p_floor)
+  end subroutine euler_initialize
 
 end module m_physics_euler_${NDIM}$d

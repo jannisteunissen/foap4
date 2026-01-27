@@ -5,7 +5,7 @@
 !> J. Comput. Phys. 54, 115–173 (1984)
 #:assert NDIM == 2
 #:include '../core/definitions.fpp'
-#:set LIMITER = 'mc'
+#:set LIMITER = 'vanleer'
 #:set FLUX_SCHEME = 'hll'
 program test_dmr
   use iso_fortran_env, only: int64
@@ -30,7 +30,7 @@ program test_dmr
   integer           :: min_level          = 2
   integer           :: max_level          = 4
   integer           :: max_blocks         = 1000
-  integer           :: bx(NDIM)           = 32
+  integer           :: bx(NDIM)           = 24
   integer           :: num_outputs        = 40
   logical           :: periodic(NDIM)     = .false.
   logical           :: do_refinement      = .false.
@@ -50,6 +50,8 @@ program test_dmr
   real(dp) :: dmr_xr, dmr_shock_angle, dmr_vx
   real(dp) :: dmr_mach, dmr_tan_angle
   real(dp) :: dmr_uL(n_tvars), dmr_uR(n_tvars)
+
+  call euler_initialize(1.4_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
 
   blocks_per_dim(:) = [4, 1]
   domain_length(:) = [4.0_dp, 1.0_dp]
@@ -79,8 +81,6 @@ program test_dmr
   dmr_uR = [1.4_dp, 0.0_dp, 0.0_dp, 1.0_dp]
   call to_conservative(dmr_uR)
   !$acc enter data copyin(dmr_uR)
-
-  call set_euler_gamma(1.4_dp)
 
   call f4_initialize(f4, "error")
 

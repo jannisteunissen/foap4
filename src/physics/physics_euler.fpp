@@ -5,6 +5,9 @@ pure subroutine to_primitive(u)
   real(dp)                :: inv_rho, sum_v2
   integer                 :: idim
 
+  ! Apply density floor
+  u(i_rho) = max(u(i_rho), euler_rho_floor)
+
   inv_rho = 1/u(i_rho)
   sum_v2 = 0.0_dp
   do idim = 1, ${NDIM}$
@@ -14,6 +17,9 @@ pure subroutine to_primitive(u)
 
   u(i_e) = (euler_gamma - 1.0_dp) * &
        (u(i_e) - 0.5_dp * u(i_rho) * sum_v2)
+
+  ! Apply pressure floor
+  u(i_e) = max(u(i_e), euler_p_floor)
 end subroutine to_primitive
 
 !> Convert primitive variables in-place to conservative ones
@@ -32,7 +38,7 @@ pure subroutine to_conservative(u)
   end do
 
   ! Compute energy from pressure and kinetic energy
-  u(i_e) = u(i_e) * inv_gamma_m1 + 0.5_dp * u(i_rho) * sum_v2
+  u(i_e) = u(i_e) * euler_inv_gamma_m1 + 0.5_dp * u(i_rho) * sum_v2
 end subroutine to_conservative
 
 !> Compute flux (in conservative variables) from primitive variables
@@ -58,7 +64,7 @@ subroutine get_flux(flux_dim, u, flux)
   flux(i_mom0+flux_dim) = flux(i_mom0+flux_dim) + u(i_e)
 
   ! Energy flux
-  flux(i_e) = u(i_mom0+flux_dim) * (u(i_e) * inv_gamma_m1 + &
+  flux(i_e) = u(i_mom0+flux_dim) * (u(i_e) * euler_inv_gamma_m1 + &
        0.5_dp * u(i_rho) * sum_v2 + u(i_e))
 end subroutine get_flux
 
@@ -72,15 +78,16 @@ pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
   real(dp), intent(out) :: cmax
   real(dp)              :: rho_sqrt(2), fac, eta2, umean, csound2(2), dmean
 
-  rho_sqrt = sqrt(u_LR(i_rho, :))
+  rho_sqrt = sqrt(max(u_LR(i_rho, :), euler_rho_floor))
   fac = 1/(rho_sqrt(1) + rho_sqrt(2))
 
   umean = fac * (&
        rho_sqrt(1) * u_LR(i_mom0+flux_dim, 1) + &
        rho_sqrt(2) * u_LR(i_mom0+flux_dim, 2))
 
-  ! Square of sound speed. Note that u_LR(i_e, :) is the pressure
-  csound2 = euler_gamma * u_LR(i_e, :) / u_LR(i_rho, :)
+  ! Use robust sound speed calculation
+  csound2(1) = get_csound2_from_prim(u_LR(:, 1))
+  csound2(2) = get_csound2_from_prim(u_LR(:, 2))
 
   eta2 = 0.5_dp * fac**2 * rho_sqrt(1) * rho_sqrt(2)
 
@@ -90,3 +97,17 @@ pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
   cmin = umean - dmean
   cmax = umean + dmean
 end subroutine get_min_max_wavespeed
+
+!> Compute sound speed squared from primitive variable array
+pure function get_csound2_from_prim(u) result(csound2)
+  !$acc routine seq
+  real(dp), intent(in) :: u(n_tvars)  !< Primitive variables
+  real(dp)             :: csound2
+  real(dp)             :: rho_safe, p_safe
+
+  ! Apply floors for robustness
+  rho_safe = max(u(i_rho), euler_rho_floor)
+  p_safe = max(u(i_e), euler_p_floor)
+
+  csound2 = euler_gamma * p_safe / rho_safe
+end function get_csound2_from_prim
