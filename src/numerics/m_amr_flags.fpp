@@ -244,7 +244,7 @@ contains
 #:endif
 
     ! Factor to compute average of stencil
-    fac = 1.0_dp/(ndim * (f4%n_gc + 1))
+    fac = 1.0_dp/(ndim * (2*f4%n_gc + 1))
 
     do step = 1, n_smoothing_steps
        call f4_update_ghostcells(f4, 1, [iv_flag])
