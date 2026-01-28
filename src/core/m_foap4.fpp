@@ -7,6 +7,7 @@
 #:include 'definitions.fpp'
 module m_foap4_${NDIM}$d
   use mpi_f08
+  use, intrinsic :: iso_c_binding
   use m_foap4_types_${NDIM}$d
 
   implicit none
