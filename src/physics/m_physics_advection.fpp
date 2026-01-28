@@ -11,8 +11,8 @@ module m_physics_advection_${NDIM}$d
   ! Total number of variables
   integer, parameter           :: n_vars_all = n_tvars + 1
 
-  ! Variable for storing AMR flags
-  integer, parameter           :: i_amr_flag = 1
+  ! Variable for storing error
+  integer, parameter           :: i_error = 1
 
   ! Density variable
   integer, parameter           :: i_rho = 2
@@ -25,13 +25,22 @@ module m_physics_advection_${NDIM}$d
 
   ! Names of variables
   character(len=10), parameter :: var_names(n_vars_all) = &
-       [character(len=10)      :: "amr_flag", "rho"]
+       [character(len=10)      :: "error", "rho"]
 
   ! Velocity
-  real(dp)                     :: velocity(${NDIM}$) = 1.0_dp
-  !$acc declare create(velocity)
+  real(dp)                     :: advection_velocity(${NDIM}$) = 1.0_dp
+  !$acc declare create(advection_velocity)
 
   ! Which variables are temporal
   logical, parameter           :: var_temporal(n_vars_all) = [.false., .true.]
+
+contains
+
+  subroutine advection_initialize(velocity)
+    real(dp), intent(in) :: velocity(${NDIM}$)
+
+    advection_velocity = velocity
+    !$acc update device(advection_velocity)
+  end subroutine advection_initialize
 
 end module m_physics_advection_${NDIM}$d

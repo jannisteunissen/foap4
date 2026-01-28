@@ -178,6 +178,7 @@ contains
     end select
 
     f4%time = time_in + dt
+    !$acc update device(f4%time)
   end subroutine rk_advance
 
 end module m_rk_${NDIM}$d
