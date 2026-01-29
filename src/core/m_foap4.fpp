@@ -1555,9 +1555,12 @@ contains
                 ivar = i_vars(iv)
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + j
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
-                     f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
-                     f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, iq), &
+                     f4%uu(i_c-1, j_c, ivar, iq), &
+                     f4%uu(i_c+1, j_c, ivar, iq), &
+                     f4%uu(i_c, j_c-1, ivar, iq), &
+                     f4%uu(i_c, j_c+1, ivar, iq), fine)
 
                 i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, ${jlim}$, ${ilim}$)
                 f4%send_buffer(i_buf+1:i_buf+4) = fine
@@ -1577,9 +1580,12 @@ contains
                 i_c = ${ic0}$ + half_n_gc + 1
                 j_c = ${jc0}$ + j
 
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
-                     f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
-                     f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, iq), &
+                     f4%uu(i_c-1, j_c, ivar, iq), &
+                     f4%uu(i_c+1, j_c, ivar, iq), &
+                     f4%uu(i_c, j_c-1, ivar, iq), &
+                     f4%uu(i_c, j_c+1, ivar, iq), fine)
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
                 f4%send_buffer(i_buf+1) = fine(1)
@@ -1592,9 +1598,12 @@ contains
                 i_c = ${ic0}$ + 0
                 j_c = ${jc0}$ + j
 
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
-                     f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
-                     f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, iq), &
+                     f4%uu(i_c-1, j_c, ivar, iq), &
+                     f4%uu(i_c+1, j_c, ivar, iq), &
+                     f4%uu(i_c, j_c-1, ivar, iq), &
+                     f4%uu(i_c, j_c+1, ivar, iq), fine)
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, j, ${jlim}$)
                 f4%send_buffer(i_buf+1) = fine(2)
@@ -1607,9 +1616,12 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + half_n_gc + 1
 
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
-                     f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
-                     f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, iq), &
+                     f4%uu(i_c-1, j_c, ivar, iq), &
+                     f4%uu(i_c+1, j_c, ivar, iq), &
+                     f4%uu(i_c, j_c-1, ivar, iq), &
+                     f4%uu(i_c, j_c+1, ivar, iq), fine)
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
                 f4%send_buffer(i_buf+1) = fine(1)
@@ -1622,9 +1634,12 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + 0
 
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, iq), &
-                     f4%uu(i_c-1, j_c, iv, iq), f4%uu(i_c+1, j_c, iv, iq), &
-                     f4%uu(i_c, j_c-1, iv, iq), f4%uu(i_c, j_c+1, iv, iq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, iq), &
+                     f4%uu(i_c-1, j_c, ivar, iq), &
+                     f4%uu(i_c+1, j_c, ivar, iq), &
+                     f4%uu(i_c, j_c-1, ivar, iq), &
+                     f4%uu(i_c, j_c+1, ivar, iq), fine)
 
                 i_buf = i_buf0 + 2 * ix_offset2(iv, i, ${ilim}$)
                 f4%send_buffer(i_buf+1) = fine(3)
@@ -1654,10 +1669,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, iq), &
                         fine)
 
                    i_buf = i_buf0 + 8 * &
@@ -1682,10 +1701,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, iq), &
                         fine)
                    i_buf = i_buf0 + 4 * ix_offset3(iv, k, j, n_vars, ${klim}$)
                    f4%send_buffer(i_buf+1) = fine(1)
@@ -1703,10 +1726,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, iq), &
                         fine)
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, k, j, n_vars, ${klim}$)
@@ -1725,10 +1752,14 @@ contains
                    j_c = ${jc0}$ + half_n_gc + 1
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, iq), &
                         fine)
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, k, i, n_vars, ${klim}$)
@@ -1747,10 +1778,14 @@ contains
                    j_c = ${jc0}$ + 0
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, iq), &
                         fine)
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, k, i, n_vars, ${klim}$)
@@ -1769,10 +1804,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + half_n_gc + 1
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, iq), &
                         fine)
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, n_vars, ${jlim}$)
@@ -1792,10 +1831,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + 0
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, iq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, iq), f4%uu(i_c+1, j_c, k_c, iv, iq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, iq), f4%uu(i_c, j_c+1, k_c, iv, iq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, iq), f4%uu(i_c, j_c, k_c+1, iv, iq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, iq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, iq), &
                         fine)
 
                    i_buf = i_buf0 + 4 * ix_offset3(iv, j, i, n_vars, ${jlim}$)
@@ -2459,9 +2502,12 @@ contains
                 j_f = ${jf0}$ + 2 * j - 1
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + j
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
-                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
-                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, jq), &
+                     f4%uu(i_c-1, j_c, ivar, jq), &
+                     f4%uu(i_c+1, j_c, ivar, jq), &
+                     f4%uu(i_c, j_c-1, ivar, jq), &
+                     f4%uu(i_c, j_c+1, ivar, jq), fine)
                 f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
                 f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
                 f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
@@ -2482,9 +2528,12 @@ contains
                 i_c = ${ic0}$ + 0
                 j_c = ${jc0}$ + j
 
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
-                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
-                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, jq), &
+                     f4%uu(i_c-1, j_c, ivar, jq), &
+                     f4%uu(i_c+1, j_c, ivar, jq), &
+                     f4%uu(i_c, j_c-1, ivar, jq), &
+                     f4%uu(i_c, j_c+1, ivar, jq), fine)
 
                 f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
                 f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
@@ -2498,9 +2547,12 @@ contains
                 i_c = ${ic0}$ + (half_n_gc + 1)
                 j_c = ${jc0}$ + j
 
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
-                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
-                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, jq), &
+                     f4%uu(i_c-1, j_c, ivar, jq), &
+                     f4%uu(i_c+1, j_c, ivar, jq), &
+                     f4%uu(i_c, j_c-1, ivar, jq), &
+                     f4%uu(i_c, j_c+1, ivar, jq), fine)
 
                 f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
                 f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
@@ -2514,9 +2566,12 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + 0
 
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
-                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
-                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, jq), &
+                     f4%uu(i_c-1, j_c, ivar, jq), &
+                     f4%uu(i_c+1, j_c, ivar, jq), &
+                     f4%uu(i_c, j_c-1, ivar, jq), &
+                     f4%uu(i_c, j_c+1, ivar, jq), fine)
 
                 f4%uu(i_f  , j_f+1, ivar, iq) = fine(3)
                 f4%uu(i_f+1, j_f+1, ivar, iq) = fine(4)
@@ -2530,9 +2585,12 @@ contains
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + (half_n_gc + 1)
 
-                call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, iv, jq), &
-                     f4%uu(i_c-1, j_c, iv, jq), f4%uu(i_c+1, j_c, iv, jq), &
-                     f4%uu(i_c, j_c-1, iv, jq), f4%uu(i_c, j_c+1, iv, jq), fine)
+                call prolong(f4%gminmod_theta_prolong, &
+                     f4%uu(i_c, j_c, ivar, jq), &
+                     f4%uu(i_c-1, j_c, ivar, jq), &
+                     f4%uu(i_c+1, j_c, ivar, jq), &
+                     f4%uu(i_c, j_c-1, ivar, jq), &
+                     f4%uu(i_c, j_c+1, ivar, jq), fine)
 
                 f4%uu(i_f  , j_f  , ivar, iq) = fine(1)
                 f4%uu(i_f+1, j_f  , ivar, iq) = fine(2)
@@ -2563,10 +2621,14 @@ contains
                    i_c = ${ic0}$ + i
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, jq), &
                         fine)
                    f4%uu(i_f  , j_f  , k_f,   ivar, iq) = fine(1)
                    f4%uu(i_f+1, j_f  , k_f,   ivar, iq) = fine(2)
@@ -2596,10 +2658,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, jq), &
                         fine)
 
                    f4%uu(i_f+1, j_f  , k_f, ivar, iq) = fine(2)
@@ -2620,10 +2686,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, jq), &
                         fine)
 
                    f4%uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
@@ -2644,10 +2714,14 @@ contains
                    j_c = ${jc0}$ + 0
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, jq), &
                         fine)
 
                    f4%uu(i_f  , j_f+1, k_f, ivar, iq) = fine(3)
@@ -2668,10 +2742,14 @@ contains
                    j_c = ${jc0}$ + (half_n_gc + 1)
                    k_c = ${kc0}$ + k
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, jq), &
                         fine)
 
                    f4%uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
@@ -2692,10 +2770,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + 0
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, jq), &
                         fine)
 
                    f4%uu(i_f  , j_f  , k_f+1, ivar, iq) = fine(5)
@@ -2716,10 +2798,14 @@ contains
                    j_c = ${jc0}$ + j
                    k_c = ${kc0}$ + (half_n_gc + 1)
 
-                   call prolong(f4%gminmod_theta_prolong, f4%uu(i_c, j_c, k_c, iv, jq), &
-                        f4%uu(i_c-1, j_c, k_c, iv, jq), f4%uu(i_c+1, j_c, k_c, iv, jq), &
-                        f4%uu(i_c, j_c-1, k_c, iv, jq), f4%uu(i_c, j_c+1, k_c, iv, jq), &
-                        f4%uu(i_c, j_c, k_c-1, iv, jq), f4%uu(i_c, j_c, k_c+1, iv, jq), &
+                   call prolong(f4%gminmod_theta_prolong, &
+                        f4%uu(i_c, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c-1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c+1, j_c, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c-1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c+1, k_c, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c-1, ivar, jq), &
+                        f4%uu(i_c, j_c, k_c+1, ivar, jq), &
                         fine)
 
                    f4%uu(i_f  , j_f  , k_f, ivar, iq) = fine(1)
