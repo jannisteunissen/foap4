@@ -1,6 +1,6 @@
 #:include 'definitions.fpp'
-#:set LIMITER = 'weno5'
-#:set FLUX_SCHEME = 'hll'
+#:set LIMITER = getvar('USE_LIMITER', 'weno5')
+#:set FLUX_SCHEME = getvar('USE_FLUX_SCHEME', 'hll')
 
 program test_adv
   use iso_fortran_env, only: int64
@@ -24,7 +24,7 @@ program test_adv
   real(dp) :: c_refine       = 0.1_dp
   real(dp) :: c_derefine     = 0.0125_dp
   real(dp) :: c_eps          = 0.01_dp
-  real(dp) :: c_abs          = 1e-16_dp
+  real(dp) :: c_abs          = 1e-6_dp
 
   logical           :: do_refinement        = .true.
   integer           :: max_refinement_level = 3
@@ -234,7 +234,7 @@ contains
     real(dp), intent(in) :: t
     real(dp)             :: distance, q
     real(dp), parameter  :: radius = 0.1_dp
-    real(dp), parameter  :: border = 0.02_dp
+    real(dp), parameter  :: border = 0.05_dp
 #:if NDIM == 2
     real(dp) :: x0, y0
 #:elif NDIM == 3
