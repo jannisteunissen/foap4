@@ -6,8 +6,8 @@ program test_ref
 
   implicit none
   integer, parameter :: dp    = kind(0.0d0)
-  integer            :: i_phi = 1
-  integer            :: i_err = 2
+  integer            :: i_err = 1
+  integer            :: i_phi = 2
   type(CFG_t)        :: cfg
 
   integer           :: min_level
@@ -123,7 +123,7 @@ contains
     integer, parameter           :: n_blocks_per_dim(NDIM) = 1
     real(dp), parameter          :: block_length(NDIM)     = 1.0_dp
     integer, parameter           :: n_vars                 = 2
-    character(len=20)            :: var_names(n_vars)      = ['phi', 'err']
+    character(len=20)            :: var_names(n_vars)      = ['err', 'phi']
     logical, parameter           :: temporal(n_vars)       = [.false., .false.]
     integer, parameter           :: n_temporal_states      = 1
     logical, parameter           :: periodic(NDIM)         = .false.
