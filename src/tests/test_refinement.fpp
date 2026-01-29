@@ -24,17 +24,17 @@ program test_ref
 #:if NDIM == 2
   min_level = 3
   num_refine_steps = 7
-  max_blocks = 2000
+  max_blocks = 3000
 #:elif NDIM == 3
   min_level = 2
   num_refine_steps = 5
-  max_blocks = 5000
+  max_blocks = 10000
 #:endif
 
   write_output    = .false.
   test_coarsening = .true.
   bx(:)           = 8
-  test_coarsening = .false.
+  test_coarsening = .true.
   abort_on_error  = .true.
 
   call CFG_update_from_arguments(cfg)
@@ -124,6 +124,8 @@ contains
     real(dp), parameter          :: block_length(NDIM)     = 1.0_dp
     integer, parameter           :: n_vars                 = 2
     character(len=20)            :: var_names(n_vars)      = ['phi', 'err']
+    logical, parameter           :: temporal(n_vars)       = [.false., .false.]
+    integer, parameter           :: n_temporal_states      = 1
     logical, parameter           :: periodic(NDIM)         = .false.
     logical, parameter           :: partition              = .true.
     integer                      :: n, prev_mesh_revision
@@ -131,8 +133,8 @@ contains
     f4%bc_callback => bc_callback
 
     call f4_construct_brick(f4, n_blocks_per_dim, block_length, bx, n_gc, &
-         n_vars, var_names, [.false., .false.], 1, periodic, min_level, max_blocks, &
-         f4_bc_dirichlet, 0.0_dp)
+         n_vars, var_names, temporal, n_temporal_states, periodic, &
+         min_level, max_blocks, f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
     call f4_update_ghostcells(f4, 1, [i_phi])
@@ -306,7 +308,8 @@ contains
           end if
 
           if (abs(f4%uu(${IJK}$, i_err, n)) > max_difference) then
-             print *, "Numerical error:", f4%uu(${IJK}$, i_err, n)
+             print *, f4%mpirank, "error: ", f4%uu(${IJK}$, i_err, n), "block: ", n, &
+                  "index:", ${IJK}$
              if (abort_on_error) then
                 stop "Too large error"
              end if
