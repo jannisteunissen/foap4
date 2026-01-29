@@ -3450,10 +3450,10 @@ contains
        end do
     end if
 
-    if (n_recv > 1) then
+    if (n_recv > 0) then
        call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
     end if
-    if (n_send > 1) then
+    if (n_send > 0) then
        call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
     end if
 
