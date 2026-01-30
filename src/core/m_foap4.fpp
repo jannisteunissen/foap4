@@ -397,10 +397,10 @@ contains
     ! Number of faces next to physical boundary
     n_face_bc = f4%gc_phys_iface(2*NDIM) - 1
 
-    ! Number of faces next to refinement boundary. For the local ones, there
-    ! are 2^(NDIM-1) fine faces, correct to also get the coarse faces counted.
-    n_face_rb = (f4%gc_f2c_local_iface(2*NDIM) - 1)/2**(NDIM-1) * &
-         (2**(NDIM-1) + 1) + &
+    ! Number of faces next to refinement boundary. For the local ones, also
+    ! add storage for the coarse side. Since it is not guaranteed that the
+    ! fine sides are all on the same MPI rank, add an equal number to be safe
+    n_face_rb = 2 * (f4%gc_f2c_local_iface(2*NDIM) - 1) + &
          f4%gc_f2c_to_buf_iface(2*NDIM) - 1 + &
          f4%gc_c2f_from_buf_iface(2*NDIM) - 1
 
@@ -459,9 +459,9 @@ contains
           ix = ix + 1
           f4%bflux_ix(face, i_fine) = ix
 
-          ! Add index for coarse block if offset is all zero. Note that the
-          ! face is reversed.
-          if (all(offset == 0)) then
+          ! Add index for coarse block if not set already. Note that the face
+          ! is reversed.
+          if (f4%bflux_ix(face_swap(face), i_coarse) == 0) then
              ix = ix + 1
              f4%bflux_ix(face_swap(face), i_coarse) = ix
           end if
