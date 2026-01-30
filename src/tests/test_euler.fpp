@@ -1,6 +1,6 @@
 #:include '../core/definitions.fpp'
-#:set LIMITER = 'vanleer'
-#:set FLUX_SCHEME = 'tvdlf'
+#:set LIMITER = getvar('USE_LIMITER', 'vanleer')
+#:set FLUX_SCHEME = getvar('USE_FLUX_SCHEME', 'hll')
 
 program euler
   use iso_fortran_env, only: int64
@@ -27,7 +27,6 @@ program euler
   integer           :: blocks_per_dim(NDIM) = 1
   integer           :: bx(NDIM)           = 32
   integer           :: num_outputs        = 40
-  logical           :: periodic(NDIM)     = .true.
   logical           :: do_refinement      = .false.
   real(dp)          :: end_time           = 2.0_dp
   real(dp)          :: c_refine           = 0.8_dp
@@ -53,7 +52,6 @@ program euler
   call CFG_add_get(cfg, 'n_steps_refinement', n_steps_refinement, &
        'Perform refinement every N steps')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
-  call CFG_add_get(cfg, 'periodic', periodic, 'Whether the domain is periodic')
   call CFG_add_get(cfg, 'bx', bx, 'Size of grid blocks')
   call CFG_add_get(cfg, 'blocks_per_dim', blocks_per_dim, &
        'Number of blocks (per dimension) on coarse grid')
@@ -74,24 +72,25 @@ contains
 
   subroutine test_euler(f4, bx, min_level, max_blocks, num_outputs, base_name, &
        test_case, end_time, integrator_name)
-    type(foap4_t), intent(inout) :: f4
-    integer, intent(in)          :: bx(NDIM)
-    integer, intent(in)          :: min_level
-    integer, intent(in)          :: max_blocks
-    integer, intent(in)          :: num_outputs
-    character(len=*), intent(in) :: base_name
-    character(len=*), intent(in) :: test_case
-    real(dp), intent(in)         :: end_time
+    type(foap4_t), intent(inout)  :: f4
+    integer, intent(in)           :: bx(NDIM)
+    integer, intent(in)           :: min_level
+    integer, intent(in)           :: max_blocks
+    integer, intent(in)           :: num_outputs
+    character(len=*), intent(in)  :: base_name
+    character(len=*), intent(in)  :: test_case
+    real(dp), intent(in)          :: end_time
     character(len=40), intent(in) :: integrator_name
-    real(dp), parameter          :: block_length(NDIM) = 1.0_dp
-    integer                      :: n_output
-    integer                      :: n, n_iterations, ierr, prev_mesh_revision
-    integer(int64)               :: sum_local_blocks, sum_global_blocks
-    logical                      :: write_this_step
-    integer                      :: integrator, n_time_states
-    integer                      :: highest_level, prev_highest_level
-    real(dp)                     :: dt, dt_lim, dt_output
-    real(dp)                     :: t0, t1, rho_sum, rho_initial_sum
+    real(dp)                      :: block_length(NDIM), domain_length(NDIM)
+    logical                       :: periodic(NDIM) = .true.
+    integer                       :: n_output
+    integer                       :: n, n_iterations, ierr, prev_mesh_revision
+    integer(int64)                :: sum_local_blocks, sum_global_blocks
+    logical                       :: write_this_step
+    integer                       :: integrator, n_time_states
+    integer                       :: highest_level, prev_highest_level
+    real(dp)                      :: dt, dt_lim, dt_output
+    real(dp)                      :: t0, t1, rho_sum, rho_initial_sum
 
     f4%time = 0.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
@@ -103,22 +102,48 @@ contains
     integrator = rk_get_integrator_by_name(trim(integrator_name))
     n_time_states = rk_advance_num_copies(integrator)
 
-    if (test_case == "rt") periodic(NDIM) = .false.
+    select case (test_case)
+    case ("rt")
+       ! Rayleigh-Taylor test case, as also used in e.g. MPI-AMRVAC
+       periodic(NDIM) = .false.
+       domain_length = 1.0_dp
+       block_length = domain_length / blocks_per_dim
 
-    call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
-         n_vars_all, var_names, var_temporal, n_time_states, periodic, &
-         min_level, max_blocks, f4_bc_neumann, 0.0_dp)
+       call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
+            n_vars_all, var_names, var_temporal, n_time_states, periodic, &
+            min_level, max_blocks, f4_bc_neumann, 0.0_dp)
 
-    if (test_case == "rt") then
        call f4_set_bc_scalar(f4, i_mom0+NDIM, 2*(NDIM-1), &
             f4_bc_dirichlet, 0.0_dp)
        call f4_set_bc_scalar(f4, i_mom0+NDIM, 2*(NDIM-1)+1, &
             f4_bc_dirichlet, 0.0_dp)
-       call euler_initialize(5/3.0_dp, 1.0_dp, 1e-12_dp, 1e-12_dp)
-    else
-       call euler_initialize(5/3.0_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
-    end if
 
+       call euler_initialize(5/3.0_dp, -1.0_dp, 1e-12_dp, 1e-12_dp)
+    case ("sod")
+       ! Standard 1D Sod shock tube test
+       domain_length = 1.0_dp
+       block_length = domain_length / blocks_per_dim
+
+       call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
+            n_vars_all, var_names, var_temporal, n_time_states, periodic, &
+            min_level, max_blocks, f4_bc_neumann, 0.0_dp)
+
+       call euler_initialize(5/3.0_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
+    case ("vortex")
+       ! Isentropic vortex from Shu "Essentially non-oscillatory and
+       ! weighted essentially non-oscillatory schemes for hyperbolic
+       ! conservation laws" (1998)
+       domain_length = 10.0_dp
+       block_length = domain_length / blocks_per_dim
+
+       call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
+            n_vars_all, var_names, var_temporal, n_time_states, periodic, &
+            min_level, max_blocks, f4_bc_neumann, 0.0_dp)
+
+       call euler_initialize(1.4_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
+    case default
+       error stop "Unknown test case, options: rt, sod, vortex"
+    end select
 
     call set_initial_conditions(f4, test_case)
 
@@ -203,8 +228,10 @@ contains
        call set_initial_conditions_sod(f4)
     case ("rt")
        call set_initial_conditions_rt(f4)
+    case ("vortex")
+       call set_initial_conditions_vortex(f4)
     case default
-       error stop "Unknown test case, options: rt, sod"
+       error stop "Unknown test case, options: rt, sod, vortex"
     end select
   end subroutine set_initial_conditions
 
@@ -260,7 +287,7 @@ contains
     ! Wavelength
     k_vec(1) = 2 * pi
 #:if NDIM == 3
-    k_vec(2) = 4 * pi
+    k_vec(2) = 2 * pi
 #:endif
 
     !$acc parallel loop present(f4%uu)
@@ -277,17 +304,80 @@ contains
              f4%uu(${IJK}$, i_rho, n) = rho_low
           end if
 
-          f4%uu(${IJK}$, i_e, n) = euler_inv_gamma_m1 * (p_interface - 1.0_dp * &
-               f4%uu(${IJK}$, i_rho, n) * (rr(NDIM) - h0))
+          f4%uu(${IJK}$, i_e, n) = euler_inv_gamma_m1 * (p_interface + &
+               f4%uu(${IJK}$, i_rho, n) * euler_gravity * (rr(NDIM) - h0))
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_initial_conditions_rt
 
+  subroutine set_initial_conditions_vortex(f4)
+    type(foap4_t), intent(inout) :: f4
+    integer                      :: n, ${IJK}$
+    real(dp)                     :: rr(NDIM), rc(NDIM), r2
+    real(dp)                     :: rho, p, T
+    real(dp)                     :: v(NDIM), dv(NDIM), dT
+    real(dp), parameter          :: pi = acos(-1.0_dp)
+
+    ! Isentropic vortex parameters (Shu 1998)
+    real(dp), parameter :: beta    = 5.0_dp ! Vortex strength
+    real(dp), parameter :: rho_inf = 1.0_dp ! Free-stream density
+    real(dp), parameter :: p_inf   = 1.0_dp ! Free-stream pressure
+    real(dp), parameter :: L       = 5.0_dp ! Domain size
+    real(dp)            :: v_inf(NDIM), T_inf, c_inf
+
+    T_inf      = p_inf / rho_inf
+    c_inf      = sqrt(euler_gamma * p_inf / rho_inf)
+    v_inf(:)   = 0.0_dp
+    v_inf(1:2) = 1.0_dp
+
+    ! Vortex center (middle of domain)
+    rc(:) = 5.0_dp
+
+    !$acc parallel loop present(f4%uu)
+    do n = 1, f4%n_blocks
+       !$acc loop collapse(NDIM) private(rr, r2, dv, dT, T, rho, p, v)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          rr = f4_cell_coord(f4, n, ${IJK}$)
+
+          ! Distance squared from vortex center
+          r2 = (rr(1) - rc(1))**2 + (rr(2) - rc(2))**2
+
+          ! Velocity perturbations
+          dv(1) = -beta / (2.0_dp * pi) * (rr(2) - rc(2)) * exp(0.5_dp * (1.0_dp - r2))
+          dv(2) = beta / (2.0_dp * pi) * (rr(1) - rc(1)) * exp(0.5_dp * (1.0_dp - r2))
+#:if NDIM == 3
+          dv(3) = 0.0_dp
+#:endif
+
+          ! Temperature perturbation
+          dT = -(euler_gamma - 1.0_dp) * beta**2 / &
+               (8.0_dp * euler_gamma * pi**2) * exp(1.0_dp - r2)
+
+          ! Primitive variables
+          T   = T_inf + dT
+          rho = rho_inf * (T / T_inf)**euler_inv_gamma_m1
+          p   = rho * T
+          v  = v_inf + dv
+
+          ! Set conservative variables
+          f4%uu(${IJK}$, i_rho, n) = rho
+          f4%uu(${IJK}$, i_mom0+1, n) = rho * v(1)
+          f4%uu(${IJK}$, i_mom0+2, n) = rho * v(2)
+#:if NDIM == 3
+          f4%uu(${IJK}$, i_mom0+3, n) = rho * v(3)
+#:endif
+          ! Total energy: e = p/(gamma-1) + 0.5*rho*v^2
+          f4%uu(${IJK}$, i_e, n) = p * euler_inv_gamma_m1 + &
+               0.5_dp * rho * (v(1)**2 + v(2)**2)
+       end do; ${KJI_CLOSE_LOOP}$
+    end do
+  end subroutine set_initial_conditions_vortex
+
   subroutine source_term(u_prim, source)
     real(dp), intent(in)    :: u_prim(n_tvars)
     real(dp), intent(inout) :: source(n_tvars)
-    source(i_mom0+NDIM) = -euler_gravity * u_prim(i_rho)
-    source(i_e)         = -euler_gravity * source(i_mom0+NDIM)
+    source(i_mom0+NDIM) = euler_gravity * u_prim(i_rho)
+    source(i_e)         = euler_gravity * u_prim(i_rho) * u_prim(i_mom0+NDIM)
   end subroutine source_term
 
   #:include 'physics_euler.fpp'
