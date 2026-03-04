@@ -406,7 +406,7 @@ contains
 
     if (n_face_bc > size(f4%bc_data, NDIM+1)) then
        ! Resize storage, and reserve extra space
-       !$acc exit data delete(f4%bc_data)
+       !$acc exit data delete(f4%bc_data, f4%bc_data_type)
        deallocate(f4%bc_data, f4%bc_data_type)
 #:if NDIM == 2
        allocate(f4%bc_data(f4%bx(1), f4%n_vars, 2*n_face_bc))
@@ -1856,7 +1856,7 @@ contains
 #:endif
 
     !$acc parallel present(f4, f4%uu, f4%bx, f4%send_buffer, &
-    !$acc &f4%gc_c2f_to_buf_iface, f4%gc_c2f_to_buf)
+    !$acc &f4%gc_c2f_to_buf_iface, f4%gc_c2f_to_buf) copyin(i_vars)
 
 #:if NDIM == 2
     @:fyp_c2f_to_buf(0, ilim=half_n_gc, jc0=offset(1)*f4%hbx(2))
