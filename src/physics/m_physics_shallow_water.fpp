@@ -36,8 +36,4 @@ module m_physics_shallow_water_${NDIM}$d
   ! Which variables are temporal
   logical, parameter :: var_temporal(n_vars_all) = .true.
 
-  ! Bottom topography coefficient (for source terms)
-  real(dp) :: bottom_friction = 0.0_dp
-  !$acc declare create(bottom_friction)
-
 end module m_physics_shallow_water_${NDIM}$d
