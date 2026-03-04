@@ -59,6 +59,9 @@ ifeq ($(compiler_brand),GNU)
         FFLAGS += -O0 -fcheck=all -ffpe-trap=invalid,zero,overflow -finit-real=snan
         CFLAGS += -O0
     endif
+    ifeq ($(OPENACC),1)
+	FFLAGS += -fopenacc -foffload=nvptx-none
+    endif
 else ifneq (,$(filter $(compiler_brand),nvfortran pgfortran))
     # Will be used for nvfortran and pgfortran
     FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
