@@ -31,8 +31,7 @@ contains
     integer             :: n, ${IJK}$, level
     real(dp)            :: diff(NDIM), diff_norm
 
-    !$acc parallel loop private(level, diff_norm) &
-    !$acc &present(f4, f4%uu, f4%bx, f4%block_level, f4%refinement_flags)
+    !$acc parallel loop private(level, diff_norm) default(present)
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        diff_norm = 0.0_dp

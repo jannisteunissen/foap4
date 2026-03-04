@@ -249,7 +249,7 @@ contains
     call to_conservative(u0(:, 1))
     call to_conservative(u0(:, 2))
 
-    !$acc parallel loop present(f4%uu, f4%bx)
+    !$acc parallel loop default(present) copyin(u0)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
@@ -290,7 +290,7 @@ contains
     k_vec(2) = 2 * pi
 #:endif
 
-    !$acc parallel loop present(f4%uu)
+    !$acc parallel loop default(present) copyin(k_vec)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
@@ -333,7 +333,7 @@ contains
     ! Vortex center (middle of domain)
     rc(:) = 5.0_dp
 
-    !$acc parallel loop present(f4%uu)
+    !$acc parallel loop default(present) copyin(rc, v_inf)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr, r2, dv, dT, T, rho, p, v)
        do @{KJI_LOOP_1_to_array(f4%bx)}@

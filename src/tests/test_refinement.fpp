@@ -235,7 +235,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
 
-    !$acc parallel loop present(f4%uu)
+    !$acc parallel loop default(present)
     do n = 1, f4%n_blocks
        !$acc loop collapse(${NDIM}$) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
@@ -279,7 +279,7 @@ contains
     logical                      :: ghost_dim(NDIM), valid_cell
     real(dp), parameter          :: max_difference = 1e-15_dp
 
-    !$acc parallel loop present(f4%uu)
+    !$acc parallel loop default(present)
     do n = 1, f4%n_blocks
        !$acc loop collapse(${NDIM}$) private(rr, sol, ghost_dim, valid_cell)
        do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@

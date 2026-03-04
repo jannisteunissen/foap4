@@ -201,7 +201,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp) :: rr(NDIM), d_center
 
-    !$acc parallel loop present(f4%uu)
+    !$acc parallel loop default(present) copyin(dam_center)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr, d_center)
        do @{KJI_LOOP_1_to_array(f4%bx)}@

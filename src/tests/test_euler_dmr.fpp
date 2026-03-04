@@ -223,7 +223,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM), x_boundary
 
-    !$acc parallel loop present(f4%uu)
+    !$acc parallel loop default(present)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr, x_boundary)
        do @{KJI_LOOP_1_to_array(f4%bx)}@

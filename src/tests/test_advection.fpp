@@ -194,7 +194,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
 
-    !$acc parallel loop present(f4, f4%uu, f4%bx)
+    !$acc parallel loop default(present)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
@@ -213,7 +213,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM), sol
 
-    !$acc parallel loop present(f4, f4%uu, f4%bx)
+    !$acc parallel loop default(present)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr, sol)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
