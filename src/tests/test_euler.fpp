@@ -37,11 +37,13 @@ program euler
   real(dp)          :: cfl_number         = 0.5_dp
   character(len=10) :: test_case          = "sod"
   character(len=40) :: integrator_name    = "heuns_method"
+  logical           :: write_vtu = .false.
 
   call f4_initialize(f4, "error")
 
   call CFG_update_from_arguments(cfg)
   call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
+  call CFG_add_get(cfg, 'write_vtu', write_vtu, 'Also write p4est vtu files')
   call CFG_add_get(cfg, 'min_level', min_level, 'Minimum refinement level')
   call CFG_add_get(cfg, 'max_level', max_level, 'Maximum refinement level')
   call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
@@ -162,7 +164,9 @@ contains
 
     call f4_compute_sum(f4, i_rho, rho_initial_sum)
 
-    if (dt_output <= end_time) call io_write_grid(f4, base_name, n_output)
+    if (dt_output <= end_time) then
+       call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
+    end if
     n_output = n_output + 1
 
     t0 = MPI_Wtime()
@@ -176,7 +180,7 @@ contains
        call rk_advance(f4, dt, dt_lim, integrator, feuler_finite_volume)
 
        if (write_this_step) then
-          call io_write_grid(f4, base_name, n_output)
+          call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
           call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &

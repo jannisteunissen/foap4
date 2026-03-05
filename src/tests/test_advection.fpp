@@ -35,6 +35,7 @@ program test_adv
   integer           :: bx(NDIM)             = 32
   integer           :: num_outputs          = 40
   character(len=40) :: integrator_name      = "heuns_method"
+  logical           :: write_vtu = .false.
 
   type(foap4_t) :: f4
   type(CFG_t) :: cfg
@@ -43,6 +44,7 @@ program test_adv
 
   call CFG_update_from_arguments(cfg)
   call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
+  call CFG_add_get(cfg, 'write_vtu', write_vtu, 'Also write p4est vtu files')
   call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
   call CFG_add_get(cfg, 'min_level', min_refinement_level, &
        'Minimum refinement level in the domain')
@@ -131,7 +133,9 @@ contains
     call f4_compute_sum(f4, i_rho, rho_initial_sum)
     call f4_get_global_highest_level(f4, prev_highest_level)
 
-    if (dt_output <= end_time) call io_write_grid(f4, base_name, n_output)
+    if (dt_output <= end_time) then
+       call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
+    end if
     n_output = n_output + 1
 
     t0 = MPI_Wtime()
@@ -147,7 +151,7 @@ contains
 
        if (write_this_step) then
           call set_error(f4)
-          call io_write_grid(f4, base_name, n_output)
+          call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
           call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &
