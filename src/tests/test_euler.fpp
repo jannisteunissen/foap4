@@ -35,6 +35,7 @@ program euler
   real(dp)          :: c_abs              = 1e-10_dp
   integer           :: n_steps_refinement = 4
   real(dp)          :: cfl_number         = 0.5_dp
+  real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=10) :: test_case          = "sod"
   character(len=40) :: integrator_name    = "heuns_method"
   character(len=200) :: output_prefix    = "output/test_euler_${NDIM}$d"
@@ -49,6 +50,8 @@ program euler
   call CFG_add_get(cfg, 'min_level', min_level, 'Minimum refinement level')
   call CFG_add_get(cfg, 'max_level', max_level, 'Maximum refinement level')
   call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
+  call CFG_add_get(cfg, 'load_imbalance_threshold', load_imbalance_threshold, &
+       'Threshold for partitioning')
   call CFG_add_get(cfg, 'c_refine', c_refine, 'Coefficient for refinement')
   call CFG_add_get(cfg, 'c_derefine', c_derefine, 'Coefficient for derefinement')
   call CFG_add_get(cfg, 'c_eps', c_eps, 'Filter coefficient for AMR')
@@ -157,7 +160,7 @@ contains
           call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_level, max_level, &
                i_rho, c_refine, c_derefine, c_eps, c_abs)
-          call f4_adjust_refinement(f4, .true.)
+          call f4_adjust_refinement(f4, load_imbalance_threshold)
           call set_initial_conditions(f4, test_case)
 
           if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
@@ -197,7 +200,7 @@ contains
           call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_level, max_level, &
                i_rho, c_refine, c_derefine, c_eps, c_abs)
-          call f4_adjust_refinement(f4, .true.)
+          call f4_adjust_refinement(f4, load_imbalance_threshold)
 
           call f4_get_global_highest_level(f4, highest_level)
 

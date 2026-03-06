@@ -19,6 +19,7 @@ program test_ref
   logical           :: write_output
   logical           :: abort_on_error
   real(dp)          :: r_ref(NDIM)
+  real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=80) :: output_name
 
 #:if NDIM == 2
@@ -127,7 +128,6 @@ contains
     logical, parameter           :: temporal(n_vars)       = [.false., .false.]
     integer, parameter           :: n_temporal_states      = 1
     logical, parameter           :: periodic(NDIM)         = .false.
-    logical, parameter           :: partition              = .true.
     integer                      :: n, prev_mesh_revision
 
     f4%bc_callback => bc_callback
@@ -147,7 +147,7 @@ contains
 
     do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location, refine_everywhere)
-       call f4_adjust_refinement(f4, partition)
+       call f4_adjust_refinement(f4, load_imbalance_threshold)
        call f4_update_ghostcells(f4, 1, [i_phi])
        call compute_error(f4)
 
@@ -162,7 +162,7 @@ contains
        do n = 1, 10
           prev_mesh_revision = f4_get_mesh_revision(f4)
           call set_coarsening_flag(f4)
-          call f4_adjust_refinement(f4, partition)
+          call f4_adjust_refinement(f4, load_imbalance_threshold)
 
           call f4_update_ghostcells(f4, 1, [i_phi])
           call compute_error(f4)

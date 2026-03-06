@@ -45,6 +45,7 @@ module m_foap4_${NDIM}$d
   public :: f4_update_ghostcells
   public :: f4_adjust_refinement
   public :: f4_partition
+  public :: f4_get_load_imbalance
   public :: f4_fix_c2f_flux
   public :: f4_compute_sum
   public :: f4_compute_max
@@ -3166,16 +3167,17 @@ contains
   end subroutine f4_update_ghostcells
 
   !> Refine the mesh according to f4%refinement_flags
-  subroutine f4_adjust_refinement(f4, partition_after)
+  subroutine f4_adjust_refinement(f4, load_imbalance_threshold)
     type(foap4_t), intent(inout) :: f4
-    logical, intent(in)          :: partition_after
+    !> Threshold for load imbalance, for example 1.1 could be reasonable
+    real(dp), intent(in)         :: load_imbalance_threshold
     integer                      :: n_blocks_new, n_blocks_old, iv
     integer                      :: has_changed, i_srl, i_refine, i_coarsen
     integer, allocatable         :: srl(:, :), refine(:, :), coarsen(:, :)
     integer                      :: n, i, j, i_c, j_c, i_f, j_f, n_old
     integer                      :: offset_copy
     integer                      :: i_from, i_to, i_ch
-    real(dp)                     :: fine(2**NDIM), t0, t1
+    real(dp)                     :: fine(2**NDIM), t0, t1, load_imbalance
 #:if NDIM == 3
     integer                      :: k, k_c, k_f
 #:endif
@@ -3385,7 +3387,9 @@ contains
     t0 = MPI_Wtime()
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
 
-    if (partition_after) call f4_partition(f4)
+    call f4_get_load_imbalance(f4, load_imbalance)
+
+    if (load_imbalance > load_imbalance_threshold) call f4_partition(f4)
 
     t0 = MPI_Wtime()
     call update_ghostcell_pattern(f4)
@@ -3500,6 +3504,34 @@ contains
        phi = 0.0_dp
     end if
   end function limiter_gminmod
+
+  !> Get load imbalance, defined as the ratio of max_blocks/avg_blocks,
+  !> normalized by the minimum achievable imbalance for the given block count
+  !> and number of ranks. Returns 1.0 for a perfect distribution.
+  subroutine f4_get_load_imbalance(f4, load_imbalance)
+    type(foap4_t), intent(in) :: f4
+    real(dp), intent(out)     :: load_imbalance
+    integer(c_int64_t)        :: gfq(0:f4%mpisize)
+    integer(c_int64_t)        :: blocks_per_rank(f4%mpisize)
+    integer(c_int64_t)        :: max_blocks, total_blocks
+    integer(c_int64_t)        :: optimal_max_blocks
+
+    call pw_get_global_filling_curve(f4%pw, gfq)
+
+    total_blocks = gfq(f4%mpisize) - gfq(0)
+    blocks_per_rank(:) = gfq(1:f4%mpisize) - gfq(0:f4%mpisize-1)
+    max_blocks = maxval(blocks_per_rank)
+
+    if (total_blocks > 0) then
+       ! The best possible distribution assigns ceil(total/nprocs) to some
+       ! ranks and floor(total/nprocs) to the rest
+       optimal_max_blocks = (total_blocks + f4%mpisize - 1) / f4%mpisize
+       load_imbalance = real(max_blocks, dp) / optimal_max_blocks
+    else
+       load_imbalance = 1.0_dp
+    end if
+
+  end subroutine f4_get_load_imbalance
 
   !> Partition the blocks over the MPI ranks
   subroutine f4_partition(f4)

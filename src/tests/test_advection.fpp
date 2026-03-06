@@ -34,6 +34,7 @@ program test_adv
   integer           :: blocks_per_dim(NDIM) = 1
   integer           :: bx(NDIM)             = 32
   integer           :: num_outputs          = 40
+  real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=40) :: integrator_name      = "heuns_method"
   logical           :: write_vtu = .false.
 
@@ -46,6 +47,8 @@ program test_adv
   call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
   call CFG_add_get(cfg, 'write_vtu', write_vtu, 'Also write p4est vtu files')
   call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
+  call CFG_add_get(cfg, 'load_imbalance_threshold', load_imbalance_threshold, &
+       'Threshold for partitioning')
   call CFG_add_get(cfg, 'min_level', min_refinement_level, &
        'Minimum refinement level in the domain')
   call CFG_add_get(cfg, 'max_level', max_refinement_level, &
@@ -123,7 +126,7 @@ contains
           call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_refinement_level, max_refinement_level, &
                i_rho, c_refine, c_derefine, c_eps, c_abs)
-          call f4_adjust_refinement(f4, .true.)
+          call f4_adjust_refinement(f4, load_imbalance_threshold)
           call set_init_cond(f4)
 
           if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
@@ -165,7 +168,7 @@ contains
           call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_refinement_level, max_refinement_level, &
                i_rho, c_refine, c_derefine, c_eps, c_abs)
-          call f4_adjust_refinement(f4, .true.)
+          call f4_adjust_refinement(f4, load_imbalance_threshold)
           call f4_get_global_highest_level(f4, highest_level)
 
           if (highest_level > prev_highest_level) then

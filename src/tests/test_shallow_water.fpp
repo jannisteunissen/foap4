@@ -36,6 +36,7 @@ program shallow_water
   real(dp)          :: c_abs              = 1e-10_dp
   integer           :: n_steps_refinement = 4
   real(dp)          :: cfl_number         = 0.5_dp
+  real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=40) :: integrator_name    = "heuns_method"
 
   real(dp) :: h_inner, h_outer
@@ -130,7 +131,7 @@ contains
           call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_level, max_level, &
                i_h, c_refine, c_derefine, c_eps, c_abs)
-          call f4_adjust_refinement(f4, .true.)
+          call f4_adjust_refinement(f4, load_imbalance_threshold)
           call set_initial_conditions(f4)
 
           if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit
@@ -168,7 +169,7 @@ contains
           call f4_update_ghostcells(f4, n_tvars, i_tvars)
           call amr_flags_diff2(f4, min_level, max_level, &
                i_h, c_refine, c_derefine, c_eps, c_abs)
-          call f4_adjust_refinement(f4, .true.)
+          call f4_adjust_refinement(f4, load_imbalance_threshold)
 
           call f4_get_global_highest_level(f4, highest_level)
 

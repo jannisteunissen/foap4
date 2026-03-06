@@ -351,6 +351,14 @@ module m_foap4_types_${NDIM}$d
        integer(c_int64_t), intent(out)   :: gfq_old(*)
        integer(c_int64_t), intent(out)   :: gfq_new(*)
      end subroutine pw_partition
+
+     !> Get current global space-filling curve
+     subroutine pw_get_global_filling_curve(pw, gfq) bind(c)
+       import c_int64_t, c_ptr
+       type(c_ptr), intent(in), value    :: pw
+       integer(c_int64_t), intent(out)   :: gfq(*)
+     end subroutine pw_get_global_filling_curve
+
   end interface
 
   abstract interface
@@ -384,6 +392,7 @@ module m_foap4_types_${NDIM}$d
   public :: pw_get_all_faces
   public :: pw_adjust_refinement
   public :: pw_partition
+  public :: pw_get_global_filling_curve
   public :: subr_cc_data_2D
   public :: subr_cc_data_3D
   public :: bc_callback_t

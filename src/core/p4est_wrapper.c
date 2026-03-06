@@ -433,3 +433,10 @@ void pw_partition(pw_state_t *pw, int *n_changed, int64_t *gfq_old,
     gfq_new[rank] = pw->p4est->global_first_quadrant[rank];
   }
 }
+
+/* Get current global space-filling curve */
+void pw_get_global_filling_curve(pw_state_t *pw, int64_t *gfq) {
+  for (int rank = 0; rank < pw->p4est->mpisize+1; rank++) {
+    gfq[rank] = pw->p4est->global_first_quadrant[rank];
+  }
+}

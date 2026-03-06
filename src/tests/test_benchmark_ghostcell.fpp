@@ -79,7 +79,7 @@ contains
 
     do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location)
-       call f4_adjust_refinement(f4, .true.)
+       call f4_adjust_refinement(f4, 1.0_dp)
        call f4_update_ghostcells(f4, n_vars, i_vars)
     end do
 
