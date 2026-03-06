@@ -13,6 +13,9 @@ module m_foap4_types_${NDIM}$d
   !> Maximum refinement level in p4est
   integer, parameter, public :: P4EST_MAXLEVEL = 30
 
+  !> Maximum count for MPI messages
+  integer(MPI_COUNT_KIND), parameter, public :: f4_mpi_max_count = huge(1)
+
   !> The opposite of the faces 0-3
 #:if NDIM == 2
   integer, parameter, public :: face_swap(0:2*ndim-1) = [1, 0, 3, 2]
@@ -154,8 +157,9 @@ module m_foap4_types_${NDIM}$d
      type(MPI_comm)        :: mpicomm        !< MPI communicator
      integer               :: mpirank        !< MPI rank of this task
      integer               :: mpisize        !< Number of ranks in communicator
-     integer, allocatable  :: recv_offset(:) !< 0:mpisize offsets for receiving
-     integer, allocatable  :: send_offset(:) !< 0:mpisize offsets for sending
+     integer               :: max_requests   !< Maximum number of requests for send/recv
+     integer(MPI_COUNT_KIND), allocatable :: recv_offset(:) !< 0:mpisize offsets for receiving
+     integer(MPI_COUNT_KIND), allocatable :: send_offset(:) !< 0:mpisize offsets for sending
      real(dp), allocatable :: recv_buffer(:) !< Buffer for receiving data
      real(dp), allocatable :: send_buffer(:) !< Buffer for sending data
 

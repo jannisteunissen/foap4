@@ -8,6 +8,7 @@
 module m_foap4_${NDIM}$d
   use mpi_f08
   use, intrinsic :: iso_c_binding
+  use iso_fortran_env, only: error_unit
   use m_foap4_types_${NDIM}$d
 
   implicit none
@@ -87,6 +88,11 @@ contains
     ! Set MPI rank and size
     call MPI_Comm_rank(f4%mpicomm, f4%mpirank, ierr)
     call MPI_Comm_size(f4%mpicomm, f4%mpisize, ierr)
+
+    ! Set maximum number of MPI requests for MPI communication. There is at
+    ! most one message between each pair of ranks, but messages can be split
+    ! if they exceed 16 GB.
+    f4%max_requests = 2 * f4%mpisize + 10
 
 #ifdef _OPENACC
     call set_openacc_device(f4)
@@ -544,7 +550,6 @@ contains
 
   !> Set the number of blocks, their origins and their refinement levels
   subroutine f4_set_quadrants(f4)
-    use iso_fortran_env, only: error_unit
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, n_blocks
 
@@ -1885,9 +1890,10 @@ contains
   !> per MPI rank
   subroutine f4_exchange_buffers(f4)
     type(foap4_t), intent(inout) :: f4
-    type(MPI_Request)            :: send_req(0:f4%mpisize-1)
-    type(MPI_Request)            :: recv_req(0:f4%mpisize-1)
-    integer                      :: n_send, n_recv, ilo, ihi, ierr, rank
+    type(MPI_Request)            :: send_req(f4%max_requests)
+    type(MPI_Request)            :: recv_req(f4%max_requests)
+    integer                      :: n_send, n_recv, ierr, rank
+    integer(MPI_COUNT_KIND)      :: ilo, ihi
     integer, parameter           :: tag = 0
 
     n_send = 0
@@ -1899,58 +1905,124 @@ contains
        ihi = f4%send_offset(rank+1)
 
        if (ihi >= ilo) then
-          n_send = n_send + 1
           call mpi_isend_wrapper(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
-               rank, tag, f4%mpicomm, &
-               send_req(n_send), ierr)
+               rank, tag, f4%mpicomm, send_req, n_send, ierr)
        end if
 
        ilo = f4%recv_offset(rank) + 1
        ihi = f4%recv_offset(rank+1)
 
        if (ihi >= ilo) then
-          n_recv = n_recv + 1
           call mpi_irecv_wrapper(f4%recv_buffer(ilo:ihi), ihi-ilo+1, &
-               rank, tag, f4%mpicomm, &
-               recv_req(n_recv), ierr)
+               rank, tag, f4%mpicomm, recv_req, n_recv, ierr)
        end if
     end do
 
-    if (n_recv > 0) then
-       call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
-    end if
     if (n_send > 0) then
        call MPI_Waitall(n_send, send_req(1:n_send), MPI_STATUSES_IGNORE, ierr)
     end if
-
+    if (n_recv > 0) then
+       call MPI_Waitall(n_recv, recv_req(1:n_recv), MPI_STATUSES_IGNORE, ierr)
+    end if
   end subroutine f4_exchange_buffers
 
   !> Wrapper for MPI_Isend. This was done because of problems with the
   !> use_device clause combined with an index offset and NVHPC-v25. With this
-  !> wrapper, there is no offset in "buf".
-  subroutine mpi_isend_wrapper(buf, count, dest, tag, comm, request, ierror)
-    integer, intent(in)            :: count, dest, tag
-    real(dp), intent(in)           :: buf(count)
-    type(mpi_comm), intent(in)     :: comm
-    type(mpi_request), intent(out) :: request
-    integer, optional, intent(out) :: ierror
+  !> wrapper, there is no offset in "buf". The large-count interface
+  !> (mpi_isend_c) is not widely supported, but can replace the use of
+  !> multiple messages in the future.
+  subroutine mpi_isend_wrapper(buf, count, dest, tag, comm, requests, nreqs, ierror)
+    integer(MPI_COUNT_KIND), intent(in) :: count
+    integer, intent(in)                 :: dest, tag
+    real(dp), intent(in)                :: buf(count)
+    type(mpi_comm), intent(in)          :: comm
+    type(mpi_request), intent(inout)    :: requests(:)
+    integer, intent(inout)              :: nreqs
+    integer, optional, intent(out)      :: ierror
 
-    !$acc host_data use_device(buf)
-    call mpi_isend(buf, count, MPI_DOUBLE_PRECISION, dest, tag, comm, request, ierror)
-    !$acc end host_data
+    integer(MPI_COUNT_KIND) :: offset, remaining, chunk_size
+    integer :: chunk_count, chunk_tag, ierr, chunk_index
+
+    offset = 0
+    remaining = count
+    chunk_index = 0
+
+    do while (remaining > 0)
+      chunk_size = min(remaining, f4_mpi_max_count)
+      chunk_count = int(chunk_size)
+      chunk_tag = tag + chunk_index
+      chunk_index = chunk_index + 1
+      nreqs = nreqs + 1
+
+      if (nreqs > size(requests)) then
+         write(error_unit, *) "Too many requests"
+         write(error_unit, *) "nreqs: ", nreqs, " size(requests): ", size(requests)
+         write(error_unit, *) "Increase f4%max_requests or f4_mpi_max_count"
+         error stop "increase f4%max_requests"
+      end if
+
+      !$acc host_data use_device(buf)
+      call mpi_isend(buf(offset + 1), chunk_count, MPI_DOUBLE_PRECISION, &
+                     dest, chunk_tag, comm, requests(nreqs), ierr)
+      !$acc end host_data
+
+      if (ierr /= MPI_SUCCESS) then
+        if (present(ierror)) ierror = ierr
+        return
+      end if
+
+      offset = offset + chunk_size
+      remaining = remaining - chunk_size
+    end do
+
+    if (present(ierror)) ierror = MPI_SUCCESS
   end subroutine mpi_isend_wrapper
 
-  !> Wrapper for MPI_Irecv, see mpi_isend_wrapper
-  subroutine mpi_irecv_wrapper(buf, count, source, tag, comm, request, ierror)
-    integer, intent(in)             :: count, source, tag
-    real(dp), intent(inout)         :: buf(count)
-    type(mpi_comm), intent(in)      :: comm
-    type(mpi_request), intent(out) :: request
-    integer, optional, intent(out)  :: ierror
+  subroutine mpi_irecv_wrapper(buf, count, source, tag, comm, requests, nreqs, ierror)
+    integer(MPI_COUNT_KIND), intent(in) :: count
+    integer, intent(in)                 :: source, tag
+    real(dp), intent(inout)             :: buf(count)
+    type(mpi_comm), intent(in)          :: comm
+    type(mpi_request), intent(inout)    :: requests(:)
+    integer, intent(inout)              :: nreqs
+    integer, optional, intent(out)      :: ierror
 
-    !$acc host_data use_device(buf)
-    call mpi_irecv(buf, count, MPI_DOUBLE_PRECISION, source, tag, comm, request, ierror)
-    !$acc end host_data
+    integer(MPI_COUNT_KIND) :: offset, remaining, chunk_size
+    integer :: chunk_count, chunk_tag, ierr, chunk_index
+
+    offset = 0
+    remaining = count
+    chunk_index = 0
+
+    do while (remaining > 0)
+      chunk_size = min(remaining, f4_mpi_max_count)
+      chunk_count = int(chunk_size)
+      chunk_tag = tag + chunk_index
+      chunk_index = chunk_index + 1
+      nreqs = nreqs + 1
+
+      if (nreqs > size(requests)) then
+         write(error_unit, *) "Too many requests"
+         write(error_unit, *) "nreqs: ", nreqs, " size(requests): ", size(requests)
+         write(error_unit, *) "Increase f4%max_requests or f4_mpi_max_count"
+         error stop "increase f4%max_requests"
+      end if
+
+      !$acc host_data use_device(buf)
+      call mpi_irecv(buf(offset + 1), chunk_count, MPI_DOUBLE_PRECISION, &
+                     source, chunk_tag, comm, requests(nreqs), ierr)
+      !$acc end host_data
+
+      if (ierr /= MPI_SUCCESS) then
+        if (present(ierror)) ierror = ierr
+        return
+      end if
+
+      offset = offset + chunk_size
+      remaining = remaining - chunk_size
+    end do
+
+    if (present(ierror)) ierror = MPI_SUCCESS
   end subroutine mpi_irecv_wrapper
 
   !> Get index correspond to first temporal state
@@ -3326,7 +3398,6 @@ contains
 
   !> Temporarily copy blocks to the end of the block array
   subroutine copy_blocks_to_end(f4, n_blocks_old, n_blocks_new, offset_copy)
-    use iso_fortran_env, only: error_unit
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: n_blocks_old
     integer, intent(in)          :: n_blocks_new
@@ -3437,7 +3508,8 @@ contains
     integer                        :: n_blocks_old, n_blocks_new
     integer(c_int64_t)             :: gfq_old(0:f4%mpisize)
     integer(c_int64_t)             :: gfq_new(0:f4%mpisize)
-    integer                        :: dsize, offset_copy, ierr
+    integer                        :: offset_copy, ierr
+    integer(MPI_COUNT_KIND)        :: count, dsize
     integer, parameter             :: tag = 0
     integer                        :: gfq_src(0:f4%mpisize)
     integer                        :: gfq_dest(0:f4%mpisize)
@@ -3448,8 +3520,8 @@ contains
     integer                        :: first_receiver, last_receiver
     integer                        :: n_recv, n_send
     integer                        :: rank, block_ix
-    type(MPI_Request)              :: send_req(f4%mpisize)
-    type(MPI_Request)              :: recv_req(f4%mpisize)
+    type(MPI_Request)              :: send_req(f4%max_requests)
+    type(MPI_Request)              :: recv_req(f4%max_requests)
     real(dp)                       :: t0, t1
 
     t0 = MPI_Wtime()
@@ -3495,10 +3567,9 @@ contains
           n_blocks_transfer = gend - gbegin
 
           if (n_blocks_transfer > 0) then
-             n_recv = n_recv + 1
+             count = dsize * n_blocks_transfer
              call mpi_irecv_wrapper(f4%uu(@{DTIMES(:)}@, :, block_ix), &
-                  dsize*n_blocks_transfer, &
-                  rank, tag, f4%mpicomm, recv_req(n_recv), ierr)
+                  count, rank, tag, f4%mpicomm, recv_req, n_recv, ierr)
              block_ix = block_ix + n_blocks_transfer
           end if
        end do
@@ -3517,10 +3588,9 @@ contains
           n_blocks_transfer = gend - gbegin
 
           if (n_blocks_transfer > 0) then
-             n_send = n_send + 1
+             count = dsize * n_blocks_transfer
              call mpi_isend_wrapper(f4%uu(@{DTIMES(:)}@, :, block_ix), &
-                  dsize*n_blocks_transfer, &
-                  rank, tag, f4%mpicomm, send_req(n_send), ierr)
+                  count, rank, tag, f4%mpicomm, send_req, n_send, ierr)
              block_ix = block_ix + n_blocks_transfer
           end if
        end do
