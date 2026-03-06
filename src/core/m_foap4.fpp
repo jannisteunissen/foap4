@@ -317,8 +317,11 @@ contains
     call pw_set_connectivity_brick(f4%pw, trees_per_dim, periodic_as_int, &
          min_level, 1, max_blocks)
 
+    ! When doing mesh refinement, the extra storage for temporal states is
+    ! used as a copy buffer. The level is also used afterwards.
+    allocate(f4%block_level(max_blocks * n_temporal_states))
+
     allocate(f4%block_origin(ndim, max_blocks))
-    allocate(f4%block_level(max_blocks))
     allocate(f4%refinement_flags(max_blocks))
     allocate(f4%bflux_ix(0:2*NDIM-1, max_blocks))
     allocate(f4%bc_data_ix(0:2*NDIM-1, max_blocks))
@@ -3364,16 +3367,15 @@ contains
 
     offset_copy = max(n_blocks_old, n_blocks_new)
 
-    if (offset_copy + n_blocks_old > f4%max_blocks) then
-       write(error_unit, "(A,I0,A,I0)") "ERROR: max_blocks = ", &
-            f4%max_blocks, ", copy requires ", offset_copy + n_blocks_old
+    if (offset_copy + n_blocks_old > size(f4%uu, NDIM+2)) then
+       write(error_unit, "(A,I0,A,I0)") "ERROR: allocated_blocks = ", &
+            size(f4%uu, NDIM+2), ", copy requires ", offset_copy + n_blocks_old
        error stop "Not enough block memory for copying"
     end if
 
-    ! Copy block metadata on host
+    ! Copy block level on host
     do n = 1, n_blocks_old
-       f4%block_origin(:, offset_copy+n) = f4%block_origin(:, n)
-       f4%block_level(offset_copy+n)     = f4%block_level(n)
+       f4%block_level(offset_copy+n) = f4%block_level(n)
     end do
 
     ! Copy block solution data on device
