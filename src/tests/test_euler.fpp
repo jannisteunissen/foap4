@@ -37,12 +37,14 @@ program euler
   real(dp)          :: cfl_number         = 0.5_dp
   character(len=10) :: test_case          = "sod"
   character(len=40) :: integrator_name    = "heuns_method"
+  character(len=200) :: output_prefix    = "output/test_euler_${NDIM}$d"
   logical           :: write_vtu = .false.
 
   call f4_initialize(f4, "error")
 
   call CFG_update_from_arguments(cfg)
   call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
+  call CFG_add_get(cfg, 'output_prefix', output_prefix, 'Prefix for output files')
   call CFG_add_get(cfg, 'write_vtu', write_vtu, 'Also write p4est vtu files')
   call CFG_add_get(cfg, 'min_level', min_level, 'Minimum refinement level')
   call CFG_add_get(cfg, 'max_level', max_level, 'Maximum refinement level')
@@ -64,7 +66,7 @@ program euler
   call CFG_check(cfg)
 
   call test_euler(f4, bx, min_level, max_blocks, &
-       num_outputs, "output/test_euler_${NDIM}$d", test_case, &
+       num_outputs, trim(output_prefix), test_case, &
        end_time, integrator_name)
 
   if (f4%mpirank == 0) call f4_print_wtime(f4)
