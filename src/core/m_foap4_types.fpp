@@ -110,10 +110,7 @@ module m_foap4_types_${NDIM}$d
      integer   :: hbx(ndim)          !< Half of block size (cells)
      integer   :: n_gc               !< Number of ghost cells
      integer   :: max_blocks         !< Maximum number of blocks used
-     integer   :: n_vars_nontemporal !< Number of non-temporal variables
-     integer   :: n_vars_temporal    !< Number of temporal variables
      integer   :: n_vars             !< Total number of variables (excl. temporal copies)
-     integer   :: n_vars_all         !< Total number of variables (incl. temporal copies)
      integer   :: n_temporal_states  !< Number of temporal states
      real(dp)  :: tree_length(ndim)                  !< Length of tree
      !> Coefficient for generalized minmod limiter for prolongation

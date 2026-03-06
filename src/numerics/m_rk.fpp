@@ -105,7 +105,7 @@ contains
     integer, intent(in)          :: time_integrator
     !> Forward Euler method provided by the user
     procedure(subr_feuler)       :: forward_euler
-    integer                      :: n_steps, n_tvar
+    integer                      :: n_steps, offset
 
     real(dp)            :: time_in
     real(dp), parameter :: third = 1/3.0_dp
@@ -115,7 +115,7 @@ contains
          error stop "Invalid time integrator"
 
     n_steps = rk_advance_num_steps(time_integrator)
-    n_tvar = f4%n_vars_temporal
+    offset = f4%max_blocks
     dt_lim = 1e100_dp
     time_in = f4%time
 
@@ -125,53 +125,53 @@ contains
             1, [0], [1.0_dp], 0, 1, n_steps)
     case (rk_midpoint_method)
        call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
-            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+            1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + 0.5_dp*dt
-       call forward_euler(f4, dt, dt_lim, n_tvar, &
+       call forward_euler(f4, dt, dt_lim, offset, &
             1, [0], [1.0_dp], 0, 2, n_steps)
     case (rk_heuns_method)
        call forward_euler(f4, dt, dt_lim, 0, &
-            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+            1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + dt
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, n_tvar, &
-            2, [0, n_tvar], [0.5_dp, 0.5_dp], 0, 2, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, offset, &
+            2, [0, offset], [0.5_dp, 0.5_dp], 0, 2, n_steps)
     case (rk_ssprk33_method)
        call forward_euler(f4, dt, dt_lim, 0, &
-            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+            1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + dt
-       call forward_euler(f4, 0.25_dp*dt, dt_lim, n_tvar, &
-            2, [0, n_tvar], [0.75_dp, 0.25_dp], 2*n_tvar, 2, n_steps)
+       call forward_euler(f4, 0.25_dp*dt, dt_lim, offset, &
+            2, [0, offset], [0.75_dp, 0.25_dp], 2*offset, 2, n_steps)
        f4%time = time_in + 0.5_dp*dt
-       call forward_euler(f4, 2*third*dt, dt_lim, 2*n_tvar, &
-            2, [0, 2*n_tvar], [third, 2*third], 0, 3, n_steps)
+       call forward_euler(f4, 2*third*dt, dt_lim, 2*offset, &
+            2, [0, 2*offset], [third, 2*third], 0, 3, n_steps)
     case (rk_ssprk43_method)
        call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
-            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+            1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + 0.5_dp * dt
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, n_tvar, &
-            1, [n_tvar], [1.0_dp], 2*n_tvar, 2, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, offset, &
+            1, [offset], [1.0_dp], 2*offset, 2, n_steps)
        f4%time = time_in + dt
-       call forward_euler(f4, sixth*dt, dt_lim, 2*n_tvar, &
-            2, [0, 2*n_tvar], [2*third, third], 3*n_tvar, 3, n_steps)
+       call forward_euler(f4, sixth*dt, dt_lim, 2*offset, &
+            2, [0, 2*offset], [2*third, third], 3*offset, 3, n_steps)
        f4%time = time_in + 0.5_dp * dt
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, 3*n_tvar, &
-            1, [3*n_tvar], [1.0_dp], 0, 4, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, 3*offset, &
+            1, [3*offset], [1.0_dp], 0, 4, n_steps)
     case (rk_rk4_method)
        ! This looks different than the standard formulation in most textbooks.
        ! The idea is to construct the states needed for the derivatives, and
        ! then take a linear combination. Note the negative coefficient used in
        ! the last step.
        call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
-            1, [0], [1.0_dp], n_tvar, 1, n_steps)
+            1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + 0.5_dp * dt
-       call forward_euler(f4, 0.5_dp*dt, dt_lim, n_tvar, &
-            1, [0], [1.0_dp], 2*n_tvar, 2, n_steps)
+       call forward_euler(f4, 0.5_dp*dt, dt_lim, offset, &
+            1, [0], [1.0_dp], 2*offset, 2, n_steps)
        f4%time = time_in + 0.5_dp * dt
-       call forward_euler(f4, dt, dt_lim, 2*n_tvar, &
-            1, [0], [1.0_dp], 3*n_tvar, 3, n_steps)
+       call forward_euler(f4, dt, dt_lim, 2*offset, &
+            1, [0], [1.0_dp], 3*offset, 3, n_steps)
        f4%time = time_in + dt
-       call forward_euler(f4, sixth*dt, dt_lim, 3*n_tvar, &
-            4, [0, n_tvar, 2*n_tvar, 3*n_tvar], &
+       call forward_euler(f4, sixth*dt, dt_lim, 3*offset, &
+            4, [0, offset, 2*offset, 3*offset], &
             [-third, third, 2*third, third], 0, 4, n_steps)
     case default
        error stop "Unknown time integrator"

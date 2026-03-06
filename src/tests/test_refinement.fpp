@@ -137,7 +137,7 @@ contains
          min_level, max_blocks, f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
-    call f4_update_ghostcells(f4, 1, [i_phi])
+    call f4_update_ghostcells(f4, 1, [i_phi], 0)
     call compute_error(f4)
 
     if (write_output) then
@@ -148,7 +148,7 @@ contains
     do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location, refine_everywhere)
        call f4_adjust_refinement(f4, load_imbalance_threshold)
-       call f4_update_ghostcells(f4, 1, [i_phi])
+       call f4_update_ghostcells(f4, 1, [i_phi], 0)
        call compute_error(f4)
 
        if (write_output) then
@@ -164,7 +164,7 @@ contains
           call set_coarsening_flag(f4)
           call f4_adjust_refinement(f4, load_imbalance_threshold)
 
-          call f4_update_ghostcells(f4, 1, [i_phi])
+          call f4_update_ghostcells(f4, 1, [i_phi], 0)
           call compute_error(f4)
 
           if (write_output) then

@@ -123,7 +123,7 @@ contains
     if (do_refinement) then
        do n = 1, 10
           prev_mesh_revision = f4_get_mesh_revision(f4)
-          call f4_update_ghostcells(f4, n_tvars, i_tvars)
+          call f4_update_ghostcells(f4, n_tvars, i_tvars, 0)
           call amr_flags_diff2(f4, min_refinement_level, max_refinement_level, &
                i_rho, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, load_imbalance_threshold)
@@ -165,7 +165,7 @@ contains
 
        if (do_refinement .and. &
             mod(n_iterations, n_steps_refinement) == 0) then
-          call f4_update_ghostcells(f4, n_tvars, i_tvars)
+          call f4_update_ghostcells(f4, n_tvars, i_tvars, 0)
           call amr_flags_diff2(f4, min_refinement_level, max_refinement_level, &
                i_rho, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, load_imbalance_threshold)

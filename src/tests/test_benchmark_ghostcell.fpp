@@ -75,12 +75,12 @@ contains
          max_blocks, f4_bc_dirichlet, 0.0_dp)
 
     call set_init_cond(f4)
-    call f4_update_ghostcells(f4, n_vars, i_vars)
+    call f4_update_ghostcells(f4, n_vars, i_vars, 0)
 
     do n = 1, n_refine_steps
        call set_refinement_flag(f4, refine_location)
        call f4_adjust_refinement(f4, 1.0_dp)
-       call f4_update_ghostcells(f4, n_vars, i_vars)
+       call f4_update_ghostcells(f4, n_vars, i_vars, 0)
     end do
 
     if (write_grid) then
@@ -90,7 +90,7 @@ contains
 
     t0 = MPI_Wtime()
     do n = 1, n_iterations
-       call f4_update_ghostcells(f4, n_vars, i_vars)
+       call f4_update_ghostcells(f4, n_vars, i_vars, 0)
     end do
     t1 = MPI_Wtime()
 

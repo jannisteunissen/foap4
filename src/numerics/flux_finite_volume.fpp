@@ -11,7 +11,6 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
   integer, intent(in)          :: i_step         !< Step of the integrator
   integer, intent(in)          :: n_steps        !< Total number of steps
   integer                      :: n, ${IJK}$, m, level, iv, ierr
-  integer                      :: i_tvars_deriv(n_tvars)
   logical                      :: ghost_dim(NDIM), valid_cell
   real(dp)                     :: inv_dr(NDIM), cmax, cfl_sum, max_cfl
   real(dp)                     :: flux(n_tvars, 2)
@@ -24,8 +23,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
        f4%ilo(3):f4%ihi(3), n_tvars)
 #:endif
 
-  i_tvars_deriv = i_tvars + s_deriv
-  call f4_update_ghostcells(f4, n_tvars, i_tvars_deriv)
+  call f4_update_ghostcells(f4, n_tvars, i_tvars, s_deriv)
 
   max_cfl = 0.0_dp
 
@@ -55,7 +53,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
 
         if (valid_cell) then
            ! Convert to primitive, but not in corners
-           u = f4%uu(${IJK}$, i_tvars0+1+s_deriv:i_tvars0+n_tvars+s_deriv, n)
+           u = f4%uu(${IJK}$, i_tvars0+1:i_tvars0+n_tvars, n+s_deriv)
            call to_primitive(u)
            uprim(${IJK}$, :) = u
         end if
@@ -137,9 +135,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
            do m = 1, n_prev
               ! Add weighted previous states
               dvar(iv) = dvar(iv) + &
-                   f4%uu(${IJK}$, i_tvars0+iv+s_prev(m), n) * w_prev(m)
+                   f4%uu(${IJK}$, i_tvars0+iv, n+s_prev(m)) * w_prev(m)
            end do
-           f4%uu(${IJK}$, i_tvars0+iv+s_out, n) = dvar(iv)
+           f4%uu(${IJK}$, i_tvars0+iv, n+s_out) = dvar(iv)
         end do
      end do; ${KJI_CLOSE_LOOP}$
   end do
