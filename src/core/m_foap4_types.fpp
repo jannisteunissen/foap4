@@ -143,6 +143,8 @@ module m_foap4_types_${NDIM}$d
 
      !> Storage of block data uu(i, j, [k,] i_var, i_block)
      real(dp), allocatable :: uu(@{DTIMES(:)}@, :, :)
+     !> Storage of primitive block data uu(i, j, [k,] i_var, i_block)
+     real(dp), allocatable :: uu_prim(@{DTIMES(:)}@, :, :)
      !> Storage of boundary flux * dt, as bflux(i, [j,] i_var, i_face)
      real(dp), allocatable :: bflux(@{DTIMES(:)}@, :)
      !> Storage of boundary condition data bc_data(i, [j,] i_var, i_face)

@@ -211,7 +211,7 @@ contains
 
     !$acc exit data delete(f4%bc_simple_type, f4%bc_simple)
     !$acc exit data delete(f4%block_level, f4%block_origin)
-    !$acc exit data delete(f4%uu, f4%refinement_flags)
+    !$acc exit data delete(f4%uu, f4%uu_prim, f4%refinement_flags)
     !$acc exit data delete(f4%bc_data_ix, f4%bc_data, f4%bc_data_type, f4%bflux_ix, f4%bflux)
     !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
     !$acc exit data delete(&
@@ -231,6 +231,7 @@ contains
     deallocate(f4%block_level)
     deallocate(f4%refinement_flags)
     deallocate(f4%uu)
+    deallocate(f4%uu_prim)
     deallocate(f4%bflux_ix)
     deallocate(f4%bflux)
     deallocate(f4%bc_data_ix)
@@ -329,6 +330,8 @@ contains
 #:if NDIM == 2
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
          f4%n_vars, max_blocks * n_temporal_states))
+    allocate(f4%uu_prim(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
+         f4%n_vars, max_blocks))
     allocate(f4%bflux(bx(1), n_vars, 0))
     allocate(f4%bc_data(bx(1), n_vars, 0))
     allocate(f4%bc_data_type(bx(1), n_vars, 0))
@@ -338,6 +341,8 @@ contains
 #:elif NDIM == 3
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, 1-n_gc:bx(3)+n_gc, &
          f4%n_vars, max_blocks * n_temporal_states))
+    allocate(f4%uu_prim(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, 1-n_gc:bx(3)+n_gc, &
+         f4%n_vars, max_blocks))
     allocate(f4%bflux(bx(1), bx(1), n_vars, 0))
     allocate(f4%bc_data(bx(1), bx(1), n_vars, 0))
     allocate(f4%bc_data_type(bx(1), bx(1), n_vars, 0))
@@ -360,7 +365,7 @@ contains
     !$acc enter data copyin(f4)
     !$acc enter data copyin(f4%bc_simple_type, f4%bc_simple)
     !$acc enter data create(f4%block_level, f4%block_origin)
-    !$acc enter data create(f4%uu, f4%refinement_flags)
+    !$acc enter data create(f4%uu, f4%uu_prim, f4%refinement_flags)
     !$acc enter data create(f4%bc_data_ix, f4%bc_data, f4%bc_data_type)
     !$acc enter data create(f4%bflux_ix, f4%bflux)
     !$acc enter data create(f4%recv_buffer, f4%send_buffer)

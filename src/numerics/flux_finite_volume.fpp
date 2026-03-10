@@ -16,18 +16,12 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
   real(dp)                     :: flux(n_tvars, 2)
   real(dp)                     :: tmp(1+2*n_gc, n_tvars)
   real(dp)                     :: dvar(n_tvars), u(n_tvars)
-#:if NDIM == 2
-  real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), n_tvars)
-#:elif NDIM == 3
-  real(dp)                     :: uprim(f4%ilo(1):f4%ihi(1), f4%ilo(2):f4%ihi(2), &
-       f4%ilo(3):f4%ihi(3), n_tvars)
-#:endif
 
   call f4_update_ghostcells(f4, n_tvars, i_tvars, s_deriv)
 
   max_cfl = 0.0_dp
 
-  !$acc parallel loop private(level, inv_dr, uprim) reduction(max:max_cfl) &
+  !$acc parallel loop private(level, inv_dr) reduction(max:max_cfl) &
   !$acc & default(present) copyin(w_prev, s_prev)
   do n = 1, f4%n_blocks
 
@@ -55,7 +49,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
            ! Convert to primitive, but not in corners
            u = f4%uu(${IJK}$, i_tvars0+1:i_tvars0+n_tvars, n+s_deriv)
            call to_primitive(u)
-           uprim(${IJK}$, :) = u
+           f4%uu_prim(${IJK}$, i_tvars0+1:i_tvars0+n_tvars, n) = u
         end if
      end do; ${KJI_CLOSE_LOOP}$
 
@@ -63,14 +57,14 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
      !$acc &reduction(max:max_cfl)
      do @{KJI_LOOP_1_to_array(f4%bx)}@
 
-        u = uprim(${IJK}$, :)
+        u = f4%uu_prim(${IJK}$, i_tvars0+1:i_tvars0+n_tvars, n)
         dvar = 0.0_dp
         call source_term(u, dvar)
         dvar = dvar * dt
 
 #:if NDIM == 2
         ! Compute x-flux
-        tmp = uprim(i-n_gc:i+n_gc, j, :)
+        tmp = f4%uu_prim(i-n_gc:i+n_gc, j, i_tvars0+1:i_tvars0+n_tvars, n)
         call flux_cell_faces(1, tmp, flux, cmax)
         dvar = dvar + dt * inv_dr(1) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cmax * inv_dr(1)
@@ -82,7 +76,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
              f4%bflux(j, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
 
         ! Compute y-flux
-        tmp = uprim(i, j-n_gc:j+n_gc, :)
+        tmp = f4%uu_prim(i, j-n_gc:j+n_gc, i_tvars0+1:i_tvars0+n_tvars, n)
         call flux_cell_faces(2, tmp, flux, cmax)
         dvar = dvar + dt * inv_dr(2) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cfl_sum + cmax * inv_dr(2)
@@ -94,7 +88,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
              f4%bflux(i, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
 #:elif NDIM == 3
         ! Compute fluxes
-        tmp = uprim(i-n_gc:i+n_gc, j, k, :)
+        tmp = f4%uu_prim(i-n_gc:i+n_gc, j, k, i_tvars0+1:i_tvars0+n_tvars, n)
         call flux_cell_faces(1, tmp, flux, cmax)
         dvar = dvar + dt * inv_dr(1) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cmax * inv_dr(1)
@@ -105,7 +99,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
         if (f4%bflux_ix(1, n) > 0 .and. i == f4%bx(1)) &
              f4%bflux(j, k, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
 
-        tmp = uprim(i, j-n_gc:j+n_gc, k, :)
+        tmp = f4%uu_prim(i, j-n_gc:j+n_gc, k, i_tvars0+1:i_tvars0+n_tvars, n)
         call flux_cell_faces(2, tmp, flux, cmax)
         dvar = dvar + dt * inv_dr(2) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cfl_sum + cmax * inv_dr(2)
@@ -116,7 +110,7 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
         if (f4%bflux_ix(3, n) > 0 .and. j == f4%bx(2)) &
              f4%bflux(i, k, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
 
-        tmp = uprim(i, j, k-n_gc:k+n_gc, :)
+        tmp = f4%uu_prim(i, j, k-n_gc:k+n_gc, i_tvars0+1:i_tvars0+n_tvars, n)
         call flux_cell_faces(3, tmp, flux, cmax)
         dvar = dvar + dt * inv_dr(3) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cfl_sum + cmax * inv_dr(3)
