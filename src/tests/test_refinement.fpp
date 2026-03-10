@@ -278,10 +278,13 @@ contains
     real(dp)                     :: rr(NDIM), sol
     logical                      :: ghost_dim(NDIM), valid_cell
     real(dp), parameter          :: max_difference = 1e-15_dp
+    real(dp)                     :: max_err
 
-    !$acc parallel loop default(present)
+    max_err = 0.0_dp
+
+    !$acc parallel loop default(present) reduction(max:max_err)
     do n = 1, f4%n_blocks
-       !$acc loop collapse(${NDIM}$) private(rr, sol, ghost_dim, valid_cell)
+       !$acc loop collapse(${NDIM}$) reduction(max:max_err) private(rr, sol, ghost_dim, valid_cell)
        do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
 
           ghost_dim(1) = i < 1 .or. i > f4%bx(1)
@@ -307,16 +310,18 @@ contains
              f4%uu(${IJK}$, i_err, n) = 0.0_dp
           end if
 
-          if (abs(f4%uu(${IJK}$, i_err, n)) > max_difference) then
-             print *, f4%mpirank, "error: ", f4%uu(${IJK}$, i_err, n), "block: ", n, &
-                  "index:", ${IJK}$
-             if (abort_on_error) then
-                stop "Too large error"
-             end if
-          end if
+          max_err = max(max_err, f4%uu(${IJK}$, i_err, n))
 
        end do; ${KJI_CLOSE_LOOP}$
     end do
+
+    if (max_err > max_difference) then
+       print *, f4%mpirank, "max error: ", max_err
+       if (abort_on_error) then
+          error stop "Too large error"
+       end if
+    end if
+
   end subroutine compute_error
 
 end program test_ref
