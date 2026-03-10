@@ -17,6 +17,7 @@ pure subroutine to_conservative(u)
 end subroutine to_conservative
 
 subroutine source_term(u_prim, source)
+  !$acc routine seq
   real(dp), intent(in) :: u_prim(n_tvars)
   real(dp), intent(out) :: source(n_tvars)
   source = 0.0_dp
