@@ -355,7 +355,7 @@ contains
     f4%bflux = 0.0_dp
 
     ! Maximum size of recv/send buffer
-    i = max_blocks * 2 * NDIM * f4%gc_data_size
+    i = max_blocks * 2 * NDIM * f4%gc_data_size * f4%n_vars
     allocate(f4%recv_buffer(i))
     allocate(f4%send_buffer(i))
     allocate(f4%recv_offset(0:f4%mpisize))
@@ -1368,8 +1368,12 @@ contains
     integer                      :: i, j, k, i_f, j_f, k_f
 #:endif
 
-    if (maxval(f4%gc_send_offset) * n_vars > size(f4%send_buffer)) &
-         error stop "send buffer too small"
+    if (maxval(f4%gc_send_offset) * n_vars > size(f4%send_buffer)) then
+       write(error_unit, *) "maxval(f4%gc_send_offset): ", maxval(f4%gc_send_offset)
+       write(error_unit, *) "n_vars: ", n_vars
+       write(error_unit, *) "size(f4%send_buffer): ", size(f4%send_buffer)
+       error stop "send buffer too small"
+    end if
 
 #:def fyp_srl_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
     !$acc loop private(iq, i_buf0)
@@ -1519,8 +1523,13 @@ contains
     ! If nothing to do, save time by not starting parallel region
     if (f4%gc_c2f_to_buf_iface(2*NDIM) == 1) return
 
-    if (maxval(f4%gc_send_offset_c2f) * n_vars > size(f4%send_buffer)) &
-         error stop "send buffer too small"
+    if (maxval(f4%gc_send_offset_c2f) * n_vars > size(f4%send_buffer)) then
+       write(error_unit, *) "maxval(f4%gc_send_offset_c2f): ", &
+            maxval(f4%gc_send_offset_c2f)
+       write(error_unit, *) "n_vars: ", n_vars
+       write(error_unit, *) "size(f4%send_buffer): ", size(f4%send_buffer)
+       error stop "send buffer too small"
+    end if
 
     half_n_gc = f4%n_gc/2 ! Round down
     odd_n_gc  = (iand(f4%n_gc, 1) == 1)
