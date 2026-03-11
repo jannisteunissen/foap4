@@ -294,7 +294,7 @@ contains
     character(len=CFG_name_len)                          :: var_name, category
     integer                                              :: ix, equal_sign_ix
     logical                                              :: append
-    character(len=CFG_max_line_len)                      :: line
+    character(len=CFG_max_line_len)                      :: line, tmp_line
 
     valid_syntax = .true.
 
@@ -351,7 +351,8 @@ contains
        var_name = trim(category) // CFG_category_separator // var_name
     end if
 
-    line = line(equal_sign_ix + 1:) ! Set line to the values behind the '=' sign
+    tmp_line = line(equal_sign_ix + 1:) ! Set line to the values behind the '=' sign
+    line = tmp_line
 
     ! Find variable corresponding to name in file
     call get_var_index(cfg, var_name, ix)
