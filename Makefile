@@ -54,10 +54,15 @@ compiler_version := $(shell $(F90C) --version 2>/dev/null)
 compiler_brand ?= $(word 1, $(compiler_version))
 
 ifeq ($(compiler_brand),GNU)
-    FFLAGS ?= -Wall -O2 -g -J$(OBJDIR) -cpp -Wno-unused-dummy-argument -Wl,--no-warn-execstack
+    FFLAGS ?= -Wall -g -J$(OBJDIR) -cpp -Wno-unused-dummy-argument -Wl,--no-warn-execstack
     ifeq ($(DEBUG),1)
         FFLAGS += -O0 -fcheck=all -ffpe-trap=invalid,zero,overflow -finit-real=snan
         CFLAGS += -O0
+    endif
+    ifeq ($(SAFE),1)
+        FFLAGS += -O2
+    else
+        FFLAGS += -Ofast -march=native -flto
     endif
     ifeq ($(OPENACC),1)
 	FFLAGS += -fopenacc -foffload=nvptx-none
