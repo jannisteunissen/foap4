@@ -62,7 +62,7 @@ ifeq ($(compiler_brand),GNU)
     ifeq ($(SAFE),1)
         FFLAGS += -O2
     else
-        FFLAGS += -Ofast -march=native -flto
+        FFLAGS += -Ofast -march=native
     endif
     ifeq ($(OPENACC),1)
 	FFLAGS += -fopenacc -foffload=nvptx-none
