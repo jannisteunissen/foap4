@@ -42,7 +42,7 @@ program benchmark_gc
        min_level, n_refine_steps, max_blocks, write_grid, &
        "output/benchmark_gc", n_output)
 
-  if (f4%mpirank == 0) call f4_print_wtime(f4)
+  call f4_print_wtime_average(f4)
   call f4_finalize(f4)
 
 contains

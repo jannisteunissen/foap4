@@ -75,7 +75,7 @@ program test_adv
   call test_advection(f4, bx, do_refinement, max_blocks, &
        num_outputs, "output/test_adv_${NDIM}$d", end_time, integrator_name)
 
-  if (f4%mpirank == 0) call f4_print_wtime(f4)
+  call f4_print_wtime_average(f4)
   call f4_finalize(f4)
 
 contains
