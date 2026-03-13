@@ -110,7 +110,7 @@ contains
     type(foap4_t), intent(in) :: f4
     type(MPI_Comm)            :: host_comm
     integer                   :: host_rank, host_size, ierr
-    integer                   :: my_device, num_devices
+    integer                   :: my_device, num_devices, tasks_per_device
     integer(acc_device_kind)  :: dev_type
 
     ! Split communicator into subgroups per node
@@ -131,12 +131,19 @@ contains
                ") than GPUs (", num_devices, ")"
        endif
 
-       my_device = mod(host_rank, num_devices)
+       ! Round up
+       tasks_per_device = (host_size + num_devices - 1)/num_devices
+
+       ! Rank 0 to tasks_per_device-1 on device 0, etc.
+       my_device = host_rank/tasks_per_device
     else
        my_device = host_rank
     endif
 
     call acc_set_device_num(my_device, dev_type)
+    call acc_init(dev_type)
+
+    call MPI_Comm_free(host_comm, ierr)
 
   end subroutine set_openacc_device
 #endif
