@@ -413,7 +413,12 @@ contains
     f4%bflux = 0.0_dp
 
     ! Maximum size of recv/send buffer
-    i = max_blocks * 2 * NDIM * f4%gc_data_size * f4%n_vars
+    if (f4%mpisize > 1) then
+       i = max_blocks * 2 * NDIM * f4%gc_data_size * f4%n_vars
+    else
+       i = 0
+    end if
+
     allocate(f4%recv_buffer(i))
     allocate(f4%send_buffer(i))
     allocate(f4%recv_offset(0:f4%mpisize))
