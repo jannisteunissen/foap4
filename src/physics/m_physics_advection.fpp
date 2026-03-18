@@ -31,16 +31,24 @@ module m_physics_advection_${NDIM}$d
   real(dp)                     :: advection_velocity(${NDIM}$) = 1.0_dp
   !$acc declare create(advection_velocity)
 
+  ! Whether to use a Gaussian solution
+  logical                      :: advection_use_gaussian = .false.
+  !$acc declare create(advection_use_gaussian)
+
   ! Which variables are temporal
   logical, parameter           :: var_temporal(n_vars_all) = [.false., .true.]
 
 contains
 
-  subroutine advection_initialize(velocity)
+  subroutine advection_initialize(velocity, use_gaussian)
     real(dp), intent(in) :: velocity(${NDIM}$)
+    logical, intent(in)  :: use_gaussian
 
     advection_velocity = velocity
     !$acc update device(advection_velocity)
+
+    advection_use_gaussian = use_gaussian
+    !$acc update device(advection_use_gaussian)
   end subroutine advection_initialize
 
 end module m_physics_advection_${NDIM}$d

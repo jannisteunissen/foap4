@@ -37,6 +37,7 @@ program test_adv
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=40) :: integrator_name      = "heuns_method"
   logical           :: write_vtu = .false.
+  logical           :: use_gaussian = .false.
 
   type(foap4_t) :: f4
   type(CFG_t) :: cfg
@@ -46,6 +47,7 @@ program test_adv
   call CFG_update_from_arguments(cfg)
   call CFG_add_get(cfg, 'num_outputs', num_outputs, 'Write this many output files')
   call CFG_add_get(cfg, 'write_vtu', write_vtu, 'Also write p4est vtu files')
+  call CFG_add_get(cfg, 'use_gaussian', use_gaussian, 'Use Gaussian solution')
   call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
   call CFG_add_get(cfg, 'load_imbalance_threshold', load_imbalance_threshold, &
        'Threshold for partitioning')
@@ -100,9 +102,9 @@ contains
     integer                      :: integrator, n_time_states
     real(dp)                     :: dt, dt_lim, dt_output
     real(dp)                     :: t0, t1
-    real(dp)                     :: rho_initial_sum, rho_sum
+    real(dp)                     :: rho_initial_sum, rho_sum, l1_err, l2_err
 
-    call advection_initialize(velocity)
+    call advection_initialize(velocity, use_gaussian)
 
     f4%time = 0.0_dp
     dt_lim = 0.0_dp
@@ -154,11 +156,14 @@ contains
 
        if (write_this_step) then
           call set_error(f4)
+          call compute_error_norms(f4, i_error, l1_err, l2_err)
           call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
           call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &
                   rho_sum - rho_initial_sum
+             write(*, "(A,E12.4)") " L1 error: ", l1_err
+             write(*, "(A,E12.4)") " L2 error: ", l2_err
           end if
           n_output = n_output + 1
        end if
@@ -235,6 +240,42 @@ contains
     end do
   end subroutine set_error
 
+  subroutine compute_error_norms(f4, i_err, l1_err, l2_err)
+    type(foap4_t), intent(in) :: f4
+    integer, intent(in)       :: i_err
+    real(dp), intent(out)     :: l1_err, l2_err
+    integer                   :: level, ${IJK}$, n, ierror
+    real(dp)                  :: dvol
+
+    l1_err = 0.0_dp
+    l2_err = 0.0_dp
+
+    !$acc parallel loop private(level, dvol) reduction(+:l1_err, l2_err) default(present)
+    do n = 1, f4%n_blocks
+       level = f4%block_level(n)
+#:if NDIM == 2
+       dvol = f4%dr_level(1, level) * f4%dr_level(2, level)
+#:elif NDIM == 3
+       dvol = f4%dr_level(1, level) * f4%dr_level(2, level) * &
+            f4%dr_level(3, level)
+#:endif
+
+       !$acc loop collapse(ndim) reduction(+:l1_err, l2_err)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          l1_err = l1_err + abs(f4%uu(${IJK}$, i_err, n)) * dvol
+          l2_err = l2_err + f4%uu(${IJK}$, i_err, n)**2 * dvol
+       end do; ${KJI_CLOSE_LOOP}$
+    end do
+
+    call MPI_Allreduce(MPI_IN_PLACE, l1_err, 1, MPI_DOUBLE_PRECISION, &
+         MPI_SUM, f4%mpicomm, ierror)
+    call MPI_Allreduce(MPI_IN_PLACE, l2_err, 1, MPI_DOUBLE_PRECISION, &
+         MPI_SUM, f4%mpicomm, ierror)
+
+    l2_err = sqrt(l2_err)
+
+  end subroutine compute_error_norms
+
   pure real(dp) function rho_solution(${XYZ}$, t)
     !$acc routine seq
     real(dp), intent(in) :: ${XYZ}$
@@ -259,14 +300,18 @@ contains
     distance = sqrt((x - 0.5_dp)**2 + (y - 0.5_dp)**2 + (z - 0.5_dp)**2)
 #:endif
 
-    if (distance < radius - border) then
-       rho_solution = 1.0_dp
-    else if (distance < radius) then
-       ! cubic smoothstep: 1 - 3 q^2 + 2 q^3, with q in [0,1]
-       q = (distance - radius + border)/border
-       rho_solution = 1.0_dp - (3.0_dp * q**2 - 2.0_dp * q**3)
+    if (advection_use_gaussian) then
+       rho_solution = exp(-(distance/radius)**2)
     else
-       rho_solution = 0.0_dp
+       if (distance < radius - border) then
+          rho_solution = 1.0_dp
+       else if (distance < radius) then
+          ! cubic smoothstep: 1 - 3 q^2 + 2 q^3, with q in [0,1]
+          q = (distance - radius + border)/border
+          rho_solution = 1.0_dp - (3.0_dp * q**2 - 2.0_dp * q**3)
+       else
+          rho_solution = 0.0_dp
+       end if
     end if
   end function rho_solution
 
