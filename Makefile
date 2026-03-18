@@ -112,7 +112,6 @@ TARGETS_2D := $(addprefix $(BINDIR)/,\
     test_advection_2d \
     test_xdmf_writer_2d \
     test_euler_2d \
-    test_euler_jetcloud_2d \
     test_benchmark_ghostcell_2d \
     test_shallow_water_2d \
     test_euler_dmr_2d \
@@ -123,7 +122,6 @@ TARGETS_3D := $(addprefix $(BINDIR)/,\
     test_advection_3d \
     test_xdmf_writer_3d \
     test_euler_3d \
-    test_euler_jetcloud_3d \
 )
 
 # ==============================================================================
