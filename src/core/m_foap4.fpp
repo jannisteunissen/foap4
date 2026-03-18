@@ -34,8 +34,7 @@ module m_foap4_${NDIM}$d
   public :: f4_construct_brick
   public :: f4_set_bc_scalar
   public :: f4_reset_wtime
-  public :: f4_print_wtime_rank
-  public :: f4_print_wtime_average
+  public :: f4_print_wtime
   public :: f4_get_mesh_revision
   public :: f4_get_global_highest_level
   public :: f4_get_num_local_blocks
@@ -167,57 +166,33 @@ contains
   end subroutine f4_reset_wtime
 
   !> Print wall clock time measurements
-  subroutine f4_print_wtime_rank(f4)
-    type(foap4_t), intent(inout) :: f4
-    real(dp)                     :: t_total, fac
-
-    t_total = MPI_Wtime() - f4%wtime_t0
-    fac     = 1e2_dp / t_total
-    write(*, "(I6,A25,F9.2,' s')") f4%mpirank, "total_runtime", t_total
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_round1", &
-         f4%wtime_gc_fill_round1 * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_round2", &
-         f4%wtime_gc_fill_round2 * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_buff_round1", &
-         f4%wtime_gc_fill_buff_round1 * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "gc_fill_buff_round2", &
-         f4%wtime_gc_fill_buff_round2 * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "adjust_ref_p4est", &
-         f4%wtime_adjust_ref_p4est * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "adjust_ref_foap4", &
-         f4%wtime_adjust_ref_foap4 * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "partition", &
-         f4%wtime_partition * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "write_grid", &
-         f4%wtime_write_grid * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "update_gc_pattern", &
-         f4%wtime_update_gc_pattern * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "exchange_buffers", &
-         f4%wtime_exchange_buffers * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "flux_fix", &
-         f4%wtime_flux_fix * fac
-    write(*, "(I6,A25,F9.2,' %')") f4%mpirank, "sum_of_above", &
-         fac * ( &
-         f4%wtime_gc_fill_round1 + &
-         f4%wtime_gc_fill_round2 + &
-         f4%wtime_gc_fill_buff_round1 + &
-         f4%wtime_gc_fill_buff_round2 + &
-         f4%wtime_adjust_ref_p4est + &
-         f4%wtime_adjust_ref_foap4 + &
-         f4%wtime_partition + &
-         f4%wtime_write_grid + &
-         f4%wtime_update_gc_pattern + &
-         f4%wtime_exchange_buffers + &
-         f4%wtime_flux_fix)
-  end subroutine f4_print_wtime_rank
-
-  !> Print wall clock time measurements (averaged over all MPI ranks)
-  subroutine f4_print_wtime_average(f4)
+  subroutine f4_print_wtime(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: ierr
     integer, parameter           :: n_timers = 11
-    real(dp)                     :: fac, local_times(n_timers), avg_times(n_timers)
-    real(dp)                     :: local_total, avg_total, sum_avg
+    real(dp)                     :: local_times(n_timers)
+    real(dp)                     :: local_total
+    real(dp)                     :: local_fracs(n_timers)
+    real(dp)                     :: sum_fracs(n_timers), min_fracs(n_timers)
+    real(dp)                     :: max_fracs(n_timers)
+    real(dp)                     :: avg_frac
+    real(dp)                     :: send_total(1), recv_total(1)
+    real(dp)                     :: local_sum_frac(1)
+    real(dp)                     :: sum_sum_frac(1), min_sum_frac(1), max_sum_frac(1)
+    character(len=25)            :: timer_names(n_timers)
+    integer                      :: i
+
+    timer_names(1)  = "gc_fill_round1"
+    timer_names(2)  = "gc_fill_round2"
+    timer_names(3)  = "gc_fill_buff_round1"
+    timer_names(4)  = "gc_fill_buff_round2"
+    timer_names(5)  = "adjust_ref_p4est"
+    timer_names(6)  = "adjust_ref_foap4"
+    timer_names(7)  = "partition"
+    timer_names(8)  = "write_grid"
+    timer_names(9)  = "update_gc_pattern"
+    timer_names(10) = "exchange_buffers"
+    timer_names(11) = "flux_fix"
 
     local_total = MPI_Wtime() - f4%wtime_t0
 
@@ -233,33 +208,44 @@ contains
     local_times(10) = f4%wtime_exchange_buffers
     local_times(11) = f4%wtime_flux_fix
 
-    call MPI_Reduce(local_total, avg_total, 1, MPI_DOUBLE_PRECISION, &
-         MPI_SUM, 0, f4%mpicomm, ierr)
-    call MPI_Reduce(local_times, avg_times, n_timers, MPI_DOUBLE_PRECISION, &
-         MPI_SUM, 0, f4%mpicomm, ierr)
+    if (local_total > 0.0_dp) then
+       local_fracs = local_times * (1e2_dp / local_total)
+    else
+       local_fracs = 0.0_dp
+    end if
+
+    local_sum_frac(1) = sum(local_fracs)
+    send_total(1) = local_total
+
+    call MPI_Reduce(local_fracs,   sum_fracs,      n_timers, &
+         MPI_DOUBLE_PRECISION, MPI_SUM, 0, f4%mpicomm, ierr)
+    call MPI_Reduce(local_fracs,   min_fracs,      n_timers, &
+         MPI_DOUBLE_PRECISION, MPI_MIN, 0, f4%mpicomm, ierr)
+    call MPI_Reduce(local_fracs,   max_fracs,      n_timers, &
+         MPI_DOUBLE_PRECISION, MPI_MAX, 0, f4%mpicomm, ierr)
+    call MPI_Reduce(send_total,    recv_total,  1, &
+         MPI_DOUBLE_PRECISION, MPI_MAX, 0, f4%mpicomm, ierr)
+    call MPI_Reduce(local_sum_frac, sum_sum_frac, 1, &
+         MPI_DOUBLE_PRECISION, MPI_SUM, 0, f4%mpicomm, ierr)
+    call MPI_Reduce(local_sum_frac, min_sum_frac, 1, &
+         MPI_DOUBLE_PRECISION, MPI_MIN, 0, f4%mpicomm, ierr)
+    call MPI_Reduce(local_sum_frac, max_sum_frac, 1, &
+         MPI_DOUBLE_PRECISION, MPI_MAX, 0, f4%mpicomm, ierr)
 
     if (f4%mpirank == 0) then
-       avg_total = avg_total / f4%mpisize
-       avg_times = avg_times / f4%mpisize
-       fac       = 1e2_dp / avg_total
-       sum_avg   = sum(avg_times)
-
-       write(*, "(A,I6,A)") " Averaged wall clock times over ", f4%mpisize, " ranks"
-       write(*, "(A25,F9.2,' s')") "total_runtime", avg_total
-       write(*, "(A25,F9.2,' %')") "gc_fill_round1", avg_times(1) * fac
-       write(*, "(A25,F9.2,' %')") "gc_fill_round2", avg_times(2) * fac
-       write(*, "(A25,F9.2,' %')") "gc_fill_buff_round1", avg_times(3) * fac
-       write(*, "(A25,F9.2,' %')") "gc_fill_buff_round2", avg_times(4) * fac
-       write(*, "(A25,F9.2,' %')") "adjust_ref_p4est", avg_times(5) * fac
-       write(*, "(A25,F9.2,' %')") "adjust_ref_foap4", avg_times(6) * fac
-       write(*, "(A25,F9.2,' %')") "partition", avg_times(7) * fac
-       write(*, "(A25,F9.2,' %')") "write_grid", avg_times(8) * fac
-       write(*, "(A25,F9.2,' %')") "update_gc_pattern", avg_times(9) * fac
-       write(*, "(A25,F9.2,' %')") "exchange_buffers", avg_times(10) * fac
-       write(*, "(A25,F9.2,' %')") "flux_fix", avg_times(11) * fac
-       write(*, "(A25,F9.2,' %')") "sum_of_above", sum_avg * fac
+       write(*, "(A)") ""
+       write(*, "(A,E15.6,A)") "total_runtime ", recv_total(1), " s"
+       write(*, "(A25,3A11)") "timer                    ", "avg %", "min %", "max %"
+       write(*, "(A25,3A11)") repeat("-", 25), ("-----------", i=1,3)
+       do i = 1, n_timers
+          avg_frac = sum_fracs(i) / f4%mpisize
+          write(*, "(A25,3F11.3)") timer_names(i), avg_frac, min_fracs(i), max_fracs(i)
+       end do
+       write(*, "(A25,3F11.3)") "sum_of_above             ", &
+            sum_sum_frac(1) / f4%mpisize, min_sum_frac(1), max_sum_frac(1)
+       write(*, "(A)") ""
     end if
-  end subroutine f4_print_wtime_average
+  end subroutine f4_print_wtime
 
   !> Destroy all data for the current mesh
   subroutine f4_destroy(f4)

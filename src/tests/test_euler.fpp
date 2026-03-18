@@ -72,7 +72,7 @@ program euler
        num_outputs, trim(output_prefix), test_case, &
        end_time, integrator_name)
 
-  call f4_print_wtime_average(f4)
+  call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains

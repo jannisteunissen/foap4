@@ -103,7 +103,7 @@ program test_ref
 #:endif
   end do
 
-  call f4_print_wtime_average(f4)
+  call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains

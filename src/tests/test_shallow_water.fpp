@@ -79,7 +79,7 @@ program shallow_water
        num_outputs, "output/test_shallow_water_${NDIM}$d", &
        end_time, integrator_name)
 
-  call f4_print_wtime_average(f4)
+  call f4_print_wtime(f4)
   call f4_finalize(f4)
 
 contains
