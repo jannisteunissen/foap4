@@ -179,7 +179,6 @@ contains
     real(dp)                     :: avg_frac
     real(dp)                     :: send_total(1), recv_total(1)
     real(dp)                     :: local_sum_frac(1)
-    real(dp)                     :: sum_sum_frac(1), min_sum_frac(1), max_sum_frac(1)
     character(len=25)            :: timer_names(n_timers)
     integer                      :: i
 
@@ -228,12 +227,6 @@ contains
          MPI_DOUBLE_PRECISION, MPI_MAX, 0, f4%mpicomm, ierr)
     call MPI_Reduce(send_total,    recv_total,  1, &
          MPI_DOUBLE_PRECISION, MPI_MAX, 0, f4%mpicomm, ierr)
-    call MPI_Reduce(local_sum_frac, sum_sum_frac, 1, &
-         MPI_DOUBLE_PRECISION, MPI_SUM, 0, f4%mpicomm, ierr)
-    call MPI_Reduce(local_sum_frac, min_sum_frac, 1, &
-         MPI_DOUBLE_PRECISION, MPI_MIN, 0, f4%mpicomm, ierr)
-    call MPI_Reduce(local_sum_frac, max_sum_frac, 1, &
-         MPI_DOUBLE_PRECISION, MPI_MAX, 0, f4%mpicomm, ierr)
 
     if (f4%mpirank == 0) then
        write(*, "(A)") ""
@@ -245,7 +238,7 @@ contains
           write(*, "(A25,3F11.3)") timer_names(i), avg_frac, min_fracs(i), max_fracs(i)
        end do
        write(*, "(A25,3F11.3)") "sum_of_above             ", &
-            sum_sum_frac(1) / f4%mpisize, min_sum_frac(1), max_sum_frac(1)
+            sum(sum_fracs) / f4%mpisize, sum(min_fracs), sum(max_fracs)
        write(*, "(A)") ""
     end if
   end subroutine f4_print_wtime
