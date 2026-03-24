@@ -174,6 +174,9 @@ contains
     end if
     n_output = n_output + 1
 
+    ! Only report timings for main time loop
+    call f4_reset_wtime(f4)
+
     t0 = MPI_Wtime()
 
     do while (f4%time < end_time)

@@ -163,13 +163,14 @@ contains
     f4%wtime_update_gc_pattern = 0.0_dp
     f4%wtime_exchange_buffers = 0.0_dp
     f4%wtime_flux_fix = 0.0_dp
+    f4%wtime_finite_volume = 0.0_dp
   end subroutine f4_reset_wtime
 
   !> Print wall clock time measurements
   subroutine f4_print_wtime(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: ierr
-    integer, parameter           :: n_timers = 11
+    integer, parameter           :: n_timers = 12
     real(dp)                     :: local_times(n_timers)
     real(dp)                     :: local_total
     real(dp)                     :: local_fracs(n_timers)
@@ -193,6 +194,7 @@ contains
     timer_names(9)  = "update_gc_pattern"
     timer_names(10) = "exchange_buffers"
     timer_names(11) = "flux_fix"
+    timer_names(12) = "finite_volume"
 
     local_total = MPI_Wtime() - f4%wtime_t0
 
@@ -207,6 +209,7 @@ contains
     local_times(9)  = f4%wtime_update_gc_pattern
     local_times(10) = f4%wtime_exchange_buffers
     local_times(11) = f4%wtime_flux_fix
+    local_times(12) = f4%wtime_finite_volume
 
     if (local_total > 0.0_dp) then
        local_fracs = local_times * (1e2_dp / local_total)

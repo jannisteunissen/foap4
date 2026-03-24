@@ -13,12 +13,13 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
   integer                      :: n, ${IJK}$, m, level, iv, ierr
   logical                      :: ghost_dim(NDIM), valid_cell
   real(dp)                     :: inv_dr(NDIM), cmax, cfl_sum, max_cfl
-  real(dp)                     :: flux(n_tvars, 2)
+  real(dp)                     :: flux(n_tvars, 2), t0, t1
   real(dp)                     :: tmp(1+2*n_gc, n_tvars)
   real(dp)                     :: dvar(n_tvars), u(n_tvars)
 
   call f4_update_ghostcells(f4, n_tvars, i_tvars, s_deriv)
 
+  t0 = MPI_Wtime()
   max_cfl = 0.0_dp
 
   !$acc parallel loop private(level, inv_dr) reduction(max:max_cfl) &
@@ -136,10 +137,13 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
      end do; ${KJI_CLOSE_LOOP}$
   end do
 
-  call f4_fix_c2f_flux(f4, n_tvars, i_tvars, s_out)
-
   dt_lim = 1/max_cfl
   call MPI_Allreduce(MPI_IN_PLACE, dt_lim, 1, MPI_DOUBLE_PRECISION, &
        MPI_MIN, f4%mpicomm, ierr)
+
+  t1 = MPI_Wtime()
+  f4%wtime_finite_volume = f4%wtime_finite_volume + t1 - t0
+
+  call f4_fix_c2f_flux(f4, n_tvars, i_tvars, s_out)
 
 end subroutine feuler_finite_volume

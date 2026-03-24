@@ -242,6 +242,7 @@ module m_foap4_types_${NDIM}$d
      real(dp) :: wtime_update_gc_pattern = 0.0_dp
      real(dp) :: wtime_exchange_buffers = 0.0_dp
      real(dp) :: wtime_flux_fix = 0.0_dp
+     real(dp) :: wtime_finite_volume = 0.0_dp
 
      !> Optional procedure to set boundary conditions after changing the mesh.
      !> Should be set before the mesh is created.
