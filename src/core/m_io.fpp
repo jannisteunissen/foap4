@@ -1,4 +1,8 @@
 !> Module for writing output
+!>
+!> The XDMF part was inspired by the implementation in the bhac code, see
+!> src/amrvacio/amrio.t in
+!> https://gitlab.itp.uni-frankfurt.de/BHAC-release/bhac
 #:include 'definitions.fpp'
 module m_io_${NDIM}$d
   use mpi_f08
@@ -66,6 +70,7 @@ contains
 
   end subroutine io_write_grid
 
+  !> Write block data to binary files (one per task) and a single .xdmf header file
   subroutine io_xdmf_write_blocks_${NDIM}$DCoRect(mpicomm, filename, n_blocks, nx, n_cc, &
        cc_names, n_gc, origin, dr, cc_data, get_block_cc_data, time, viewer)
     integer, parameter             :: NDIM = ${NDIM}$
@@ -309,6 +314,7 @@ contains
     fname = trim(filename) // trim(suffix) // trim(extension)
   end subroutine get_fname_rank
 
+  !> Get basename of fullpath
   subroutine get_basename(fullpath, out_basename)
     character(len=*), intent(in) :: fullpath
     character(len=*), intent(out) :: out_basename
