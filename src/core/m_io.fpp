@@ -21,19 +21,24 @@ module m_io_${NDIM}$d
 contains
 
   !> Write the AMR grid to a file
-  subroutine io_write_grid(f4, fname, n_output, viewer, write_p4vtu)
+  subroutine io_write_grid(f4, fname, n_output, viewer, write_p4vtu, n_gc_out)
     type(foap4_t), intent(inout)           :: f4
     character(len=*), intent(in)           :: fname    !< Base file name
     integer, intent(in)                    :: n_output !< Output index
     character(len=*), intent(in), optional :: viewer   !< Optimize for viewer
     !> Also write p4est vtu file (default: false)
     logical, intent(in), optional          :: write_p4vtu
+    !> Number of ghost cells to include in output
+    integer, intent(in), optional          :: n_gc_out
     character(len=len_trim(fname)+7)       :: full_fname
-    integer                                :: n
+    integer                                :: n, out_gc
     real(dp), allocatable                  :: dr(:, :)
     real(dp)                               :: t0, t1
 
     t0 = MPI_Wtime()
+
+    out_gc = 0; if (present(n_gc_out)) out_gc = n_gc_out
+    if (out_gc < 0 .or. out_gc > f4%n_gc) error stop "Invalid n_gc_out"
 
     ! OpenACC - get the block data from the device
     !$acc update self (f4%uu(@{DTIMES(:)}@, :, 1:f4%n_blocks))
@@ -53,8 +58,8 @@ contains
     end do
 
     call io_xdmf_write_blocks_${NDIM}$DCoRect(f4%mpicomm, trim(full_fname), &
-         f4%n_blocks, f4%bx+2*f4%n_gc, f4%n_vars, &
-         f4%var_names(1:f4%n_vars), f4%n_gc, &
+         f4%n_blocks, f4%bx, f4%n_vars, &
+         f4%var_names(1:f4%n_vars), f4%n_gc, out_gc, &
          f4%block_origin(:, 1:f4%n_blocks), dr, &
          get_block_cc_data=get_block_data, time=f4%time, viewer=viewer)
     t1 = MPI_Wtime()
@@ -72,24 +77,26 @@ contains
 
   !> Write block data to binary files (one per task) and a single .xdmf header file
   subroutine io_xdmf_write_blocks_${NDIM}$DCoRect(mpicomm, filename, n_blocks, nx, n_cc, &
-       cc_names, n_gc, origin, dr, cc_data, get_block_cc_data, time, viewer)
+       cc_names, in_gc, out_gc, origin, dr, cc_data, get_block_cc_data, time, viewer)
     integer, parameter             :: NDIM = ${NDIM}$
     type(MPI_comm), intent(in)     :: mpicomm !< MPI communicator
     character(len=*), intent(in)   :: filename !< File name without extension
     integer, intent(in)            :: n_blocks !< Number of blocks
-    integer, intent(in)            :: nx(NDIM) !< Size of the blocks (incl. ghost cells)
+    integer, intent(in)            :: nx(NDIM) !< Size of the blocks (excl. ghost cells)
     integer, intent(in)            :: n_cc !< Number of variables
     character(len=*), intent(in)   :: cc_names(n_cc) !< Names of variables
-    integer, intent(in)            :: n_gc !< Number of ghost cells
+    integer, intent(in)            :: in_gc !< Number of ghost cells in input
+    integer, intent(in)            :: out_gc !< Number of ghost cells to write
     !> Origin of each block (incl. ghost cells)
     real(dp), intent(in)           :: origin(NDIM, n_blocks)
     real(dp), intent(in)           :: dr(NDIM, n_blocks) !< Grid spacing of each block
     !> Cell-centered data
 #:if NDIM == 2
-    real(dp), intent(in), optional :: cc_data(nx(1), nx(2), n_cc, n_blocks)
+    real(dp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
+         -in_gc+1:nx(2)+in_gc, n_cc, n_blocks)
 #:elif NDIM == 3
-    real(dp), intent(in), optional :: cc_data(nx(1), nx(2), nx(3), &
-         n_cc, n_blocks)
+    real(dp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
+         -in_gc+1:nx(2)+in_gc, -in_gc+1:nx(3)+in_gc, n_cc, n_blocks)
 #:endif
     !> Method to get cell-centered data
     procedure(subr_cc_data_${NDIM}$D), optional :: get_block_cc_data
@@ -139,17 +146,30 @@ contains
          access='stream')
 
     if (present(cc_data)) then
-       write(my_unit) cc_data
+#:if NDIM == 2
+       write(my_unit) cc_data(-out_gc+1:nx(1)+out_gc, &
+         -out_gc+1:nx(2)+out_gc, :, :)
+#:elif NDIM == 3
+       write(my_unit) cc_data(-out_gc+1:nx(1)+out_gc, &
+         -out_gc+1:nx(2)+out_gc, -out_gc+1:nx(3)+out_gc, :, :)
+#:endif
     else if (present(get_block_cc_data)) then
 #:if NDIM == 2
-       allocate(cc_block(nx(1), nx(2), n_cc))
+       allocate(cc_block(-in_gc+1:nx(1)+in_gc, -in_gc+1:nx(2)+in_gc, n_cc))
 #:elif NDIM == 3
-       allocate(cc_block(nx(1), nx(2), nx(3), n_cc))
+       allocate(cc_block(-in_gc+1:nx(1)+in_gc, -in_gc+1:nx(2)+in_gc, &
+            -in_gc+1:nx(2)+in_gc, n_cc))
 #:endif
 
        do n = 1, n_blocks
           call get_block_cc_data(n, cc_block)
-          write(my_unit) cc_block
+#:if NDIM == 2
+          write(my_unit) cc_block(-out_gc+1:nx(1)+out_gc, &
+               -out_gc+1:nx(2)+out_gc, :)
+#:elif NDIM == 3
+          write(my_unit) cc_block(-out_gc+1:nx(1)+out_gc, &
+               -out_gc+1:nx(2)+out_gc, -out_gc+1:nx(3)+out_gc, :)
+#:endif
        end do
     else
        error stop "Either cc_data or get_block_cc_data should be given"
@@ -213,13 +233,13 @@ contains
 #:if NDIM == 2
              write(my_unit, "(a,I0,a,I0,' ',I0,a)") &
                   '    <Topology TopologyType="', NDIM, 'DCoRectMesh" Dimensions="', &
-                  nx(2)+1-2*n_gc, nx(1)+1-2*n_gc, '"/>'
+                  nx(2)+1, nx(1)+1, '"/>'
              write(my_unit, "(a)") &
                   '    <Geometry GeometryType="ORIGIN_DXDY">'
 #:elif NDIM == 3
              write(my_unit, "(a,I0,a,I0,' ',I0,' ',I0,a)") &
                   '    <Topology TopologyType="', NDIM, 'DCoRectMesh" Dimensions="', &
-                  nx(3)+1-2*n_gc, nx(2)+1-2*n_gc, nx(1)+1-2*n_gc, '"/>'
+                  nx(3)+1, nx(2)+1, nx(1)+1, '"/>'
              write(my_unit, "(a)") &
                   '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
 #:endif
@@ -247,31 +267,32 @@ contains
 #:if NDIM == 2
                 write(my_unit, "(a,I0,a,I0,a)") &
                      '      <DataItem ItemType="HyperSlab" Dimensions="',&
-                     nx(2)-2*n_gc, ' ', nx(1)-2*n_gc, '">'
+                     nx(2), ' ', nx(1), '">'
                 write(my_unit, "(a, 12(I0,' '),a)") &
                      '        <DataItem Dimensions="3 4"> ', &
-                     n-1, iv-1, n_gc, n_gc, &            ! start
+                     n-1, iv-1, out_gc, out_gc, &            ! start
                      1, 1, 1, 1, &                       ! stride
-                     1, 1, nx(2)-2*n_gc, nx(1)-2*n_gc, & ! count
+                     1, 1, nx(2), nx(1), & ! count
                      '</DataItem>'
 
                 write(my_unit, "(a, 4(I0,' '),a,a,a)") &
-                     '        <DataItem Dimensions="', n_blocks, n_cc, nx(2), nx(1), &
+                     '        <DataItem Dimensions="', n_blocks, n_cc, &
+                     nx(2) + 2*out_gc, nx(1) + 2*out_gc, &
                      '" Format="Binary" NumberType="Float" Precision="8">'
 #:elif NDIM == 3
                 write(my_unit, "(a,I0,a,I0,a,I0,a)") &
                      '      <DataItem ItemType="HyperSlab" Dimensions="',&
-                     nx(3)-2*n_gc, ' ', nx(2)-2*n_gc, ' ', nx(1)-2*n_gc, '">'
+                     nx(3), ' ', nx(2), ' ', nx(1), '">'
                 write(my_unit, "(a, 15(I0,' '),a)") &
                      '        <DataItem Dimensions="3 5"> ', &
-                     n-1, iv-1, n_gc, n_gc, n_gc, & ! start
+                     n-1, iv-1, out_gc, out_gc, out_gc, & ! start
                      1, 1, 1, 1, 1, &               ! stride
-                     1, 1, nx(3)-2*n_gc, nx(2)-2*n_gc, nx(1)-2*n_gc, & ! count
+                     1, 1, nx(3), nx(2), nx(1), & ! count
                      '</DataItem>'
 
                 write(my_unit, "(a, 5(I0,' '),a,a,a)") &
                      '        <DataItem Dimensions="', n_blocks, n_cc, &
-                     nx(3), nx(2), nx(1), &
+                     nx(3) + 2*out_gc, nx(2) + 2*out_gc, nx(1) + 2*out_gc, &
                      '" Format="Binary" NumberType="Float" Precision="8">'
 #:endif
                 write(my_unit, "(a)") trim(binary_basename)

@@ -5,7 +5,6 @@ program test_xdmf_writer_${NDIM}$d
 
   implicit none
   integer, parameter :: dp = kind(0.0d0)
-
   integer :: ierr, mpisize
 
   call MPI_init(ierr)
@@ -18,11 +17,15 @@ program test_xdmf_writer_${NDIM}$d
   end if
 
 #:if NDIM == 2
-  call multi_block_test_2d("output/xdmf_test_single_2d", [1, 1], [16, 16])
-  call multi_block_test_2d("output/xdmf_test_multiple_2d", [4, 2], [8, 8])
+  call multi_block_test_2d("output/xdmf_test_single_2d_0gc", [1, 1], [16, 16], 0)
+  call multi_block_test_2d("output/xdmf_test_single_2d_1gc", [1, 1], [16, 16], 1)
+  call multi_block_test_2d("output/xdmf_test_multiple_2d_0gc", [4, 2], [8, 8], 0)
+  call multi_block_test_2d("output/xdmf_test_multiple_2d_1gc", [4, 2], [8, 8], 1)
 #:elif NDIM == 3
-  call multi_block_test_3d("output/xdmf_test_single_3d", [1, 1, 1], [16, 16, 16])
-  call multi_block_test_3d("output/xdmf_test_multiple_3d", [4, 2, 2], [8, 8, 8])
+  call multi_block_test_3d("output/xdmf_test_single_3d_0gc", [1, 1, 1], [16, 16, 16], 0)
+  call multi_block_test_3d("output/xdmf_test_single_3d_1gc", [1, 1, 1], [16, 16, 16], 1)
+  call multi_block_test_3d("output/xdmf_test_multiple_3d_0gc", [4, 2, 2], [8, 8, 8], 0)
+  call multi_block_test_3d("output/xdmf_test_multiple_3d_1gc", [4, 2, 2], [8, 8, 8], 1)
 #:endif
 
   call MPI_finalize(ierr)
@@ -30,10 +33,11 @@ program test_xdmf_writer_${NDIM}$d
 contains
 
 #:if NDIM == 2
-  subroutine multi_block_test_2d(fname, n_blocks_dim, nx)
+  subroutine multi_block_test_2d(fname, n_blocks_dim, nx, n_gc_out)
     character(len=*), intent(in) :: fname
     integer, intent(in)          :: n_blocks_dim(2)
     integer, intent(in)          :: nx(2)
+    integer, intent(in)          :: n_gc_out
     integer                      :: n_blocks
     integer, parameter           :: n_cc        = 2
     character(len=10)            :: cc_names(n_cc) = ["rho", "phi"]
@@ -72,14 +76,15 @@ contains
     end do
 
     call io_xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx+2*n_gc, n_cc, cc_names, n_gc, origin, dr, cc_data, time=time)
+         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, cc_data, time=time)
 
   end subroutine multi_block_test_2d
 #:elif NDIM == 3
-  subroutine multi_block_test_3d(fname, n_blocks_dim, nx)
+  subroutine multi_block_test_3d(fname, n_blocks_dim, nx, n_gc_out)
     character(len=*), intent(in) :: fname
     integer, intent(in)          :: n_blocks_dim(3)
     integer, intent(in)          :: nx(3)
+    integer, intent(in)          :: n_gc_out
     integer                      :: n_blocks
     integer, parameter           :: n_cc        = 2
     character(len=10)            :: cc_names(n_cc) = ["rho", "phi"]
@@ -124,7 +129,7 @@ contains
     end do
 
     call io_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx+2*n_gc, n_cc, cc_names, n_gc, origin, dr, cc_data, time=time)
+         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, cc_data, time=time)
 
   end subroutine multi_block_test_3d
 #:endif
