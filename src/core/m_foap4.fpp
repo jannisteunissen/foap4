@@ -321,7 +321,7 @@ contains
     t0 = MPI_Wtime()
 
     if (any(bx /= bx(1))) error stop "TODO: unequal bx(:) not yet supported"
-    if (any(bx < 2 * n_gc)) error stop "Cannot have any(bx < 2 * n_gc)"
+    if (any(bx < n_gc)) error stop "Cannot have any(bx < n_gc)"
     if (any(iand(bx, 1) == 1)) error stop "All bx have to be even"
 
     f4%bx          = bx
