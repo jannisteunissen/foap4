@@ -143,7 +143,7 @@ contains
     ! Write binary file
     call get_fname_rank(trim(filename), '.bin', mpirank, binary_fname)
     open(newunit=my_unit, file=trim(binary_fname), form='unformatted', &
-         access='stream')
+         access='stream', status='replace')
 
     if (present(cc_data)) then
 #:if NDIM == 2
@@ -179,7 +179,8 @@ contains
 
     if (mpirank == 0) then
        ! Write header
-       open(newunit=my_unit, file=trim(filename) // '.xdmf', action="write")
+       open(newunit=my_unit, file=trim(filename) // '.xdmf', action="write", &
+            status='replace')
 
        write(my_unit, "(a)") '<?xml version="1.0" encoding="US-ASCII"?>'
        write(my_unit, "(a)") '<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>'
