@@ -179,6 +179,10 @@ help:
 	@echo "Current FLOAT_BITS: $(FLOAT_BITS)"
 	@echo "Current FFLAGS: $(FFLAGS)"
 
+
+clean:
+	$(RM) -r $(BUILDDIR)
+
 # ==============================================================================
 # Directory creation
 # ==============================================================================
