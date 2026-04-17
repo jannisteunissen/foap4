@@ -37,3 +37,6 @@ Load the NVHPC compilers, so that `mpif90` points to `nvfortran` etc. Then simpl
 
     make
 
+To see a list of compilation options, use
+
+    make help
