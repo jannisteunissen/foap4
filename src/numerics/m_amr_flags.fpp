@@ -7,8 +7,6 @@ module m_amr_flags_${NDIM}$d
   implicit none
   private
 
-  integer, parameter :: dp = kind(0.0d0)
-
   ! Public methods
   public :: amr_flags_diff2
 

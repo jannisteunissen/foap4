@@ -6,8 +6,6 @@ module m_rk_${NDIM}$d
   implicit none
   private
 
-  integer, parameter :: dp = kind(0.0d0)
-
   !> Number of time integration schemes
   integer, parameter, public :: rk_num_integrators  = 6
 

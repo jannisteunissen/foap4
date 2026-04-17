@@ -4,7 +4,6 @@ program test_xdmf_writer_${NDIM}$d
   use m_io_${NDIM}$d
 
   implicit none
-  integer, parameter :: dp = kind(0.0d0)
   integer :: ierr, mpisize
 
   call MPI_init(ierr)
@@ -43,7 +42,7 @@ contains
     character(len=10)            :: cc_names(n_cc) = ["rho", "phi"]
     integer, parameter           :: n_gc        = 1
     real(dp), allocatable        :: origin(:, :), dr(:, :)
-    real(dp), allocatable        :: cc_data(:, :, :, :)
+    real(fp), allocatable        :: cc_data(:, :, :, :)
     real(dp), parameter          :: time        = 1.0_dp
     integer                      :: i, j, ii, jj, i_block
     integer                      :: lo(2), hi(2)
@@ -68,8 +67,8 @@ contains
           do j = lo(2), hi(2)
              do i = lo(1), hi(1)
                 rr = origin(:, i_block) + [i-0.5_dp, j-0.5_dp] * dr(:, i_block)
-                cc_data(i, j, 1, i_block) = product(sin(rr * pi))
-                cc_data(i, j, 2, i_block) = product(cos(rr * pi))
+                cc_data(i, j, 1, i_block) = real(product(sin(rr * pi)), fp)
+                cc_data(i, j, 2, i_block) = real(product(cos(rr * pi)), fp)
              end do
           end do
        end do
@@ -90,7 +89,7 @@ contains
     character(len=10)            :: cc_names(n_cc) = ["rho", "phi"]
     integer, parameter           :: n_gc        = 1
     real(dp), allocatable        :: origin(:, :), dr(:, :)
-    real(dp), allocatable        :: cc_data(:, :, :, :, :)
+    real(fp), allocatable        :: cc_data(:, :, :, :, :)
     real(dp), parameter          :: time        = 1.0_dp
     integer                      :: i, j, k, ii, jj, kk, i_block
     integer                      :: lo(3), hi(3)
@@ -119,8 +118,8 @@ contains
                    do i = lo(1), hi(1)
                       rr = origin(:, i_block) + &
                            [i-0.5_dp, j-0.5_dp, k-0.5_dp] * dr(:, i_block)
-                      cc_data(i, j, k, 1, i_block) = product(sin(rr * pi))
-                      cc_data(i, j, k, 2, i_block) = product(cos(rr * pi))
+                      cc_data(i, j, k, 1, i_block) = real(product(sin(rr * pi)), fp)
+                      cc_data(i, j, k, 2, i_block) = real(product(cos(rr * pi)), fp)
                    end do
                 end do
              end do

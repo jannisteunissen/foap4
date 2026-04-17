@@ -1,14 +1,13 @@
 !> Definitions for shallow water equations (2D only)
 #:assert NDIM == 2
 module m_physics_shallow_water_${NDIM}$d
+  use m_foap4_types_${NDIM}$d
 
   implicit none
   public
 
-  integer, parameter, private :: dp = kind(0.0d0)
-
   ! Gravitational acceleration
-  real(dp), parameter :: gravity_constant = 9.81_dp
+  real(fp), parameter :: gravity_constant = 9.81_fp
   !$acc declare create(gravity_constant)
 
   ! Number of temporal variables (h, momentum components)

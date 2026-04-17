@@ -15,7 +15,6 @@ program euler
   implicit none
 
   include 'limiter_${LIMITER}$_definitions.f90'
-  integer, parameter :: dp = kind(0.0d0)
   integer, parameter :: n_gc = limiter_num_ghostcells
 
   type(foap4_t) :: f4
@@ -251,12 +250,12 @@ contains
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
-    real(dp)                     :: u0(n_tvars, 2)
+    real(fp)                     :: u0(n_tvars, 2)
 
     ! 1D Sod shock test case
-    u0(i_rho, :) = [1.0_dp, 0.125_dp]
-    u0(i_e, :)   = [1.0_dp, 0.1_dp]
-    u0(i_mom0+1:i_mom0+NDIM, :) = 0.0_dp
+    u0(i_rho, :) = [1.0_fp, 0.125_fp]
+    u0(i_e, :)   = [1.0_fp, 0.1_fp]
+    u0(i_mom0+1:i_mom0+NDIM, :) = 0.0_fp
 
     call to_conservative(u0(:, 1))
     call to_conservative(u0(:, 2))
@@ -279,22 +278,23 @@ contains
   subroutine set_initial_conditions_rt(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, ${IJK}$
-    real(dp)                     :: h0, dh, rho_high, rho_low
-    real(dp)                     :: p_interface, k_vec(NDIM-1), rr(NDIM)
-    real(dp), parameter          :: pi = acos(-1.0_dp)
+    real(fp)                     :: rho_high, rho_low
+    real(dp)                     :: p_interface, k_vec(NDIM-1)
+    real(dp)                     :: rr(NDIM), h0, dh
+    real(fp), parameter          :: pi = acos(-1.0_fp)
 
     ! The location of interface
-    h0 = 0.8d0
+    h0 = 0.8_fp
 
     ! Width of the sinusoidal fluctuations on the interface
-    dh = 0.05d0
+    dh = 0.05_fp
 
     ! High and low density
-    rho_high = 1.0_dp
-    rho_low  = 0.1_dp
+    rho_high = 1.0_fp
+    rho_low  = 0.1_fp
 
     ! Pressure at interface
-    p_interface = 1.0_dp
+    p_interface = 1.0_fp
 
     ! Wavelength
     k_vec(1) = 2 * pi
@@ -308,7 +308,7 @@ contains
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
-          f4%uu(${IJK}$, i_mom0+1:i_mom0+NDIM, n) = 0.0_dp
+          f4%uu(${IJK}$, i_mom0+1:i_mom0+NDIM, n) = 0.0_fp
 
           if (rr(NDIM) > h0 + dh * product(sin(k_vec * rr(1:NDIM-1)))) then
              f4%uu(${IJK}$, i_rho, n) = rho_high
@@ -316,8 +316,8 @@ contains
              f4%uu(${IJK}$, i_rho, n) = rho_low
           end if
 
-          f4%uu(${IJK}$, i_e, n) = euler_inv_gamma_m1 * (p_interface + &
-               f4%uu(${IJK}$, i_rho, n) * euler_gravity * (rr(NDIM) - h0))
+          f4%uu(${IJK}$, i_e, n) = real(euler_inv_gamma_m1 * (p_interface + &
+               f4%uu(${IJK}$, i_rho, n) * euler_gravity * (rr(NDIM) - h0)), fp)
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_initial_conditions_rt
@@ -325,45 +325,45 @@ contains
   subroutine set_initial_conditions_vortex(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, ${IJK}$
-    real(dp)                     :: rr(NDIM), rc(NDIM), r2
-    real(dp)                     :: rho, p, T
-    real(dp)                     :: v(NDIM), dv(NDIM), dT
-    real(dp), parameter          :: pi = acos(-1.0_dp)
+    real(fp)                     :: rr(NDIM), rc(NDIM), r2
+    real(fp)                     :: rho, p, T
+    real(fp)                     :: v(NDIM), dv(NDIM), dT
+    real(fp), parameter          :: pi = acos(-1.0_fp)
 
     ! Isentropic vortex parameters (Shu 1998)
-    real(dp), parameter :: beta    = 5.0_dp ! Vortex strength
-    real(dp), parameter :: rho_inf = 1.0_dp ! Free-stream density
-    real(dp), parameter :: p_inf   = 1.0_dp ! Free-stream pressure
-    real(dp), parameter :: L       = 5.0_dp ! Domain size
-    real(dp)            :: v_inf(NDIM), T_inf, c_inf
+    real(fp), parameter :: beta    = 5.0_fp ! Vortex strength
+    real(fp), parameter :: rho_inf = 1.0_fp ! Free-stream density
+    real(fp), parameter :: p_inf   = 1.0_fp ! Free-stream pressure
+    real(fp), parameter :: L       = 5.0_fp ! Domain size
+    real(fp)            :: v_inf(NDIM), T_inf, c_inf
 
     T_inf      = p_inf / rho_inf
     c_inf      = sqrt(euler_gamma * p_inf / rho_inf)
-    v_inf(:)   = 0.0_dp
-    v_inf(1:2) = 1.0_dp
+    v_inf(:)   = 0.0_fp
+    v_inf(1:2) = 1.0_fp
 
     ! Vortex center (middle of domain)
-    rc(:) = 5.0_dp
+    rc(:) = 5.0_fp
 
     !$acc parallel loop default(present) copyin(rc, v_inf)
     do n = 1, f4%n_blocks
        !$acc loop collapse(NDIM) private(rr, r2, dv, dT, T, rho, p, v)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
+          rr = real(f4_cell_coord(f4, n, ${IJK}$), fp)
 
           ! Distance squared from vortex center
           r2 = (rr(1) - rc(1))**2 + (rr(2) - rc(2))**2
 
           ! Velocity perturbations
-          dv(1) = -beta / (2.0_dp * pi) * (rr(2) - rc(2)) * exp(0.5_dp * (1.0_dp - r2))
-          dv(2) = beta / (2.0_dp * pi) * (rr(1) - rc(1)) * exp(0.5_dp * (1.0_dp - r2))
+          dv(1) = -beta / (2.0_fp * pi) * (rr(2) - rc(2)) * exp(0.5_fp * (1.0_fp - r2))
+          dv(2) = beta / (2.0_fp * pi) * (rr(1) - rc(1)) * exp(0.5_fp * (1.0_fp - r2))
 #:if NDIM == 3
-          dv(3) = 0.0_dp
+          dv(3) = 0.0_fp
 #:endif
 
           ! Temperature perturbation
-          dT = -(euler_gamma - 1.0_dp) * beta**2 / &
-               (8.0_dp * euler_gamma * pi**2) * exp(1.0_dp - r2)
+          dT = -(euler_gamma - 1.0_fp) * beta**2 / &
+               (8.0_fp * euler_gamma * pi**2) * exp(1.0_fp - r2)
 
           ! Primitive variables
           T   = T_inf + dT
@@ -380,14 +380,14 @@ contains
 #:endif
           ! Total energy: e = p/(gamma-1) + 0.5*rho*v^2
           f4%uu(${IJK}$, i_e, n) = p * euler_inv_gamma_m1 + &
-               0.5_dp * rho * (v(1)**2 + v(2)**2)
+               0.5_fp * rho * (v(1)**2 + v(2)**2)
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_initial_conditions_vortex
 
   subroutine source_term(u_prim, source)
-    real(dp), intent(in)    :: u_prim(n_tvars)
-    real(dp), intent(inout) :: source(n_tvars)
+    real(fp), intent(in)    :: u_prim(n_tvars)
+    real(fp), intent(inout) :: source(n_tvars)
     source(i_mom0+NDIM) = euler_gravity * u_prim(i_rho)
     source(i_e)         = euler_gravity * u_prim(i_rho) * u_prim(i_mom0+NDIM)
   end subroutine source_term

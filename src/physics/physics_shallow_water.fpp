@@ -1,8 +1,8 @@
 !> Convert conservative variables in-place to primitive ones
 pure subroutine to_primitive(u)
   !$acc routine seq
-  real(dp), intent(inout) :: u(n_tvars)
-  real(dp)                :: inv_h
+  real(fp), intent(inout) :: u(n_tvars)
+  real(fp)                :: inv_h
   integer                 :: idim
 
   inv_h = 1/u(i_h)
@@ -14,7 +14,7 @@ end subroutine to_primitive
 !> Convert primitive variables in-place to conservative ones
 pure subroutine to_conservative(u)
   !$acc routine seq
-  real(dp), intent(inout) :: u(n_tvars)
+  real(fp), intent(inout) :: u(n_tvars)
   integer                 :: idim
 
   do idim = 1, ${NDIM}$
@@ -26,8 +26,8 @@ end subroutine to_conservative
 subroutine get_flux(flux_dim, u, flux)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u(n_tvars)  !< Primitive variables (h, u, v)
-  real(dp), intent(out) :: flux(n_tvars)
+  real(fp), intent(in)  :: u(n_tvars)  !< Primitive variables (h, u, v)
+  real(fp), intent(out) :: flux(n_tvars)
   integer               :: idim
 
   ! Mass flux: h * u_flux_dim
@@ -40,7 +40,7 @@ subroutine get_flux(flux_dim, u, flux)
 
   ! Add pressure term (0.5 * g * h^2) to momentum in flux direction
   flux(i_mom0+flux_dim) = flux(i_mom0+flux_dim) + &
-       0.5_dp * gravity_constant * u(i_h)**2
+       0.5_fp * gravity_constant * u(i_h)**2
 end subroutine get_flux
 
 !> Estimate for minimum and maximum wavespeeds for HLL-type solvers
@@ -48,10 +48,10 @@ end subroutine get_flux
 pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u_LR(n_tvars, 2) !< Primitive variables (L and R states)
-  real(dp), intent(out) :: cmin
-  real(dp), intent(out) :: cmax
-  real(dp)              :: h_sqrt(2), fac, umean, cmean, cwave(2)
+  real(fp), intent(in)  :: u_LR(n_tvars, 2) !< Primitive variables (L and R states)
+  real(fp), intent(out) :: cmin
+  real(fp), intent(out) :: cmax
+  real(fp)              :: h_sqrt(2), fac, umean, cmean, cwave(2)
 
   ! Gravity wave speed for each state
   cwave = sqrt(gravity_constant * u_LR(i_h, :))
@@ -64,7 +64,7 @@ pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
        h_sqrt(1) * u_LR(i_mom0+flux_dim, 1) + &
        h_sqrt(2) * u_LR(i_mom0+flux_dim, 2))
 
-  cmean = sqrt(0.5_dp * gravity_constant * (u_LR(i_h, 1) + u_LR(i_h, 2)))
+  cmean = sqrt(0.5_fp * gravity_constant * (u_LR(i_h, 1) + u_LR(i_h, 2)))
 
   ! Minimum and maximum wave speeds using Davis estimate, see
   ! S.F. Davis (1988), "Simplified Second-Order Godunov-Type Methods"

@@ -12,8 +12,6 @@ module m_io_${NDIM}$d
   implicit none
   private
 
-  integer, parameter :: dp = kind(0.0d0)
-
   ! Public methods
   public :: io_write_grid
   public :: io_xdmf_write_blocks_${NDIM}$DCoRect
@@ -69,7 +67,7 @@ contains
 
     subroutine get_block_data(i_block, cc_data)
       integer, intent(in)     :: i_block
-      real(dp), intent(inout) :: cc_data(@{DTIMES(:)}@, :)
+      real(fp), intent(inout) :: cc_data(@{DTIMES(:)}@, :)
       cc_data = f4%uu(@{DTIMES(:)}@, 1:f4%n_vars, i_block)
     end subroutine get_block_data
 
@@ -92,10 +90,10 @@ contains
     real(dp), intent(in)           :: dr(NDIM, n_blocks) !< Grid spacing of each block
     !> Cell-centered data
 #:if NDIM == 2
-    real(dp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
+    real(fp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
          -in_gc+1:nx(2)+in_gc, n_cc, n_blocks)
 #:elif NDIM == 3
-    real(dp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
+    real(fp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
          -in_gc+1:nx(2)+in_gc, -in_gc+1:nx(3)+in_gc, n_cc, n_blocks)
 #:endif
     !> Method to get cell-centered data
@@ -109,9 +107,9 @@ contains
     integer                              :: rank, n_prev_blocks, coord_ix(NDIM)
     integer, allocatable                 :: blocks_per_rank(:)
 #:if NDIM == 2
-    real(dp), allocatable                :: cc_block(:, :, :)
+    real(fp), allocatable                :: cc_block(:, :, :)
 #:elif NDIM == 3
-    real(dp), allocatable                :: cc_block(:, :, :, :)
+    real(fp), allocatable                :: cc_block(:, :, :, :)
 #:endif
     character(len=len_trim(filename)+20) :: binary_fname, binary_basename
     character(len=20)                    :: for_viewer
@@ -275,11 +273,11 @@ contains
                      1, 1, 1, 1, &                       ! stride
                      1, 1, nx(2), nx(1), & ! count
                      '</DataItem>'
-
-                write(my_unit, "(a, 4(I0,' '),a,a,a)") &
+                write(my_unit, "(a, 4(I0,' '),a,I0,a)") &
                      '        <DataItem Dimensions="', n_blocks, n_cc, &
                      nx(2) + 2*out_gc, nx(1) + 2*out_gc, &
-                     '" Format="Binary" NumberType="Float" Precision="8">'
+                     '" Format="Binary" NumberType="Float" Precision="', &
+                storage_size(1.0_fp)/8, '">'
 #:elif NDIM == 3
                 write(my_unit, "(a,I0,a,I0,a,I0,a)") &
                      '      <DataItem ItemType="HyperSlab" Dimensions="',&
@@ -291,10 +289,11 @@ contains
                      1, 1, nx(3), nx(2), nx(1), & ! count
                      '</DataItem>'
 
-                write(my_unit, "(a, 5(I0,' '),a,a,a)") &
+                write(my_unit, "(a, 5(I0,' '),a,I0,a)") &
                      '        <DataItem Dimensions="', n_blocks, n_cc, &
                      nx(3) + 2*out_gc, nx(2) + 2*out_gc, nx(1) + 2*out_gc, &
-                     '" Format="Binary" NumberType="Float" Precision="8">'
+                     '" Format="Binary" NumberType="Float" Precision="', &
+                     storage_size(1.0_fp)/8, '">'
 #:endif
                 write(my_unit, "(a)") trim(binary_basename)
                 write(my_unit, "(a)") '        </DataItem>'

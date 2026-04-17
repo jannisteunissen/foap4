@@ -1,10 +1,10 @@
 subroutine flux_cell_faces(flux_dim, u, flux, max_wavespeed)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
-  real(dp), intent(in)  :: u(1+2*n_gc, n_tvars)
-  real(dp), intent(out) :: flux(n_tvars, 2)
-  real(dp), intent(out) :: max_wavespeed
-  real(dp)              :: cmax(2)
+  real(fp), intent(in)  :: u(1+2*n_gc, n_tvars)
+  real(fp), intent(out) :: flux(n_tvars, 2)
+  real(fp), intent(out) :: max_wavespeed
+  real(fp)              :: cmax(2)
 
   call flux_hll_one_side(flux_dim, 0, u, flux(:, 1), cmax(1))
   call flux_hll_one_side(flux_dim, 1, u, flux(:, 2), cmax(2))
@@ -15,13 +15,13 @@ subroutine flux_hll_one_side(flux_dim, i0, u, flux, max_wavespeed)
   !$acc routine seq
   integer, intent(in)   :: flux_dim
   integer, intent(in)   :: i0
-  real(dp), intent(in)  :: u(1+2*n_gc, n_tvars)
-  real(dp), intent(out) :: flux(n_tvars)
-  real(dp), intent(out) :: max_wavespeed
-  real(dp)              :: u_LR(n_tvars, 2)
-  real(dp)              :: flux_LR(n_tvars, 2)
-  real(dp)              :: S_L, S_R, dS
-  real(dp), parameter   :: eps = 1e-14_dp
+  real(fp), intent(in)  :: u(1+2*n_gc, n_tvars)
+  real(fp), intent(out) :: flux(n_tvars)
+  real(fp), intent(out) :: max_wavespeed
+  real(fp)              :: u_LR(n_tvars, 2)
+  real(fp)              :: flux_LR(n_tvars, 2)
+  real(fp)              :: S_L, S_R, dS
+  real(fp), parameter   :: eps = 1e-14_fp
 
   call reconstruct(u, i0, u_LR)
 
@@ -34,9 +34,9 @@ subroutine flux_hll_one_side(flux_dim, i0, u, flux, max_wavespeed)
   call to_conservative(u_LR(:, 1))
   call to_conservative(u_LR(:, 2))
 
-  if (S_L >= 0.0_dp) then
+  if (S_L >= 0.0_fp) then
      flux = flux_LR(:, 1)
-  else if (S_R <= 0.0_dp) then
+  else if (S_R <= 0.0_fp) then
      flux = flux_LR(:, 2)
   else
      dS = S_R - S_L
@@ -47,7 +47,7 @@ subroutine flux_hll_one_side(flux_dim, i0, u, flux, max_wavespeed)
              S_L * S_R * (u_LR(:, 2) - u_LR(:, 1))) / dS
      else
         ! Fallback to TVDLF
-        flux = 0.5_dp * (flux_LR(:, 1) + flux_LR(:, 2) - &
+        flux = 0.5_fp * (flux_LR(:, 1) + flux_LR(:, 2) - &
              max_wavespeed * (u_LR(:, 2) - u_LR(:, 1)))
      end if
   end if

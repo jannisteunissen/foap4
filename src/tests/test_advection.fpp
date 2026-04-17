@@ -15,7 +15,6 @@ program test_adv
   implicit none
 
   include 'limiter_${LIMITER}$_definitions.f90'
-  integer, parameter :: dp   = kind(0.0d0)
   integer, parameter :: n_gc = limiter_num_ghostcells
 
   real(dp) :: velocity(NDIM) = 1.0_dp
@@ -212,9 +211,9 @@ contains
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 #:if NDIM == 2
-          f4%uu(${IJK}$, i_rho, n) = rho_solution(rr(1), rr(2), 0.0_dp)
+          f4%uu(${IJK}$, i_rho, n) = real(rho_solution(rr(1), rr(2), 0.0_dp), fp)
 #:elif NDIM == 3
-          f4%uu(${IJK}$, i_rho, n) = rho_solution(rr(1), rr(2), rr(3), 0.0_dp)
+          f4%uu(${IJK}$, i_rho, n) = real(rho_solution(rr(1), rr(2), rr(3), 0.0_dp), fp)
 #:endif
        end do; ${KJI_CLOSE_LOOP}$
     end do
@@ -235,7 +234,7 @@ contains
 #:elif NDIM == 3
           sol = rho_solution(rr(1), rr(2), rr(3), f4%time)
 #:endif
-          f4%uu(${IJK}$, i_error, n) = f4%uu(${IJK}$, i_rho, n) - sol
+          f4%uu(${IJK}$, i_error, n) = f4%uu(${IJK}$, i_rho, n) - real(sol, fp)
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_error

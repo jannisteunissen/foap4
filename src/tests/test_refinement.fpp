@@ -5,7 +5,6 @@ program test_ref
   use m_io_${NDIM}$d
 
   implicit none
-  integer, parameter :: dp    = kind(0.0d0)
   integer            :: i_err = 1
   integer            :: i_phi = 2
   type(CFG_t)        :: cfg
@@ -212,7 +211,7 @@ contains
           !$acc loop private(rr)
           do i = 1, f4%bx(1)
              rr = f4_block_face_coord(f4, i_block, face, i)
-             f4%bc_data(i, i_phi, ix) = phi_init(rr(1), rr(2))
+             f4%bc_data(i, i_phi, ix) = real(phi_init(rr(1), rr(2)), fp)
              f4%bc_data_type(i, i_phi, ix) = f4_bc_dirichlet
           end do
 #:elif NDIM == 3
@@ -220,7 +219,7 @@ contains
           do j = 1, f4%bx(1)
              do i = 1, f4%bx(1)
                 rr = f4_block_face_coord(f4, i_block, face, i, j)
-                f4%bc_data(i, j, i_phi, ix) = phi_init(rr(1), rr(2), rr(3))
+                f4%bc_data(i, j, i_phi, ix) = real(phi_init(rr(1), rr(2), rr(3)), fp)
                 f4%bc_data_type(i, j, i_phi, ix) = f4_bc_dirichlet
              end do
           end do
@@ -240,7 +239,7 @@ contains
        !$acc loop collapse(${NDIM}$) private(rr)
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
-          f4%uu(${IJK}$, i_phi, n) = phi_init(@{DINDEX(rr)}@)
+          f4%uu(${IJK}$, i_phi, n) = real(phi_init(@{DINDEX(rr)}@), fp)
           f4%uu(${IJK}$, i_err, n) = 0.0_dp
        end do; ${KJI_CLOSE_LOOP}$
     end do
@@ -305,7 +304,7 @@ contains
           if (valid_cell) then
              rr = f4_cell_coord(f4, n, ${IJK}$)
              sol = phi_init(@{DINDEX(rr)}@)
-             f4%uu(${IJK}$, i_err, n) = abs(f4%uu(${IJK}$, i_phi, n) - sol)
+             f4%uu(${IJK}$, i_err, n) = abs(f4%uu(${IJK}$, i_phi, n) - real(sol, fp))
           else
              f4%uu(${IJK}$, i_err, n) = 0.0_dp
           end if

@@ -20,7 +20,6 @@ program test_dmr
   implicit none
 
   include 'limiter_${LIMITER}$_definitions.f90'
-  integer, parameter :: dp = kind(0.0d0)
   integer, parameter :: n_gc = limiter_num_ghostcells
   real(dp), parameter :: pi = acos(-1.0_dp)
 
@@ -50,7 +49,7 @@ program test_dmr
   real(dp) :: block_length(NDIM)
   real(dp) :: dmr_xr, dmr_shock_angle, dmr_vx
   real(dp) :: dmr_mach, dmr_tan_angle
-  real(dp) :: dmr_uL(n_tvars), dmr_uR(n_tvars)
+  real(fp) :: dmr_uL(n_tvars), dmr_uR(n_tvars)
 
   call euler_initialize(1.4_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
 
@@ -74,12 +73,12 @@ program test_dmr
   dmr_vx = dmr_mach / cos(0.5_dp * pi - dmr_shock_angle)
 
   ! Post-shock
-  dmr_uL = [8.0_dp, 4.125_dp * sqrt(3.0_dp), -4.125_dp, 116.5_dp]
+  dmr_uL = real([8.0_dp, 4.125_dp * sqrt(3.0_dp), -4.125_dp, 116.5_dp], fp)
   call to_conservative(dmr_uL)
   !$acc enter data copyin(dmr_uL)
 
   ! Pre-shock
-  dmr_uR = [1.4_dp, 0.0_dp, 0.0_dp, 1.0_dp]
+  dmr_uR = real([1.4_dp, 0.0_dp, 0.0_dp, 1.0_dp], fp)
   call to_conservative(dmr_uR)
   !$acc enter data copyin(dmr_uR)
 
@@ -319,8 +318,8 @@ contains
   end subroutine bc_callback
 
   subroutine source_term(u_prim, source)
-    real(dp), intent(in)    :: u_prim(n_tvars)
-    real(dp), intent(inout) :: source(n_tvars)
+    real(fp), intent(in)    :: u_prim(n_tvars)
+    real(fp), intent(inout) :: source(n_tvars)
   end subroutine source_term
 
   #:include 'physics_euler.fpp'

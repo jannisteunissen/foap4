@@ -1,9 +1,8 @@
 module m_physics_advection_${NDIM}$d
+  use m_foap4_types_${NDIM}$d
 
   implicit none
   public
-
-  integer, parameter, private  :: dp                = kind(0.0d0)
 
   ! Number of temporal variables
   integer, parameter           :: n_tvars = 1
@@ -28,7 +27,7 @@ module m_physics_advection_${NDIM}$d
        [character(len=10)      :: "error", "rho"]
 
   ! Velocity
-  real(dp)                     :: advection_velocity(${NDIM}$) = 1.0_dp
+  real(fp)                     :: advection_velocity(${NDIM}$) = 1.0_fp
   !$acc declare create(advection_velocity)
 
   ! Whether to use a Gaussian solution
@@ -44,7 +43,7 @@ contains
     real(dp), intent(in) :: velocity(${NDIM}$)
     logical, intent(in)  :: use_gaussian
 
-    advection_velocity = velocity
+    advection_velocity = real(velocity, fp)
     !$acc update device(advection_velocity)
 
     advection_use_gaussian = use_gaussian

@@ -15,7 +15,6 @@ program shallow_water
   implicit none
 
   include 'limiter_${LIMITER}$_definitions.f90'
-  integer, parameter :: dp = kind(0.0d0)
   integer, parameter :: n_gc = limiter_num_ghostcells
 
   type(foap4_t) :: f4
@@ -212,17 +211,17 @@ contains
           f4%uu(${IJK}$, i_mom0+1:i_mom0+NDIM, n) = 0.0_dp
 
           if (d_center < dam_radius) then
-             f4%uu(${IJK}$, i_h, n) = h_inner
+             f4%uu(${IJK}$, i_h, n) = real(h_inner, fp)
           else
-             f4%uu(${IJK}$, i_h, n) = h_outer
+             f4%uu(${IJK}$, i_h, n) = real(h_outer, fp)
           end if
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_initial_conditions
 
   subroutine source_term(u_prim, source)
-    real(dp), intent(in)    :: u_prim(n_tvars)
-    real(dp), intent(inout) :: source(n_tvars)
+    real(fp), intent(in)    :: u_prim(n_tvars)
+    real(fp), intent(inout) :: source(n_tvars)
   end subroutine source_term
 
   #:include 'physics_shallow_water.fpp'

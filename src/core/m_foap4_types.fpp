@@ -1,12 +1,23 @@
 #:include 'definitions.fpp'
 module m_foap4_types_${NDIM}$d
   use, intrinsic :: iso_c_binding
+  use, intrinsic :: iso_fortran_env, only: real32, real64
   use mpi_f08
 
   implicit none
   private
 
-  integer, parameter :: dp = kind(0.0d0)
+  ! Double precision floating point type
+  integer, parameter, public :: dp = real64
+
+  ! Precision of block data (and related data)
+#:if FLOAT_BITS == 32
+  integer, parameter, public :: fp = real32
+  type(MPI_Datatype), parameter, public :: f4_mpi_float = MPI_REAL
+#:else
+  integer, parameter, public :: fp = real64
+  type(MPI_Datatype), parameter, public :: f4_mpi_float = MPI_DOUBLE_PRECISION
+#:endif
 
   integer, parameter, public :: ndim = ${NDIM}$
 
@@ -114,7 +125,7 @@ module m_foap4_types_${NDIM}$d
      integer   :: n_temporal_states  !< Number of temporal states
      real(dp)  :: tree_length(ndim)                  !< Length of tree
      !> Coefficient for generalized minmod limiter for prolongation
-     real(dp)  :: gminmod_theta_prolong = 1.0_dp
+     real(fp)  :: gminmod_theta_prolong = 1.0_dp
      integer   :: ilo(ndim)                          !< Minimum index in a block
      integer   :: ihi(ndim)                          !< Maximum index in a block
      real(dp)  :: dr_level(ndim, 0:p4est_maxlevel-1) !< Grid spacing per level
@@ -127,7 +138,7 @@ module m_foap4_types_${NDIM}$d
      !> Array storing simple physical boundary conditions bc_simple_type(ivar, iface)
      integer, allocatable :: bc_simple_type(:, :)
      !> Array storing value of boundary conditions bc_simple(ivar, iface)
-     real(dp), allocatable :: bc_simple(:, :)
+     real(fp), allocatable :: bc_simple(:, :)
 
      !> Level of each block
      integer, allocatable  :: block_level(:)
@@ -142,13 +153,13 @@ module m_foap4_types_${NDIM}$d
      integer, allocatable  :: bflux_ix(:, :)
 
      !> Storage of block data uu(i, j, [k,] i_var, i_block)
-     real(dp), allocatable :: uu(@{DTIMES(:)}@, :, :)
+     real(fp), allocatable :: uu(@{DTIMES(:)}@, :, :)
      !> Storage of primitive block data uu(i, j, [k,] i_var, i_block)
-     real(dp), allocatable :: uu_prim(@{DTIMES(:)}@, :, :)
+     real(fp), allocatable :: uu_prim(@{DTIMES(:)}@, :, :)
      !> Storage of boundary flux * dt, as bflux(i, [j,] i_var, i_face)
-     real(dp), allocatable :: bflux(@{DTIMES(:)}@, :)
+     real(fp), allocatable :: bflux(@{DTIMES(:)}@, :)
      !> Storage of boundary condition data bc_data(i, [j,] i_var, i_face)
-     real(dp), allocatable :: bc_data(@{DTIMES(:)}@, :)
+     real(fp), allocatable :: bc_data(@{DTIMES(:)}@, :)
      !> Storage of boundary condition type bc_data_type(i, [j,] i_var, i_face)
      integer, allocatable :: bc_data_type(@{DTIMES(:)}@, :)
 
@@ -159,8 +170,8 @@ module m_foap4_types_${NDIM}$d
      integer               :: max_requests   !< Maximum number of requests for send/recv
      integer(MPI_COUNT_KIND), allocatable :: recv_offset(:) !< 0:mpisize offsets for receiving
      integer(MPI_COUNT_KIND), allocatable :: send_offset(:) !< 0:mpisize offsets for sending
-     real(dp), allocatable :: recv_buffer(:) !< Buffer for receiving data
-     real(dp), allocatable :: send_buffer(:) !< Buffer for sending data
+     real(fp), allocatable :: recv_buffer(:) !< Buffer for receiving data
+     real(fp), allocatable :: send_buffer(:) !< Buffer for sending data
 
      !> Pointer to a structure pw_state_t defined in p4est_wrapper.c, which
      !> contains all the p4est state required for the wrapper
@@ -366,14 +377,14 @@ module m_foap4_types_${NDIM}$d
      subroutine subr_cc_data_2D(n, cc_data)
        import
        integer, intent(in)     :: n !< Index of block
-       real(dp), intent(inout) :: cc_data(:, :, :)
+       real(fp), intent(inout) :: cc_data(:, :, :)
      end subroutine subr_cc_data_2D
 
      !> Get cell-centered data for a grid block
      subroutine subr_cc_data_3D(n, cc_data)
        import
        integer, intent(in)     :: n !< Index of block
-       real(dp), intent(inout) :: cc_data(:, :, :, :)
+       real(fp), intent(inout) :: cc_data(:, :, :, :)
      end subroutine subr_cc_data_3D
 
      subroutine bc_callback_t(f4)

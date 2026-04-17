@@ -1,15 +1,14 @@
 !> Definitions for Euler's equations of gas dynamics
 module m_physics_euler_${NDIM}$d
+  use m_foap4_types_${NDIM}$d
 
   implicit none
   public
 
-  integer, parameter, private :: dp = kind(0.0d0)
-
-  real(dp), protected :: euler_gamma = 5/3.0_dp
+  real(fp), protected :: euler_gamma = 5/3.0_fp
   !$acc declare create(euler_gamma)
 
-  real(dp), protected :: euler_inv_gamma_m1 = 1/(5/3.0_dp - 1)
+  real(fp), protected :: euler_inv_gamma_m1 = 1/(5/3.0_fp - 1)
   !$acc declare create(euler_inv_gamma_m1)
 
   ! Number of temporal variables
@@ -49,13 +48,13 @@ module m_physics_euler_${NDIM}$d
   ! Which variables are temporal
   logical, parameter :: var_temporal(n_vars_all) = .true.
 
-  real(dp) :: euler_gravity = 0.0_dp
+  real(fp) :: euler_gravity = 0.0_dp
   !$acc declare create(euler_gravity)
 
-  real(dp) :: euler_rho_floor = 0.0_dp
+  real(fp) :: euler_rho_floor = 0.0_dp
   !$acc declare create(euler_rho_floor)
 
-  real(dp) :: euler_p_floor = 0.0_dp
+  real(fp) :: euler_p_floor = 0.0_dp
   !$acc declare create(euler_p_floor)
 
 contains
@@ -66,13 +65,13 @@ contains
     real(dp), intent(in) :: rho_floor
     real(dp), intent(in) :: p_floor
 
-    euler_gamma = gamma
-    euler_inv_gamma_m1 = 1/(euler_gamma-1.0_dp)
+    euler_gamma = real(gamma, fp)
+    euler_inv_gamma_m1 = 1/(euler_gamma-1)
 
-    euler_gravity = gravity
+    euler_gravity = real(gravity, fp)
 
-    euler_rho_floor = rho_floor
-    euler_p_floor = p_floor
+    euler_rho_floor = real(rho_floor, fp)
+    euler_p_floor = real(p_floor, fp)
 
     !$acc update device(euler_gamma, euler_inv_gamma_m1)
     !$acc update device(euler_gravity)

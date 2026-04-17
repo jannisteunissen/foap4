@@ -14,10 +14,9 @@ module m_foap4_${NDIM}$d
   implicit none
   private
 
-  integer, parameter, private :: dp = kind(0.0d0)
-
   ! Public types exported from m_foap4_types
   public :: ndim
+  public :: dp, fp, f4_mpi_float
   public :: foap4_t
   public :: f4_bc_dirichlet, f4_bc_neumann
   public :: f4_bc_linear_extrap, f4_bc_fixed_value
@@ -349,7 +348,7 @@ contains
     allocate(f4%bc_simple_type(f4%n_vars, 0:2*ndim-1))
     allocate(f4%bc_simple(f4%n_vars, 0:2*ndim-1))
     f4%bc_simple_type(:, :) = bc_type
-    f4%bc_simple(:, :) = bc_value
+    f4%bc_simple(:, :) = real(bc_value, fp)
 
     do i = 0, P4EST_MAXLEVEL-1
        f4%dr_level(:, i) = (tree_length/bx) * 0.5**i
@@ -551,7 +550,7 @@ contains
          error stop "Unsupported boundary condition type"
 
     f4%bc_simple_type(ivar, iface) = bc_type
-    f4%bc_simple(ivar, iface) = bc_value
+    f4%bc_simple(ivar, iface) = real(bc_value, fp)
     !$acc update device(f4%bc_simple_type(ivar, iface), f4%bc_simple(ivar, iface))
 
   end subroutine f4_set_bc_scalar
@@ -1472,7 +1471,7 @@ contains
                 j_f = ${j0}$ + 2 * j - 1
                 i_f = ${i0}$ + 2 * i - 1
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
-                f4%send_buffer(i_buf) = 0.25_dp * ( &
+                f4%send_buffer(i_buf) = 0.25_fp * ( &
                      f4%uu(i_f,   j_f,   ivar, iq) + &
                      f4%uu(i_f+1, j_f,   ivar, iq) + &
                      f4%uu(i_f,   j_f+1, ivar, iq) + &
@@ -1492,7 +1491,7 @@ contains
                    i_f = ${i0}$ + 2 * i - 1
                    i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
                         ${klim}$, ${jlim}$, ${ilim}$) + 1
-                   f4%send_buffer(i_buf) = 0.125_dp * ( &
+                   f4%send_buffer(i_buf) = 0.125_fp * ( &
                         f4%uu(i_f,   j_f,   k_f,   ivar, iq) + &
                         f4%uu(i_f+1, j_f,   k_f,   ivar, iq) + &
                         f4%uu(i_f,   j_f+1, k_f,   ivar, iq) + &
@@ -1556,7 +1555,7 @@ contains
     integer                      :: iq, i_buf, i_buf0, offset(NDIM-1)
     integer                      :: half_n_gc
     logical                      :: odd_n_gc
-    real(dp)                     :: fine(2**NDIM)
+    real(fp)                     :: fine(2**NDIM)
 #:if NDIM == 3
     integer                      :: k, k_c
 #:endif
@@ -1971,7 +1970,7 @@ contains
   subroutine mpi_isend_wrapper(buf, count, dest, tag, comm, requests, nreqs, ierror)
     integer(MPI_COUNT_KIND), intent(in) :: count
     integer, intent(in)                 :: dest, tag
-    real(dp), intent(in)                :: buf(count)
+    real(fp), intent(in)                :: buf(count)
     type(mpi_comm), intent(in)          :: comm
     type(mpi_request), intent(inout)    :: requests(:)
     integer, intent(inout)              :: nreqs
@@ -1999,7 +1998,7 @@ contains
       end if
 
       !$acc host_data use_device(buf)
-      call mpi_isend(buf(offset + 1), chunk_count, MPI_DOUBLE_PRECISION, &
+      call mpi_isend(buf(offset + 1), chunk_count, f4_mpi_float, &
                      dest, chunk_tag, comm, requests(nreqs), ierr)
       !$acc end host_data
 
@@ -2018,7 +2017,7 @@ contains
   subroutine mpi_irecv_wrapper(buf, count, source, tag, comm, requests, nreqs, ierror)
     integer(MPI_COUNT_KIND), intent(in) :: count
     integer, intent(in)                 :: source, tag
-    real(dp), intent(inout)             :: buf(count)
+    real(fp), intent(inout)             :: buf(count)
     type(mpi_comm), intent(in)          :: comm
     type(mpi_request), intent(inout)    :: requests(:)
     integer, intent(inout)              :: nreqs
@@ -2046,7 +2045,7 @@ contains
       end if
 
       !$acc host_data use_device(buf)
-      call mpi_irecv(buf(offset + 1), chunk_count, MPI_DOUBLE_PRECISION, &
+      call mpi_irecv(buf(offset + 1), chunk_count, f4_mpi_float, &
                      source, chunk_tag, comm, requests(nreqs), ierr)
       !$acc end host_data
 
@@ -2072,7 +2071,7 @@ contains
     integer                      :: n, i, j, iq, jq, i_f, j_f
     integer                      :: i_buf, i_buf0, iv, ivar, i_bc_data
     integer                      :: offset(NDIM-1), bc_type, level
-    real(dp)                     :: bc_value, dr(NDIM), slope
+    real(fp)                     :: bc_value, dr(NDIM), slope
 #:if NDIM == 3
     integer                      :: k, k_f
 #:endif
@@ -2123,7 +2122,7 @@ contains
     do n = f4%gc_phys_iface(${face}$), f4%gc_phys_iface(${face}$+1)-1
        iq    = f4%gc_phys(n) + 1 + block_offset
        level = f4%block_level(iq - block_offset)
-       dr    = f4%dr_level(:, level)
+       dr    = real(f4%dr_level(:, level), fp)
        ! Do not use block_offset when accessing b.c. data
        i_bc_data = f4%bc_data_ix(${face}$, iq - block_offset)
 
@@ -2341,7 +2340,7 @@ contains
                 ivar = i_vars(iv)
                 j_f = ${jf0}$ + 2 * j - 1
                 i_f = ${if0}$ + 2 * i - 1
-                f4%uu(${i0}$+i, ${j0}$+j, ivar, jq) = 0.25_dp * ( &
+                f4%uu(${i0}$+i, ${j0}$+j, ivar, jq) = 0.25_fp * ( &
                      f4%uu(i_f,   j_f,   ivar, iq) + &
                      f4%uu(i_f+1, j_f,   ivar, iq) + &
                      f4%uu(i_f,   j_f+1, ivar, iq) + &
@@ -2359,7 +2358,7 @@ contains
                    k_f = ${kf0}$ + 2 * k - 1
                    j_f = ${jf0}$ + 2 * j - 1
                    i_f = ${if0}$ + 2 * i - 1
-                   f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, jq) = 0.125_dp * ( &
+                   f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, jq) = 0.125_fp * ( &
                         f4%uu(i_f,   j_f,   k_f,   ivar, iq) + &
                         f4%uu(i_f+1, j_f,   k_f,   ivar, iq) + &
                         f4%uu(i_f,   j_f+1, k_f,   ivar, iq) + &
@@ -2555,7 +2554,7 @@ contains
     integer                      :: i_buf, i_buf0, iv, ivar
     integer                      :: half_n_gc, offset(NDIM-1)
     logical                      :: odd_n_gc
-    real(dp)                     :: fine(2**NDIM)
+    real(fp)                     :: fine(2**NDIM)
 
     ! If nothing to do, save time by not starting parallel region
     if (f4%gc_f2c_local_iface(2*NDIM) == 1 .and. &
@@ -3193,7 +3192,8 @@ contains
     integer                      :: n, i, j, i_c, j_c, i_f, j_f, n_old
     integer                      :: offset_copy
     integer                      :: i_from, i_to, i_ch
-    real(dp)                     :: fine(2**NDIM), t0, t1, load_imbalance
+    real(dp)                     :: t0, t1, load_imbalance
+    real(fp)                     :: fine(2**NDIM)
 #:if NDIM == 3
     integer                      :: k, k_c, k_f
 #:endif
@@ -3357,7 +3357,7 @@ contains
                    i_c = i + f4_child_offset(1, i_ch) * f4%hbx(1)
                    i_f = 2 * i - 1
 
-                   f4%uu(i_c, j_c, iv, i_to) = 0.25_dp * (&
+                   f4%uu(i_c, j_c, iv, i_to) = 0.25_fp * (&
                         f4%uu(i_f,   j_f, iv, i_from+i_ch-1) + &
                         f4%uu(i_f+1, j_f, iv, i_from+i_ch-1) + &
                         f4%uu(i_f,   j_f+1, iv, i_from+i_ch-1) + &
@@ -3380,7 +3380,7 @@ contains
                       i_c = i + f4_child_offset(1, i_ch) * f4%hbx(1)
                       i_f = 2 * i - 1
 
-                      f4%uu(i_c, j_c, k_c, iv, i_to) = 0.125_dp * (&
+                      f4%uu(i_c, j_c, k_c, iv, i_to) = 0.125_fp * (&
                            f4%uu(i_f  , j_f  , k_f,   iv, i_from+i_ch-1) + &
                            f4%uu(i_f+1, j_f  , k_f,   iv, i_from+i_ch-1) + &
                            f4%uu(i_f  , j_f+1, k_f,   iv, i_from+i_ch-1) + &
@@ -3453,12 +3453,12 @@ contains
 #:if NDIM == 2
   subroutine prolong(theta, center, xlo, xhi, ylo, yhi, fine)
     !$acc routine seq
-    real(dp), intent(in)  :: theta
-    real(dp), intent(in)  :: center ! Center value
-    real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
-    real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
-    real(dp), intent(out) :: fine(2**NDIM)
-    real(dp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
+    real(fp), intent(in)  :: theta
+    real(fp), intent(in)  :: center ! Center value
+    real(fp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
+    real(fp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
+    real(fp), intent(out) :: fine(2**NDIM)
+    real(fp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
 
     f(0) = center
     slopes_a(1) = center - xlo
@@ -3466,7 +3466,7 @@ contains
     slopes_b(1) = xhi - center
     slopes_b(2) = yhi - center
 
-    f(1:) = 0.25_dp * limiter_gminmod(slopes_a, slopes_b, theta)
+    f(1:) = 0.25_fp * limiter_gminmod(slopes_a, slopes_b, theta)
 
     fine(1) = f(0) - f(1) - f(2)
     fine(2) = f(0) + f(1) - f(2)
@@ -3476,13 +3476,13 @@ contains
 #:elif NDIM == 3
   subroutine prolong(theta, center, xlo, xhi, ylo, yhi, zlo, zhi, fine)
     !$acc routine seq
-    real(dp), intent(in)  :: theta
-    real(dp), intent(in)  :: center   ! Center value
-    real(dp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
-    real(dp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
-    real(dp), intent(in)  :: zlo, zhi ! z-neighbors (-1, +1)
-    real(dp), intent(out) :: fine(2**NDIM)
-    real(dp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
+    real(fp), intent(in)  :: theta
+    real(fp), intent(in)  :: center   ! Center value
+    real(fp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
+    real(fp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
+    real(fp), intent(in)  :: zlo, zhi ! z-neighbors (-1, +1)
+    real(fp), intent(out) :: fine(2**NDIM)
+    real(fp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
 
     f(0) = center
     slopes_a(1) = center - xlo
@@ -3492,7 +3492,7 @@ contains
     slopes_b(2) = yhi - center
     slopes_b(3) = zhi - center
 
-    f(1:) = 0.25_dp * limiter_gminmod(slopes_a, slopes_b, theta)
+    f(1:) = 0.25_fp * limiter_gminmod(slopes_a, slopes_b, theta)
 
     fine(1) = f(0) - f(1) - f(2) - f(3)
     fine(2) = f(0) + f(1) - f(2) - f(3)
@@ -3510,13 +3510,13 @@ contains
   !> limiter.
   elemental function limiter_gminmod(a, b, theta) result(phi)
     !$acc routine seq
-    real(dp), intent(in) :: a, b, theta
-    real(dp)             :: phi
+    real(fp), intent(in) :: a, b, theta
+    real(fp)             :: phi
 
     if (a * b > 0) then
-       phi = sign(min(theta*abs(a), theta*abs(b), 0.5_dp*abs(a+b)), a)
+       phi = sign(min(theta*abs(a), theta*abs(b), 0.5_fp*abs(a+b)), a)
     else
-       phi = 0.0_dp
+       phi = 0.0_fp
     end if
   end function limiter_gminmod
 
@@ -3729,7 +3729,7 @@ contains
 
              i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$) + 1
 
-             f4%send_buffer(i_buf) = 0.5_dp * ( &
+             f4%send_buffer(i_buf) = 0.5_fp * ( &
                   f4%bflux(i_f, ivar, i_bflux) + &
                   f4%bflux(i_f+1, ivar, i_bflux))
           end do
@@ -3745,7 +3745,7 @@ contains
 
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
 
-                f4%send_buffer(i_buf) = 0.25_dp * ( &
+                f4%send_buffer(i_buf) = 0.25_fp * ( &
                      f4%bflux(i_f, j_f, ivar, i_bflux) + &
                      f4%bflux(i_f+1, j_f, ivar, i_bflux) + &
                      f4%bflux(i_f, j_f+1, ivar, i_bflux) + &
@@ -3790,7 +3790,7 @@ contains
     integer  :: n, i, i_f, i_c
     integer  :: iv, ivar, i_buf0, i_buf
     integer  :: offset(NDIM-1)
-    real(dp) :: flux_diff, fac
+    real(fp) :: flux_diff, fac
 #:if NDIM == 3
     integer :: j, j_c, j_f
 #:endif
@@ -3807,8 +3807,8 @@ contains
        offset(1)   = f4%gc_c2f_from_buf_fluxfix(2, n)
        i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
        i_bflux = f4%bflux_ix(${face}$, i_coarse-s_out)
-       fac      = ${sign}$ / &
-            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out))
+       fac      = real(${sign}$ / &
+            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
 
        !$acc loop collapse(2) private(i_c, ivar, i_buf, flux_diff)
        do iv = 1, n_vars
@@ -3839,8 +3839,8 @@ contains
        offset(1) = f4%gc_f2c_local(3, n)  ! offset
        i_bflux_fine = f4%bflux_ix(${face}$, i_fine-s_out)
        i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse-s_out)
-       fac = ${sign}$ / &
-            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out))
+       fac = real(${sign}$ / &
+            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
 
        !$acc loop collapse(2) private(i_c, i_f, ivar, flux_diff)
        do iv = 1, n_vars
@@ -3851,7 +3851,7 @@ contains
 
              ! Difference between coarse and fine side
              flux_diff = fac * ( &
-                  f4%bflux(i_c, ivar, i_bflux_coarse) - 0.5_dp * ( &
+                  f4%bflux(i_c, ivar, i_bflux_coarse) - 0.5_fp * ( &
                   f4%bflux(i_f, ivar, i_bflux_fine) + &
                   f4%bflux(i_f+1, ivar, i_bflux_fine)))
 
@@ -3873,8 +3873,8 @@ contains
        offset(1:2) = f4%gc_c2f_from_buf_fluxfix(2:3, n)
        i_buf0   = f4%gc_c2f_from_buf_fluxfix(4, n) * n_vars
        i_bflux = f4%bflux_ix(${face}$, i_coarse-s_out)
-       fac      = ${sign}$ / &
-            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out))
+       fac      = real(${sign}$ / &
+            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
 
        !$acc loop collapse(3) private(i_c, j_c, ivar, i_buf, flux_diff)
        do iv = 1, n_vars
@@ -3908,8 +3908,8 @@ contains
        offset(1:2) = f4%gc_f2c_local(3:4, n)   ! offset
        i_bflux_fine = f4%bflux_ix(${face}$, i_fine-s_out)
        i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse-s_out)
-       fac      = ${sign}$ / &
-            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out))
+       fac      = real(${sign}$ / &
+            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
 
        !$acc loop collapse(3) private(i_c, i_f, j_c, j_f, ivar, flux_diff)
        do iv = 1, n_vars
@@ -3923,7 +3923,7 @@ contains
 
                 ! Difference between coarse and fine side
                 flux_diff = fac * ( &
-                     f4%bflux(i_c, j_c, ivar, i_bflux_coarse) - 0.25_dp * ( &
+                     f4%bflux(i_c, j_c, ivar, i_bflux_coarse) - 0.25_fp * ( &
                      f4%bflux(i_f, j_f, ivar, i_bflux_fine) + &
                      f4%bflux(i_f+1, j_f, ivar, i_bflux_fine) + &
                      f4%bflux(i_f, j_f+1, ivar, i_bflux_fine) + &

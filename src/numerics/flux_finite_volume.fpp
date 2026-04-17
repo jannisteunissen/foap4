@@ -1,7 +1,7 @@
-subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
+subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
      n_prev, s_prev, w_prev, s_out, i_step, n_steps)
   type(foap4_t), intent(inout) :: f4
-  real(dp), intent(in)         :: dt
+  real(dp), intent(in)         :: dt_in
   real(dp), intent(inout)      :: dt_lim         !< Time step limit
   integer, intent(in)          :: s_deriv        !< State to compute derivatives from
   integer, intent(in)          :: n_prev         !< Number of previous states
@@ -12,22 +12,23 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
   integer, intent(in)          :: n_steps        !< Total number of steps
   integer                      :: n, ${IJK}$, m, level, iv, ierr
   logical                      :: ghost_dim(NDIM), valid_cell
-  real(dp)                     :: inv_dr(NDIM), cmax, cfl_sum, max_cfl
-  real(dp)                     :: flux(n_tvars, 2), t0, t1
-  real(dp)                     :: tmp(1+2*n_gc, n_tvars)
-  real(dp)                     :: dvar(n_tvars), u(n_tvars)
+  real(dp)                     :: t0, t1
+  real(fp)                     :: dt, inv_dr(NDIM), cmax, cfl_sum, max_cfl
+  real(fp)                     :: flux(n_tvars, 2), tmp(1+2*n_gc, n_tvars)
+  real(fp)                     :: dvar(n_tvars), u(n_tvars)
 
   call f4_update_ghostcells(f4, n_tvars, i_tvars, s_deriv)
 
   t0 = MPI_Wtime()
   max_cfl = 0.0_dp
+  dt = real(dt_in, fp)
 
   !$acc parallel loop private(level, inv_dr) reduction(max:max_cfl) &
   !$acc & default(present) copyin(w_prev, s_prev)
   do n = 1, f4%n_blocks
 
      level = f4%block_level(n)
-     inv_dr = 1/f4%dr_level(:, level)
+     inv_dr = real(1/f4%dr_level(:, level), fp)
 
      !$acc loop collapse(NDIM) private(u, ghost_dim, valid_cell)
      do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
@@ -59,9 +60,9 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
      do @{KJI_LOOP_1_to_array(f4%bx)}@
 
         u = f4%uu_prim(${IJK}$, i_tvars0+1:i_tvars0+n_tvars, n)
-        dvar = 0.0_dp
+        dvar = 0.0_fp
         call source_term(u, dvar)
-        dvar = dvar * dt
+        dvar = dvar * real(dt, fp)
 
 #:if NDIM == 2
         ! Compute x-flux
@@ -129,8 +130,8 @@ subroutine feuler_finite_volume(f4, dt, dt_lim, s_deriv, &
         do iv = 1, n_tvars
            do m = 1, n_prev
               ! Add weighted previous states
-              dvar(iv) = dvar(iv) + &
-                   f4%uu(${IJK}$, i_tvars0+iv, n+s_prev(m)) * w_prev(m)
+              dvar(iv) = dvar(iv) + real(w_prev(m), fp) * &
+                   f4%uu(${IJK}$, i_tvars0+iv, n+s_prev(m))
            end do
            f4%uu(${IJK}$, i_tvars0+iv, n+s_out) = dvar(iv)
         end do

@@ -6,7 +6,6 @@ program benchmark_gc
   use m_config
 
   implicit none
-  integer, parameter :: dp = kind(0.0d0)
 
   type(foap4_t) :: f4
   type(CFG_t)   :: cfg
@@ -105,7 +104,7 @@ contains
     if (f4%mpirank == 0) then
        write(*, "(A,F14.3)") " Ghostcells/ns:        ", ghostcells_per_ns
        write(*, "(A,F14.3)") " GByte/s:              ", ghostcells_per_ns * &
-            8 * (1e9_dp/2.0**30)
+            storage_size(1.0_fp)/8 * (1e9_dp/2.0**30)
        write(*, "(A,I14)")   " n_blocks_global:      ", n_blocks_global
        write(*, "(A,F14.3)") " Global mesh size (MB):", n_blocks_global * &
             n_vars * 0.5_dp**20 * product(f4%bx + 2 * f4%n_gc)
@@ -135,8 +134,8 @@ contains
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)
-             f4%uu(i, j, 1, n) = rho_init(rr(1), rr(2))
-             f4%uu(i, j, 2, n) = phi_init(rr(1), rr(2))
+             f4%uu(i, j, 1, n) = real(rho_init(rr(1), rr(2)), fp)
+             f4%uu(i, j, 2, n) = real(phi_init(rr(1), rr(2)), fp)
           end do
        end do
     end do
