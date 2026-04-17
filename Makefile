@@ -156,29 +156,28 @@ help:
 	@echo "  libs     - Build both static libraries"
 	@echo "  lib2d    - Build 2D static library ($(LIB_2D))"
 	@echo "  lib3d    - Build 3D static library ($(LIB_3D))"
-	@echo "  clean    - Remove all build artifacts"
+	@echo "  clean    - Remove all build artifacts in BUILDDIR"
 	@echo "  help     - Show this help message"
 	@echo ""
 	@echo "Options:"
+	@echo "  BUILDDIR=<dir>  - Set build directory (default: build)"
 	@echo "  DEBUG=1         - Enable debug flags"
 	@echo "  SAFE=1          - Use -O2 instead of -Ofast"
 	@echo "  OPENACC=1       - Enable OpenACC offloading with GNU compiler"
 	@echo "  FLOAT_BITS=N    - Floating point precision for block data; 32 or 64"
 	@echo "  F90C=<comp>     - Set Fortran compiler (default: mpif90)"
 	@echo "  FFLAGS_USER=... - Additional Fortran flags appended to FFLAGS"
-	@echo "  FYPP_USER=...   - Additional fypp preprocessor flags"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make 2d FLOAT_BITS=32  # Build 2D targets with single precision"
-	@echo "  make all DEBUG=1       # Build everything with debug checks"
-	@echo "  make 3d F90C=nvfortran # Build 3D targets with NVIDIA compiler"
+	@echo "  make 2d FLOAT_BITS=32"
+	@echo "  make all DEBUG=1"
+	@echo "  make 3d F90C=nvfortran"
+	@echo "  make BUILDDIR=build_debug DEBUG=1"
 	@echo ""
 	@echo "Detected compiler: $(compiler_brand)"
+	@echo "Current BUILDDIR: $(BUILDDIR)"
 	@echo "Current FLOAT_BITS: $(FLOAT_BITS)"
 	@echo "Current FFLAGS: $(FFLAGS)"
-
-clean:
-	$(RM) -r $(BUILDDIR)
 
 # ==============================================================================
 # Directory creation
