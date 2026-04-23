@@ -40,3 +40,11 @@ Load the NVHPC compilers, so that `mpif90` points to `nvfortran` etc. Then simpl
 To see a list of compilation options, use
 
     make help
+
+## Viewing results
+
+There is currently an inconsistency between Visit and Paraview regarding the order of XDMF data. To write output that can be viewed from Paraview, add `viewer="paraview"` to `io_write_grid` calls, like:
+
+    call io_write_grid(f4, base_name, n_output, viewer="paraview")
+
+Then use the legacy `XDMF Reader`. For visit no `viewer="visit"` argument is required, since it is the default.
