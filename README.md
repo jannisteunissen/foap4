@@ -41,6 +41,16 @@ To see a list of compilation options, use
 
     make help
 
+## Included examples
+
+These are compiled under `build/bin/`, typically as both a 2D and 3D variant. Some notable tests/examples are:
+
+* `test_refinement_2/3d`: tests mesh refinement, prolongation and restriction
+* `test_xdmf_writer_2/3d`: tests XDMF output
+* `test_advection_2/3d`: simple scalar advection test
+* `test_euler_2/3d`: solves Euler's equations of gas dynamics
+
+
 ## Viewing results
 
 There is currently an inconsistency between Visit and Paraview regarding the order of XDMF data. To write output that can be viewed from Paraview, add `viewer="paraview"` to `io_write_grid` calls, like:
@@ -48,3 +58,6 @@ There is currently an inconsistency between Visit and Paraview regarding the ord
     call io_write_grid(f4, base_name, n_output, viewer="paraview")
 
 Then use the legacy `XDMF Reader`. For visit no `viewer="visit"` argument is required, since it is the default.
+For most of the included test cases, the type of output is controlled by an optional argument, like:
+
+    mpirun -np 1 ./build/bin/test_euler_2d -viewer=paraview

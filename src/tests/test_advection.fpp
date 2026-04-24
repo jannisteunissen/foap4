@@ -35,6 +35,7 @@ program test_adv
   integer           :: num_outputs          = 40
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=40) :: integrator_name      = "heuns_method"
+  character(len=40) :: viewer               = "visit"
   logical           :: write_vtu = .false.
   logical           :: use_gaussian = .false.
 
@@ -68,6 +69,8 @@ program test_adv
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
   call CFG_add_get(cfg, 'cfl_number', cfl_number, 'CFL number')
+  call CFG_add_get(cfg, 'viewer', viewer, &
+       'Write XDMF output for this viewer (visit or paraview)')
   call CFG_check(cfg)
 
   if (max_refinement_level < min_refinement_level) &
@@ -138,7 +141,8 @@ contains
     call f4_get_global_highest_level(f4, prev_highest_level)
 
     if (dt_output <= end_time) then
-       call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
+       call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu, &
+            viewer=viewer)
     end if
     n_output = n_output + 1
 
@@ -156,7 +160,8 @@ contains
        if (write_this_step) then
           call set_error(f4)
           call compute_error_norms(f4, i_error, l1_err, l2_err)
-          call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
+          call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu, &
+               viewer=viewer)
           call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &

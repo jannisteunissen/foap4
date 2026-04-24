@@ -20,6 +20,7 @@ program test_ref
   real(dp)          :: r_ref(NDIM)
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=80) :: output_name
+  character(len=40) :: viewer = "visit"
 
 #:if NDIM == 2
   min_level = 3
@@ -48,6 +49,8 @@ program test_ref
        'Test coarsening')
   call CFG_add_get(cfg, 'write_output', write_output, &
        'Write output files')
+  call CFG_add_get(cfg, 'viewer', viewer, &
+       'Write XDMF output for this viewer (visit or paraview)')
   call CFG_add_get(cfg, 'abort_on_error', abort_on_error, &
        'Abort when a numerical error is detected')
   call CFG_check(cfg)
@@ -141,7 +144,7 @@ contains
 
     if (write_output) then
        n_output = n_output + 1
-       call io_write_grid(f4, base_name, n_output)
+       call io_write_grid(f4, base_name, n_output, viewer=viewer)
     end if
 
     do n = 1, n_refine_steps
@@ -152,7 +155,7 @@ contains
 
        if (write_output) then
           n_output = n_output + 1
-          call io_write_grid(f4, base_name, n_output)
+          call io_write_grid(f4, base_name, n_output, viewer=viewer)
        end if
     end do
 
@@ -168,7 +171,7 @@ contains
 
           if (write_output) then
              n_output = n_output + 1
-             call io_write_grid(f4, base_name, n_output)
+             call io_write_grid(f4, base_name, n_output, viewer=viewer)
           end if
 
           if (f4_get_mesh_revision(f4) == prev_mesh_revision) exit

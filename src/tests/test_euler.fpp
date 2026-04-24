@@ -37,8 +37,9 @@ program euler
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=10) :: test_case          = "sod"
   character(len=40) :: integrator_name    = "heuns_method"
-  character(len=200) :: output_prefix    = "output/test_euler_${NDIM}$d"
-  logical           :: write_vtu = .false.
+  character(len=40) :: viewer             = "visit"
+  character(len=200) :: output_prefix     = "output/test_euler_${NDIM}$d"
+  logical           :: write_vtu          = .false.
 
   call f4_initialize(f4, "error")
 
@@ -65,6 +66,8 @@ program euler
   call CFG_add_get(cfg, 'test_case', test_case, 'Which test case to run')
   call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
   call CFG_add_get(cfg, 'cfl_number', cfl_number, 'CFL number')
+  call CFG_add_get(cfg, 'viewer', viewer, &
+       'Write XDMF output for this viewer (visit or paraview)')
   call CFG_check(cfg)
 
   call test_euler(f4, bx, min_level, max_blocks, &
@@ -169,7 +172,8 @@ contains
     call f4_compute_sum(f4, i_rho, rho_initial_sum)
 
     if (dt_output <= end_time) then
-       call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
+       call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu, &
+            viewer=viewer)
     end if
     n_output = n_output + 1
 
@@ -187,7 +191,8 @@ contains
        call rk_advance(f4, dt, dt_lim, integrator, feuler_finite_volume)
 
        if (write_this_step) then
-          call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu)
+          call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu, &
+               viewer=viewer)
           call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &

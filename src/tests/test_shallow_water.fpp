@@ -37,6 +37,7 @@ program shallow_water
   real(dp)          :: cfl_number         = 0.5_dp
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=40) :: integrator_name    = "heuns_method"
+  character(len=40) :: viewer             = "visit"
 
   real(dp) :: h_inner, h_outer
   real(dp) :: dam_center(NDIM)
@@ -72,6 +73,8 @@ program shallow_water
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
   call CFG_add_get(cfg, 'cfl_number', cfl_number, 'CFL number')
+  call CFG_add_get(cfg, 'viewer', viewer, &
+       'Write XDMF output for this viewer (visit or paraview)')
   call CFG_check(cfg)
 
   call test_shallow_water(f4, bx, min_level, max_blocks, &
@@ -139,7 +142,9 @@ contains
 
     call f4_compute_sum(f4, i_h, h_initial_sum)
 
-    if (dt_output <= end_time) call io_write_grid(f4, base_name, n_output)
+    if (dt_output <= end_time) then
+       call io_write_grid(f4, base_name, n_output, viewer=viewer)
+    end if
     n_output = n_output + 1
 
     t0 = MPI_Wtime()
@@ -153,7 +158,7 @@ contains
        call rk_advance(f4, dt, dt_lim, integrator, feuler_finite_volume)
 
        if (write_this_step) then
-          call io_write_grid(f4, base_name, n_output)
+          call io_write_grid(f4, base_name, n_output, viewer=viewer)
           call f4_compute_sum(f4, i_h, h_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &

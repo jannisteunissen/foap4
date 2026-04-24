@@ -6,6 +6,9 @@ program test_xdmf_writer_${NDIM}$d
   implicit none
   integer :: ierr, mpisize
 
+  ! Change this to paraview to view the output in paraview
+  character(len=20) :: viewer = "visit"
+
   call MPI_init(ierr)
 
   call MPI_comm_size(MPI_COMM_WORLD, mpisize, ierr);
@@ -75,7 +78,8 @@ contains
     end do
 
     call io_xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, cc_data, time=time)
+         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, cc_data, time=time, &
+         viewer=viewer)
 
   end subroutine multi_block_test_2d
 #:elif NDIM == 3
@@ -128,7 +132,8 @@ contains
     end do
 
     call io_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, cc_data, time=time)
+         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, cc_data, time=time, &
+         viewer=viewer)
 
   end subroutine multi_block_test_3d
 #:endif
