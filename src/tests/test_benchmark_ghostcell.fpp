@@ -129,9 +129,8 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
-    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(2) private(rr)')}$
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)

@@ -3255,31 +3255,27 @@ contains
     ${ENTER_DATA_COPYIN('srl, refine, coarsen')}$
 
     ! Copy on device
-    ${PARALLEL_LOOP('private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    ${PARALLEL_LOOP('collapse(NDIM+2) private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
     do n = 1, i_srl
-       i_from = srl(1, n)
-       i_to = srl(2, n)
-
-       ${LOOP('collapse(NDIM+1)')}$
        do iv = 1, f4%n_vars
           do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
+             i_from = srl(1, n)
+             i_to = srl(2, n)
              f4%uu(${IJK}$, iv, i_to) = f4%uu(${IJK}$, iv, i_from)
           end do; ${KJI_CLOSE_LOOP}$
        end do
     end do
 
     ! Refine on device
-    ${PARALLEL_LOOP('private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
-    do n = 1, i_refine
-       i_from = refine(1, n)
-       i_to = refine(2, n)
-
 #:if NDIM == 2
-       ${LOOP('collapse(4) private(j_c, j_f, i_c, i_f, fine)')}$
+    ${PARALLEL_LOOP('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f, fine)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    do n = 1, i_refine
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
              do j = 1, f4%hbx(2)
                 do i = 1, f4%hbx(1)
+                   i_from = refine(1, n)
+                   i_to = refine(2, n)
                    j_c = j + f4_child_offset(2, i_ch) * f4%hbx(2)
                    i_c = i + f4_child_offset(1, i_ch) * f4%hbx(1)
                    j_f = 2 * j - 1
@@ -3301,13 +3297,17 @@ contains
              end do
           end do
        end do
+    end do
 #:elif NDIM == 3
-       ${LOOP('collapse(5) private(k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$
+    ${PARALLEL_LOOP('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    do n = 1, i_refine
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
              do k = 1, f4%hbx(3)
                 do j = 1, f4%hbx(2)
                    do i = 1, f4%hbx(1)
+                      i_from = refine(1, n)
+                      i_to = refine(2, n)
                       k_c = k + f4_child_offset(3, i_ch) * f4%hbx(3)
                       j_c = j + f4_child_offset(2, i_ch) * f4%hbx(2)
                       i_c = i + f4_child_offset(1, i_ch) * f4%hbx(1)
@@ -3338,21 +3338,19 @@ contains
              end do
           end do
        end do
-#:endif
     end do
+#:endif
 
     ! Coarsen on device
-    ${PARALLEL_LOOP('private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    #:if NDIM == 2
+    ${PARALLEL_LOOP('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
     do n = 1, i_coarsen
-       i_from = coarsen(1, n)
-       i_to = coarsen(2, n)
-
-#:if NDIM == 2
-       ${LOOP('collapse(4) private(j_c, j_f, i_c, i_f)')}$
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
              do j = 1, f4%hbx(2)
                 do i = 1, f4%hbx(1)
+                   i_from = coarsen(1, n)
+                   i_to = coarsen(2, n)
                    j_c = j + f4_child_offset(2, i_ch) * f4%hbx(2)
                    j_f = 2 * j - 1
                    i_c = i + f4_child_offset(1, i_ch) * f4%hbx(1)
@@ -3367,13 +3365,17 @@ contains
              end do
           end do
        end do
+    end do
 #:elif NDIM == 3
-       ${LOOP('collapse(5) private(k_c, k_f, j_c, j_f, i_c, i_f)')}$
+    ${PARALLEL_LOOP('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    do n = 1, i_coarsen
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
              do k = 1, f4%hbx(3)
                 do j = 1, f4%hbx(2)
                    do i = 1, f4%hbx(1)
+                      i_from = coarsen(1, n)
+                      i_to = coarsen(2, n)
                       k_c = k + f4_child_offset(3, i_ch) * f4%hbx(3)
                       k_f = 2 * k - 1
                       j_c = j + f4_child_offset(2, i_ch) * f4%hbx(2)
@@ -3395,8 +3397,8 @@ contains
              end do
           end do
        end do
-#:endif
     end do
+#:endif
 
     ${WAIT()}$
     ${EXIT_DATA_DELETE('srl, refine, coarsen')}$
@@ -3439,9 +3441,8 @@ contains
     end do
 
     ! Copy block solution data on device
-    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+2)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, n_blocks_old
-       ${LOOP('collapse(NDIM+1)')}$
        do iv = 1, f4%n_vars
           do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
              f4%uu(${IJK}$, iv, offset_copy+n) = f4%uu(${IJK}$, iv, n)
@@ -4017,19 +4018,17 @@ contains
 
     var_sum = 0.0_dp
 
-    ${PARALLEL_LOOP('private(level, dvol) reduction(+:var_sum)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(level, dvol) reduction(+:var_sum)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       level = f4%block_level(n)
-#:if NDIM == 2
-       dvol = f4%dr_level(1, level) * f4%dr_level(2, level)
-#:elif NDIM == 3
-       dvol = f4%dr_level(1, level) * f4%dr_level(2, level) * &
-            f4%dr_level(3, level)
-#:endif
-
-       ${LOOP('collapse(NDIM) reduction(+:var_sum)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-            var_sum = var_sum + f4%uu(${IJK}$, i_var, n) * dvol
+          level = f4%block_level(n)
+#:if NDIM == 2
+          dvol = f4%dr_level(1, level) * f4%dr_level(2, level)
+#:elif NDIM == 3
+          dvol = f4%dr_level(1, level) * f4%dr_level(2, level) * &
+               f4%dr_level(3, level)
+#:endif
+          var_sum = var_sum + f4%uu(${IJK}$, i_var, n) * dvol
        end do; ${KJI_CLOSE_LOOP}$
     end do
 
@@ -4043,15 +4042,12 @@ contains
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_var
     real(dp), intent(out)     :: var_max
-    integer                   :: level, ${IJK}$, n, ierror
+    integer                   :: ${IJK}$, n, ierror
 
     var_max = -huge(1.0_dp)
 
-    ${PARALLEL_LOOP('private(level) reduction(max:var_max)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) reduction(max:var_max)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       level = f4%block_level(n)
-
-       ${LOOP('collapse(NDIM) reduction(max:var_max)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
             var_max = max(var_max, f4%uu(${IJK}$, i_var, n))
        end do; ${KJI_CLOSE_LOOP}$

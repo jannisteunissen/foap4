@@ -265,9 +265,8 @@ contains
     call to_conservative(u0(:, 1))
     call to_conservative(u0(:, 2))
 
-    ${PARALLEL_LOOP('copyin(u0)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr) copyin(u0)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(NDIM) private(rr)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
@@ -307,9 +306,8 @@ contains
     k_vec(2) = 2 * pi
 #:endif
 
-    ${PARALLEL_LOOP('copyin(k_vec)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr) copyin(k_vec)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(NDIM) private(rr)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
@@ -350,9 +348,8 @@ contains
     ! Vortex center (middle of domain)
     rc(:) = 5.0_fp
 
-    ${PARALLEL_LOOP('copyin(rc, v_inf)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr, r2, dv, dT, T, rho, p, v) copyin(rc, v_inf)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(NDIM) private(rr, r2, dv, dT, T, rho, p, v)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = real(f4_cell_coord(f4, n, ${IJK}$), fp)
 

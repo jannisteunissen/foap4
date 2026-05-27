@@ -210,9 +210,8 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
 
-    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(NDIM) private(rr)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 #:if NDIM == 2
@@ -229,9 +228,8 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM), sol
 
-    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr, sol)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(NDIM) private(rr, sol)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 #:if NDIM == 2
@@ -254,18 +252,17 @@ contains
     l1_err = 0.0_dp
     l2_err = 0.0_dp
 
-    ${PARALLEL_LOOP('private(level, dvol) reduction(+:l1_err, l2_err)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(ndim+1) private(level, dvol) reduction(+:l1_err, l2_err)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       level = f4%block_level(n)
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          level = f4%block_level(n)
 #:if NDIM == 2
-       dvol = f4%dr_level(1, level) * f4%dr_level(2, level)
+          dvol = f4%dr_level(1, level) * f4%dr_level(2, level)
 #:elif NDIM == 3
-       dvol = f4%dr_level(1, level) * f4%dr_level(2, level) * &
-            f4%dr_level(3, level)
+          dvol = f4%dr_level(1, level) * f4%dr_level(2, level) * &
+               f4%dr_level(3, level)
 #:endif
 
-       ${LOOP('collapse(ndim) reduction(+:l1_err, l2_err)')}$
-       do @{KJI_LOOP_1_to_array(f4%bx)}@
           l1_err = l1_err + abs(f4%uu(${IJK}$, i_err, n)) * dvol
           l2_err = l2_err + f4%uu(${IJK}$, i_err, n)**2 * dvol
        end do; ${KJI_CLOSE_LOOP}$

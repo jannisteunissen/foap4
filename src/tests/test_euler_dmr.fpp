@@ -223,9 +223,8 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM), x_boundary
 
-    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr, x_boundary)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(NDIM) private(rr, x_boundary)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
@@ -254,14 +253,12 @@ contains
 
     face = f4_face_ylo
 
-    ${PARALLEL_LOOP('private(i_block, ix)')}$
+    ${PARALLEL_LOOP('collapse(2) private(i_block, ix, rr)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       i_block = f4%gc_phys(n) + 1
-       f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
-       ix = f4%bc_data_ix(face, i_block)
-
-       ${LOOP('private(rr)')}$
        do i = 1, f4%bx(1)
+          i_block = f4%gc_phys(n) + 1
+          f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
+          ix = f4%bc_data_ix(face, i_block)
           rr = f4_block_face_coord(f4, i_block, face, i)
 
           if (rr(1) < dmr_xr) then
@@ -278,14 +275,12 @@ contains
 
     face = f4_face_yhi
 
-    ${PARALLEL_LOOP('private(i_block, ix)')}$
+    ${PARALLEL_LOOP('collapse(2) private(i_block, ix, rr)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       i_block = f4%gc_phys(n) + 1
-       f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
-       ix = f4%bc_data_ix(face, i_block)
-
-       ${LOOP('private(rr)')}$
        do i = 1, f4%bx(1)
+          i_block = f4%gc_phys(n) + 1
+          f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
+          ix = f4%bc_data_ix(face, i_block)
           rr = f4_block_face_coord(f4, i_block, face, i)
 
           if (rr(1) < x_boundary) then
@@ -300,14 +295,12 @@ contains
 
     face = f4_face_xlo
 
-    ${PARALLEL_LOOP('private(i_block, ix)')}$
+    ${PARALLEL_LOOP('collapse(2) private(i_block, ix, rr)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
-       i_block = f4%gc_phys(n) + 1
-       f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
-       ix = f4%bc_data_ix(face, i_block)
-
-       ${LOOP('private(rr)')}$
        do i = 1, f4%bx(1)
+          i_block = f4%gc_phys(n) + 1
+          f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
+          ix = f4%bc_data_ix(face, i_block)
           rr = f4_block_face_coord(f4, i_block, face, i)
 
           f4%bc_data(i, i_tvars0+1:i_tvars0+n_tvars, ix) = dmr_uL

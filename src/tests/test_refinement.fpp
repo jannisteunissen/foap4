@@ -237,9 +237,8 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
 
-    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(NDIM) private(rr)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
           f4%uu(${IJK}$, i_phi, n) = real(phi_init(@{DINDEX(rr)}@), fp)
@@ -284,9 +283,8 @@ contains
 
     max_err = 0.0_dp
 
-    ${PARALLEL_LOOP('reduction(max:max_err)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) reduction(max:max_err) private(rr, sol, ghost_dim, valid_cell)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       ${LOOP('collapse(NDIM) reduction(max:max_err) private(rr, sol, ghost_dim, valid_cell)')}$
        do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
 
           ghost_dim(1) = i < 1 .or. i > f4%bx(1)
