@@ -210,9 +210,9 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
 
-    !$acc parallel loop default(present)
+    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(NDIM) private(rr)
+       ${LOOP('collapse(NDIM) private(rr)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 #:if NDIM == 2
@@ -229,9 +229,9 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM), sol
 
-    !$acc parallel loop default(present)
+    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(NDIM) private(rr, sol)
+       ${LOOP('collapse(NDIM) private(rr, sol)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 #:if NDIM == 2
@@ -254,7 +254,7 @@ contains
     l1_err = 0.0_dp
     l2_err = 0.0_dp
 
-    !$acc parallel loop private(level, dvol) reduction(+:l1_err, l2_err) default(present)
+    ${PARALLEL_LOOP('private(level, dvol) reduction(+:l1_err, l2_err)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
 #:if NDIM == 2
@@ -264,7 +264,7 @@ contains
             f4%dr_level(3, level)
 #:endif
 
-       !$acc loop collapse(ndim) reduction(+:l1_err, l2_err)
+       ${LOOP('collapse(ndim) reduction(+:l1_err, l2_err)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           l1_err = l1_err + abs(f4%uu(${IJK}$, i_err, n)) * dvol
           l2_err = l2_err + f4%uu(${IJK}$, i_err, n)**2 * dvol
@@ -281,7 +281,7 @@ contains
   end subroutine compute_error_norms
 
   pure real(dp) function rho_solution(${XYZ}$, t)
-    !$acc routine seq
+    ${ROUTINE_SEQ()}$
     real(dp), intent(in) :: ${XYZ}$
     real(dp), intent(in) :: t
     real(dp)             :: distance, q

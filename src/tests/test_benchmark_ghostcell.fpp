@@ -1,3 +1,4 @@
+#:include 'definitions.fpp'
 program benchmark_gc
 
   use mpi_f08
@@ -128,9 +129,9 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
-    !$acc parallel loop default(present)
+    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(2) private(rr)
+       ${LOOP('collapse(2) private(rr)')}$
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              rr = f4_cell_coord(f4, n, i, j)

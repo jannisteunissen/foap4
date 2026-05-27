@@ -39,7 +39,7 @@ contains
     if (out_gc < 0 .or. out_gc > f4%n_gc) error stop "Invalid n_gc_out"
 
     ! OpenACC - get the block data from the device
-    !$acc update self (f4%uu(@{DTIMES(:)}@, :, 1:f4%n_blocks))
+    $:UPDATE_SELF('f4%uu(' + DTIMES(':') + ', :, 1:f4%n_blocks)')
 
     write(full_fname, "(A,A,I06.6)") trim(fname), "_", n_output
 

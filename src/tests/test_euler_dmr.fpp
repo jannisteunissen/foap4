@@ -75,12 +75,12 @@ program test_dmr
   ! Post-shock
   dmr_uL = real([8.0_dp, 4.125_dp * sqrt(3.0_dp), -4.125_dp, 116.5_dp], fp)
   call to_conservative(dmr_uL)
-  !$acc enter data copyin(dmr_uL)
+  ${ENTER_DATA_COPYIN('dmr_uL')}$
 
   ! Pre-shock
   dmr_uR = real([1.4_dp, 0.0_dp, 0.0_dp, 1.0_dp], fp)
   call to_conservative(dmr_uR)
-  !$acc enter data copyin(dmr_uR)
+  ${ENTER_DATA_COPYIN('dmr_uR')}$
 
   call f4_initialize(f4, "error")
 
@@ -223,9 +223,9 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM), x_boundary
 
-    !$acc parallel loop default(present)
+    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(NDIM) private(rr, x_boundary)
+       ${LOOP('collapse(NDIM) private(rr, x_boundary)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
@@ -254,13 +254,13 @@ contains
 
     face = f4_face_ylo
 
-    !$acc parallel loop private(i_block, ix) independent
+    ${PARALLEL_LOOP('private(i_block, ix)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        i_block = f4%gc_phys(n) + 1
        f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
        ix = f4%bc_data_ix(face, i_block)
 
-       !$acc loop private(rr)
+       ${LOOP('private(rr)')}$
        do i = 1, f4%bx(1)
           rr = f4_block_face_coord(f4, i_block, face, i)
 
@@ -278,13 +278,13 @@ contains
 
     face = f4_face_yhi
 
-    !$acc parallel loop private(i_block, ix) independent
+    ${PARALLEL_LOOP('private(i_block, ix)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        i_block = f4%gc_phys(n) + 1
        f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
        ix = f4%bc_data_ix(face, i_block)
 
-       !$acc loop private(rr)
+       ${LOOP('private(rr)')}$
        do i = 1, f4%bx(1)
           rr = f4_block_face_coord(f4, i_block, face, i)
 
@@ -300,13 +300,13 @@ contains
 
     face = f4_face_xlo
 
-    !$acc parallel loop private(i_block, ix) independent
+    ${PARALLEL_LOOP('private(i_block, ix)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        i_block = f4%gc_phys(n) + 1
        f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
        ix = f4%bc_data_ix(face, i_block)
 
-       !$acc loop private(rr)
+       ${LOOP('private(rr)')}$
        do i = 1, f4%bx(1)
           rr = f4_block_face_coord(f4, i_block, face, i)
 

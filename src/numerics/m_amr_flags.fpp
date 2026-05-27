@@ -29,13 +29,13 @@ contains
     integer             :: n, ${IJK}$, level
     real(dp)            :: diff(NDIM), diff_norm
 
-    !$acc parallel loop private(level, diff_norm) default(present)
+    ${PARALLEL_LOOP('private(level, diff_norm)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        diff_norm = 0.0_dp
 
 #:if NDIM == 2
-       !$acc loop collapse(2) private(diff) reduction(max: diff_norm)
+       ${LOOP('collapse(2) private(diff) reduction(max: diff_norm)')}$
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              diff(1) = abs(f4%uu(i+1, j, iv, n) - 2 * f4%uu(i, j, iv, n) + &
@@ -56,7 +56,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(3) private(diff) reduction(max: diff_norm)
+       ${LOOP('collapse(3) private(diff) reduction(max: diff_norm)')}$
        do k = 1, f4%bx(3)
           do j = 1, f4%bx(2)
              do i = 1, f4%bx(1)
@@ -99,7 +99,7 @@ contains
        end if
     end do
 
-    !$acc update host(f4%refinement_flags(1:f4%n_blocks))
+    ${UPDATE_SELF('f4%refinement_flags(1:f4%n_blocks)')}$
   end subroutine amr_flags_diff2
 
 end module m_amr_flags_${NDIM}$d

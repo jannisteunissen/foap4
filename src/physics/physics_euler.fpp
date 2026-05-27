@@ -1,6 +1,6 @@
 !> Convert conservative variables in-place to primitive ones
 pure subroutine to_primitive(u)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(inout) :: u(n_tvars)
   real(fp)                :: inv_rho, sum_v2
   integer                 :: idim
@@ -24,7 +24,7 @@ end subroutine to_primitive
 
 !> Convert primitive variables in-place to conservative ones
 pure subroutine to_conservative(u)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(inout) :: u(n_tvars)
   integer                 :: idim
   real(fp)                :: sum_v2
@@ -43,7 +43,7 @@ end subroutine to_conservative
 
 !> Compute flux (in conservative variables) from primitive variables
 subroutine get_flux(flux_dim, u, flux)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   integer, intent(in)   :: flux_dim
   real(fp), intent(in)  :: u(n_tvars)
   real(fp), intent(out) :: flux(n_tvars)
@@ -71,7 +71,7 @@ end subroutine get_flux
 !> This implements formula (10.52) from "Riemann Solvers and Numerical Methods
 !> for Fluid Dynamics" by Toro.
 pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   integer, intent(in)   :: flux_dim
   real(fp), intent(in)  :: u_LR(n_tvars, 2) !< Primitive variables
   real(fp), intent(out) :: cmin
@@ -100,7 +100,7 @@ end subroutine get_min_max_wavespeed
 
 !> Compute sound speed squared from primitive variable array
 pure function get_csound2_from_prim(u) result(csound2)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(in) :: u(n_tvars)  !< Primitive variables
   real(fp)             :: csound2
   real(fp)             :: rho_safe, p_safe

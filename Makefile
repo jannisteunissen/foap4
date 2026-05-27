@@ -43,9 +43,27 @@ LIBS := p4est sc z m
 FLOAT_BITS ?= 64
 
 # ==============================================================================
+# GPU / offloading configuration
+# By default, use OpenACC (unless OpenMP is explicitly requested)
+# ==============================================================================
+ifeq ($(OPENMP),1)
+    OPENACC := 0
+else
+    OPENACC ?= 1
+endif
+
+ifeq ($(OPENACC),1)
+    OFFLOAD_FYPP := -D USE_OPENACC
+else ifeq ($(OPENMP),1)
+    OFFLOAD_FYPP := -D USE_OPENMP
+else
+    OFFLOAD_FYPP :=
+endif
+
+# ==============================================================================
 # Preprocessor flags
 # ==============================================================================
-FYPPFLAGS := -n $(INCFLAGS) -D FLOAT_BITS=$(FLOAT_BITS)
+FYPPFLAGS := -n $(INCFLAGS) -D FLOAT_BITS=$(FLOAT_BITS) $(OFFLOAD_FYPP)
 
 # ==============================================================================
 # C compiler flags
@@ -70,18 +88,40 @@ ifeq ($(compiler_brand),GNU)
         FFLAGS += -Ofast -march=native
     endif
     ifeq ($(OPENACC),1)
-	FFLAGS += -fopenacc -foffload=nvptx-none
+        FFLAGS += -fopenacc -foffload=nvptx-none
+        CFLAGS += -fopenacc -foffload=nvptx-none
+    else ifeq ($(OPENMP),1)
+        FFLAGS += -fopenmp
+        CFLAGS += -fopenmp
     endif
+
 else ifneq (,$(filter $(compiler_brand),nvfortran pgfortran))
-    # Will be used for nvfortran and pgfortran
-    FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
-        -static-nvidia -g -module $(OBJDIR)
+    ifeq ($(OPENACC),1)
+        FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
+            -static-nvidia -g -module $(OBJDIR)
+    else ifeq ($(OPENMP),1)
+        FFLAGS ?= -Minform=warn -mp=gpu -fast -gpu=ccnative -Mpreprocess \
+            -static-nvidia -g -module $(OBJDIR)
+    else
+        FFLAGS ?= -Minform=warn -fast -Mpreprocess -static-nvidia -g -module $(OBJDIR)
+    endif
+
 else ifeq ($(compiler_brand),Cray)
-    FFLAGS ?= -M878 -O2 -eT -ea -ef -ffree -h acc \
-        -h acc_model=auto_async_none:fast_addr:no_deep_copy -J$(OBJDIR)
+    FFLAGS ?= -M878 -O2 -eT -ea -ef -ffree -J$(OBJDIR)
+    ifeq ($(OPENACC),1)
+        FFLAGS += -h acc -h acc_model=auto_async_none:fast_addr:no_deep_copy
+    else ifeq ($(OPENMP),1)
+        FFLAGS += -h omp
+    endif
+
 else
     $(warning Unknown compiler "$(compiler_brand)", using default flags)
     FFLAGS ?= -O2 -g -J$(OBJDIR)
+    ifeq ($(OPENACC),1)
+        $(warning OpenACC flags unknown for this compiler; add manually via FFLAGS_USER)
+    else ifeq ($(OPENMP),1)
+        $(warning OpenMP flags unknown for this compiler; add manually via FFLAGS_USER)
+    endif
 endif
 
 FFLAGS += $(FFLAGS_USER)
@@ -163,7 +203,8 @@ help:
 	@echo "  BUILDDIR=<dir>  - Set build directory (default: build)"
 	@echo "  DEBUG=1         - Enable debug flags"
 	@echo "  SAFE=1          - Use -O2 instead of -Ofast"
-	@echo "  OPENACC=1       - Enable OpenACC offloading with GNU compiler"
+	@echo "  OPENACC=1       - Enable OpenACC GPU offloading (default; disabled when OPENMP=1)"
+	@echo "  OPENMP=1        - Enable OpenMP target GPU offloading (implicitly disables OPENACC)"
 	@echo "  FLOAT_BITS=N    - Floating point precision for block data; 32 or 64"
 	@echo "  F90C=<comp>     - Set Fortran compiler (default: mpif90)"
 	@echo "  FFLAGS_USER=... - Additional Fortran flags appended to FFLAGS"
@@ -171,12 +212,14 @@ help:
 	@echo "Examples:"
 	@echo "  make 2d FLOAT_BITS=32"
 	@echo "  make all DEBUG=1"
-	@echo "  make 3d F90C=nvfortran"
+	@echo "  make 3d F90C=nvfortran OPENACC=1"
+	@echo "  make 3d F90C=nvfortran OPENMP=1"
 	@echo "  make BUILDDIR=build_debug DEBUG=1"
 	@echo ""
 	@echo "Detected compiler: $(compiler_brand)"
 	@echo "Current BUILDDIR: $(BUILDDIR)"
 	@echo "Current FLOAT_BITS: $(FLOAT_BITS)"
+	@echo "Offload model: $(if $(filter 1,$(OPENACC)),OpenACC,$(if $(filter 1,$(OPENMP)),OpenMP,none))"
 	@echo "Current FFLAGS: $(FFLAGS)"
 
 

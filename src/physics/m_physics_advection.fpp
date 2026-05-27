@@ -1,3 +1,4 @@
+#:include 'definitions.fpp'
 module m_physics_advection_${NDIM}$d
   use m_foap4_types_${NDIM}$d
 
@@ -28,11 +29,11 @@ module m_physics_advection_${NDIM}$d
 
   ! Velocity
   real(fp)                     :: advection_velocity(${NDIM}$) = 1.0_fp
-  !$acc declare create(advection_velocity)
+  ${DECLARE_DEVICE('advection_velocity')}$
 
   ! Whether to use a Gaussian solution
   logical                      :: advection_use_gaussian = .false.
-  !$acc declare create(advection_use_gaussian)
+  ${DECLARE_DEVICE('advection_use_gaussian')}$
 
   ! Which variables are temporal
   logical, parameter           :: var_temporal(n_vars_all) = [.false., .true.]
@@ -44,10 +45,10 @@ contains
     logical, intent(in)  :: use_gaussian
 
     advection_velocity = real(velocity, fp)
-    !$acc update device(advection_velocity)
+    ${UPDATE_DEVICE('advection_velocity')}$
 
     advection_use_gaussian = use_gaussian
-    !$acc update device(advection_use_gaussian)
+    ${UPDATE_DEVICE('advection_use_gaussian')}$
   end subroutine advection_initialize
 
 end module m_physics_advection_${NDIM}$d

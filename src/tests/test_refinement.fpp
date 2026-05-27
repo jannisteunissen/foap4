@@ -183,13 +183,13 @@ contains
 
 #:if NDIM == 2
   pure real(dp) function phi_init(x, y)
-    !$acc routine seq
+    ${ROUTINE_SEQ()}$
     real(dp), intent(in) :: x, y
     phi_init = x + 2*y
   end function phi_init
 #:elif NDIM == 3
   pure real(dp) function phi_init(x, y, z)
-    !$acc routine seq
+    ${ROUTINE_SEQ()}$
     real(dp), intent(in) :: x, y, z
     phi_init = x + 2*y + 3*z
   end function phi_init
@@ -203,22 +203,22 @@ contains
     integer                      :: j
 #:endif
 
-    !$acc parallel
+    ${PARALLEL()}$
     do face = 0, 2*NDIM-1
-       !$acc loop private(i_block, ix) independent
+       ${LOOP('private(i_block, ix)')}$
        do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
           i_block = f4%gc_phys(n) + 1
           f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
           ix = f4%bc_data_ix(face, i_block)
 #:if NDIM == 2
-          !$acc loop private(rr)
+          ${LOOP('private(rr)')}$
           do i = 1, f4%bx(1)
              rr = f4_block_face_coord(f4, i_block, face, i)
              f4%bc_data(i, i_phi, ix) = real(phi_init(rr(1), rr(2)), fp)
              f4%bc_data_type(i, i_phi, ix) = f4_bc_dirichlet
           end do
 #:elif NDIM == 3
-          !$acc loop collapse(2) private(rr)
+          ${LOOP('collapse(2) private(rr)')}$
           do j = 1, f4%bx(1)
              do i = 1, f4%bx(1)
                 rr = f4_block_face_coord(f4, i_block, face, i, j)
@@ -229,7 +229,7 @@ contains
 #:endif
        end do
     end do
-    !$acc end parallel
+    ${END_PARALLEL()}$
   end subroutine bc_callback
 
   subroutine set_init_cond(f4)
@@ -237,9 +237,9 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
 
-    !$acc parallel loop default(present)
+    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(${NDIM}$) private(rr)
+       ${LOOP('collapse(NDIM) private(rr)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
           f4%uu(${IJK}$, i_phi, n) = real(phi_init(@{DINDEX(rr)}@), fp)
@@ -284,9 +284,9 @@ contains
 
     max_err = 0.0_dp
 
-    !$acc parallel loop default(present) reduction(max:max_err)
+    ${PARALLEL_LOOP('reduction(max:max_err)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(${NDIM}$) reduction(max:max_err) private(rr, sol, ghost_dim, valid_cell)
+       ${LOOP('collapse(NDIM) reduction(max:max_err) private(rr, sol, ghost_dim, valid_cell)')}$
        do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
 
           ghost_dim(1) = i < 1 .or. i > f4%bx(1)

@@ -206,9 +206,9 @@ contains
     integer                      :: n, ${IJK}$
     real(dp) :: rr(NDIM), d_center
 
-    !$acc parallel loop default(present) copyin(dam_center)
+    ${PARALLEL_LOOP('copyin(dam_center)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(NDIM) private(rr, d_center)
+       ${LOOP('collapse(NDIM) private(rr, d_center)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
           d_center = sqrt((rr(1) - dam_center(1))**2 + (rr(2) - dam_center(2))**2)

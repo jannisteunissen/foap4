@@ -1,4 +1,5 @@
 !> Definitions for Euler's equations of gas dynamics
+#:include 'definitions.fpp'
 module m_physics_euler_${NDIM}$d
   use m_foap4_types_${NDIM}$d
 
@@ -6,10 +7,10 @@ module m_physics_euler_${NDIM}$d
   public
 
   real(fp), protected :: euler_gamma = 5/3.0_fp
-  !$acc declare create(euler_gamma)
+  ${DECLARE_DEVICE('euler_gamma')}$
 
   real(fp), protected :: euler_inv_gamma_m1 = 1/(5/3.0_fp - 1)
-  !$acc declare create(euler_inv_gamma_m1)
+  ${DECLARE_DEVICE('euler_inv_gamma_m1')}$
 
   ! Number of temporal variables
   integer, parameter :: n_tvars = 2 + ${NDIM}$
@@ -49,13 +50,13 @@ module m_physics_euler_${NDIM}$d
   logical, parameter :: var_temporal(n_vars_all) = .true.
 
   real(fp) :: euler_gravity = 0.0_dp
-  !$acc declare create(euler_gravity)
+  ${DECLARE_DEVICE('euler_gravity')}$
 
   real(fp) :: euler_rho_floor = 0.0_dp
-  !$acc declare create(euler_rho_floor)
+  ${DECLARE_DEVICE('euler_rho_floor')}$
 
   real(fp) :: euler_p_floor = 0.0_dp
-  !$acc declare create(euler_p_floor)
+  ${DECLARE_DEVICE('euler_p_floor')}$
 
 contains
 
@@ -73,9 +74,9 @@ contains
     euler_rho_floor = real(rho_floor, fp)
     euler_p_floor = real(p_floor, fp)
 
-    !$acc update device(euler_gamma, euler_inv_gamma_m1)
-    !$acc update device(euler_gravity)
-    !$acc update device(euler_rho_floor, euler_p_floor)
+    ${UPDATE_DEVICE('euler_gamma, euler_inv_gamma_m1')}$
+    ${UPDATE_DEVICE('euler_gravity')}$
+    ${UPDATE_DEVICE('euler_rho_floor, euler_p_floor')}$
   end subroutine euler_initialize
 
 end module m_physics_euler_${NDIM}$d

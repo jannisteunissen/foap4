@@ -1,10 +1,6 @@
 #:mute
 #:def DTIMES(text)
-#:if NDIM == 2
-${text}$, ${text}$
-#:elif NDIM == 3
-${text}$, ${text}$, ${text}$
-#:endif
+${ ', '.join([text] * NDIM) }$
 #:enddef
 
 #:def DINDEX(array)
@@ -53,6 +49,10 @@ k = ${lo}$(3), ${hi}$(3); do j = ${lo}$(2), ${hi}$(2); do i = ${lo}$(1), ${hi}$(
 #endif
 #:enddef
 
+#:def DECLARE_DEVICE(varlist)
+!$acc declare create(${varlist}$)
+#:enddef
+
 #:def ENTER_DATA_COPYIN(varlist)
 !$acc enter data copyin(${varlist}$)
 #:enddef
@@ -69,6 +69,10 @@ k = ${lo}$(3), ${hi}$(3); do j = ${lo}$(2), ${hi}$(2); do i = ${lo}$(1), ${hi}$(
 !$acc update device(${varlist}$)
 #:enddef
 
+#:def UPDATE_SELF(varlist)
+!$acc update self(${varlist}$)
+#:enddef
+
 #:def PARALLEL(clauses='')
 !$acc parallel ${clauses}$
 #:enddef
@@ -78,11 +82,11 @@ k = ${lo}$(3), ${hi}$(3); do j = ${lo}$(2), ${hi}$(2); do i = ${lo}$(1), ${hi}$(
 #:enddef
 
 #:def LOOP(clauses='')
-!$acc loop ${clauses}$
+!$acc loop independent ${clauses}$
 #:enddef
 
 #:def PARALLEL_LOOP(clauses='')
-!$acc parallel loop ${clauses}$
+!$acc parallel loop independent ${clauses}$
 #:enddef
 
 #:def ATOMIC()
@@ -117,6 +121,10 @@ async
 #endif
 #:enddef
 
+#:def DECLARE_DEVICE(varlist)
+!$omp declare target(${varlist}$)
+#:enddef
+
 #:def ENTER_DATA_COPYIN(varlist)
 !$omp target enter data map(to: ${varlist}$)
 #:enddef
@@ -131,6 +139,10 @@ async
 
 #:def UPDATE_DEVICE(varlist)
 !$omp target update to(${varlist}$)
+#:enddef
+
+#:def UPDATE_SELF(varlist)
+!$omp target update from(${varlist}$)
 #:enddef
 
 #:def PARALLEL(clauses='')
@@ -181,6 +193,8 @@ nowait
 #:def GPU_ENDIF()
 #endif
 #:enddef
+#:def DECLARE_DEVICE(varlist)
+#:enddef
 #:def ENTER_DATA_COPYIN(varlist)
 #:enddef
 #:def ENTER_DATA_CREATE(varlist)
@@ -188,6 +202,8 @@ nowait
 #:def EXIT_DATA_DELETE(varlist)
 #:enddef
 #:def UPDATE_DEVICE(varlist)
+#:enddef
+#:def UPDATE_SELF(varlist)
 #:enddef
 #:def PARALLEL(clauses='')
 #:enddef

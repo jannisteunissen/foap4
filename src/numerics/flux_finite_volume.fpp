@@ -23,14 +23,13 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
   max_cfl = 0.0_dp
   dt = real(dt_in, fp)
 
-  !$acc parallel loop private(level, inv_dr) reduction(max:max_cfl) &
-  !$acc & default(present) copyin(w_prev, s_prev)
+  ${PARALLEL_LOOP('private(level, inv_dr) reduction(max:max_cfl) copyin(w_prev, s_prev)')}$ ${DEFAULT_PRESENT()}$
   do n = 1, f4%n_blocks
 
      level = f4%block_level(n)
      inv_dr = real(1/f4%dr_level(:, level), fp)
 
-     !$acc loop collapse(NDIM) private(u, ghost_dim, valid_cell)
+     ${LOOP('collapse(NDIM) private(u, ghost_dim, valid_cell)')}$
      do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
         ghost_dim(1) = i < 1 .or. i > f4%bx(1)
         ghost_dim(2) = j < 1 .or. j > f4%bx(2)
@@ -55,8 +54,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
         end if
      end do; ${KJI_CLOSE_LOOP}$
 
-     !$acc loop collapse(NDIM) private(tmp, flux, dvar, cmax, cfl_sum, iv, m, u) &
-     !$acc &reduction(max:max_cfl)
+     ${LOOP('collapse(NDIM) private(tmp, flux, dvar, cmax, cfl_sum, iv, m, u) reduction(max:max_cfl)')}$
      do @{KJI_LOOP_1_to_array(f4%bx)}@
 
         u = f4%uu_prim(${IJK}$, i_tvars0+1:i_tvars0+n_tvars, n)

@@ -265,9 +265,9 @@ contains
     call to_conservative(u0(:, 1))
     call to_conservative(u0(:, 2))
 
-    !$acc parallel loop default(present) copyin(u0)
+    ${PARALLEL_LOOP('copyin(u0)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(NDIM) private(rr)
+       ${LOOP('collapse(NDIM) private(rr)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
@@ -307,9 +307,9 @@ contains
     k_vec(2) = 2 * pi
 #:endif
 
-    !$acc parallel loop default(present) copyin(k_vec)
+    ${PARALLEL_LOOP('copyin(k_vec)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(NDIM) private(rr)
+       ${LOOP('collapse(NDIM) private(rr)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
 
@@ -350,9 +350,9 @@ contains
     ! Vortex center (middle of domain)
     rc(:) = 5.0_fp
 
-    !$acc parallel loop default(present) copyin(rc, v_inf)
+    ${PARALLEL_LOOP('copyin(rc, v_inf)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
-       !$acc loop collapse(NDIM) private(rr, r2, dv, dT, T, rho, p, v)
+       ${LOOP('collapse(NDIM) private(rr, r2, dv, dT, T, rho, p, v)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = real(f4_cell_coord(f4, n, ${IJK}$), fp)
 

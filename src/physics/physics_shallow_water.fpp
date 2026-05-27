@@ -1,6 +1,6 @@
 !> Convert conservative variables in-place to primitive ones
 pure subroutine to_primitive(u)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(inout) :: u(n_tvars)
   real(fp)                :: inv_h
   integer                 :: idim
@@ -13,7 +13,7 @@ end subroutine to_primitive
 
 !> Convert primitive variables in-place to conservative ones
 pure subroutine to_conservative(u)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(inout) :: u(n_tvars)
   integer                 :: idim
 
@@ -24,7 +24,7 @@ end subroutine to_conservative
 
 !> Compute flux (in conservative variables) from primitive variables
 subroutine get_flux(flux_dim, u, flux)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   integer, intent(in)   :: flux_dim
   real(fp), intent(in)  :: u(n_tvars)  !< Primitive variables (h, u, v)
   real(fp), intent(out) :: flux(n_tvars)
@@ -46,7 +46,7 @@ end subroutine get_flux
 !> Estimate for minimum and maximum wavespeeds for HLL-type solvers
 !> Wavespeeds are u ± sqrt(g*h)
 pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   integer, intent(in)   :: flux_dim
   real(fp), intent(in)  :: u_LR(n_tvars, 2) !< Primitive variables (L and R states)
   real(fp), intent(out) :: cmin

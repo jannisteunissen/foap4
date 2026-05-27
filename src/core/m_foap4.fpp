@@ -248,17 +248,17 @@ contains
 
     ! OpenACC - Remove data from device
 
-    !$acc exit data delete(f4%bc_simple_type, f4%bc_simple)
-    !$acc exit data delete(f4%block_level, f4%block_origin)
-    !$acc exit data delete(f4%uu, f4%uu_prim, f4%refinement_flags)
-    !$acc exit data delete(f4%bc_data_ix, f4%bc_data, f4%bc_data_type, f4%bflux_ix, f4%bflux)
-    !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
-    !$acc exit data delete(f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface)
-    !$acc exit data delete(f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface)
-    !$acc exit data delete(f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface)
-    !$acc exit data delete(f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface)
-    !$acc exit data delete(f4%gc_phys_iface)
-    !$acc exit data delete(f4)
+    ${EXIT_DATA_DELETE('f4%bc_simple_type, f4%bc_simple')}$
+    ${EXIT_DATA_DELETE('f4%block_level, f4%block_origin')}$
+    ${EXIT_DATA_DELETE('f4%uu, f4%uu_prim, f4%refinement_flags')}$
+    ${EXIT_DATA_DELETE('f4%bc_data_ix, f4%bc_data, f4%bc_data_type, f4%bflux_ix, f4%bflux')}$
+    ${EXIT_DATA_DELETE('f4%recv_buffer, f4%send_buffer')}$
+    ${EXIT_DATA_DELETE('f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface')}$
+    ${EXIT_DATA_DELETE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
+    ${EXIT_DATA_DELETE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
+    ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
+    ${EXIT_DATA_DELETE('f4%gc_phys_iface')}$
+    ${EXIT_DATA_DELETE('f4')}$
 
     ! TODO: delete ghost cell patterns
 
@@ -407,18 +407,18 @@ contains
     allocate(f4%send_offset(0:f4%mpisize))
 
     ! OpenACC - Copy data structure and create allocatable components
-    !$acc enter data copyin(f4)
-    !$acc enter data copyin(f4%bc_simple_type, f4%bc_simple)
-    !$acc enter data create(f4%block_level, f4%block_origin)
-    !$acc enter data create(f4%uu, f4%uu_prim, f4%refinement_flags)
-    !$acc enter data create(f4%bc_data_ix, f4%bc_data, f4%bc_data_type)
-    !$acc enter data create(f4%bflux_ix, f4%bflux)
-    !$acc enter data create(f4%recv_buffer, f4%send_buffer)
-    !$acc enter data create(f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface)
-    !$acc enter data create(f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface)
-    !$acc enter data create(f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface)
-    !$acc enter data create(f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface)
-    !$acc enter data create(f4%gc_phys_iface)
+    ${ENTER_DATA_COPYIN('f4')}$
+    ${ENTER_DATA_COPYIN('f4%bc_simple_type, f4%bc_simple')}$
+    ${ENTER_DATA_CREATE('f4%block_level, f4%block_origin')}$
+    ${ENTER_DATA_CREATE('f4%uu, f4%uu_prim, f4%refinement_flags')}$
+    ${ENTER_DATA_CREATE('f4%bc_data_ix, f4%bc_data, f4%bc_data_type')}$
+    ${ENTER_DATA_CREATE('f4%bflux_ix, f4%bflux')}$
+    ${ENTER_DATA_CREATE('f4%recv_buffer, f4%send_buffer')}$
+    ${ENTER_DATA_CREATE('f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface')}$
+    ${ENTER_DATA_CREATE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
+    ${ENTER_DATA_CREATE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
+    ${ENTER_DATA_CREATE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
+    ${ENTER_DATA_CREATE('f4%gc_phys_iface')}$
 
     call f4_set_quadrants(f4)
     call update_ghostcell_pattern(f4)
@@ -450,7 +450,7 @@ contains
 
     if (n_face_bc > size(f4%bc_data, NDIM+1)) then
        ! Resize storage, and reserve extra space
-       !$acc exit data delete(f4%bc_data, f4%bc_data_type)
+       ${EXIT_DATA_DELETE('f4%bc_data, f4%bc_data_type')}$
        deallocate(f4%bc_data, f4%bc_data_type)
 #:if NDIM == 2
        allocate(f4%bc_data(f4%bx(1), f4%n_vars, 2*n_face_bc))
@@ -459,19 +459,19 @@ contains
        allocate(f4%bc_data(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_bc))
        allocate(f4%bc_data_type(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_bc))
 #:endif
-       !$acc enter data create(f4%bc_data, f4%bc_data_type)
+       ${ENTER_DATA_CREATE('f4%bc_data, f4%bc_data_type')}$
     end if
 
     if (n_face_rb > size(f4%bflux, NDIM+1)) then
        ! Resize storage, and reserve extra space
-       !$acc exit data delete(f4%bflux)
+       ${EXIT_DATA_DELETE('f4%bflux')}$
        deallocate(f4%bflux)
 #:if NDIM == 2
        allocate(f4%bflux(f4%bx(1), f4%n_vars, 2*n_face_rb))
 #:elif NDIM == 3
        allocate(f4%bflux(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_rb))
 #:endif
-       !$acc enter data create(f4%bflux)
+       ${ENTER_DATA_CREATE('f4%bflux')}$
     end if
 
     ! Set indices into boundary condition data. No boundary is set to zero,
@@ -530,8 +530,8 @@ contains
        end do
     end do
 
-    !$acc update device(f4%bc_data_ix(:, 1:f4%n_blocks))
-    !$acc update device(f4%bflux_ix(:, 1:f4%n_blocks))
+    ${UPDATE_DEVICE('f4%bc_data_ix(:, 1:f4%n_blocks)')}$
+    ${UPDATE_DEVICE('f4%bflux_ix(:, 1:f4%n_blocks)')}$
 
   end subroutine set_face_data_storage
 
@@ -553,7 +553,7 @@ contains
 
     f4%bc_simple_type(ivar, iface) = bc_type
     f4%bc_simple(ivar, iface) = real(bc_value, fp)
-    !$acc update device(f4%bc_simple_type(ivar, iface), f4%bc_simple(ivar, iface))
+    ${UPDATE_DEVICE('f4%bc_simple_type(ivar, iface), f4%bc_simple(ivar, iface)')}$
 
   end subroutine f4_set_bc_scalar
 
@@ -601,8 +601,8 @@ contains
     end do
 
     ! OpenACC - synchronize block information to device
-    !$acc update device(f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks))
-    !$acc update device(f4%block_level(1:f4%n_blocks))
+    ${UPDATE_DEVICE('f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks)')}$
+    ${UPDATE_DEVICE('f4%block_level(1:f4%n_blocks)')}$
   end subroutine f4_set_quadrants
 
   !> Get the global highest refinement level (on all MPI ranks)
@@ -620,7 +620,7 @@ contains
 
   !> Return the coordinates at the center of a grid cell
   pure function f4_cell_coord(f4, i_block, ${IJK}$) result(rr)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_block, ${IJK}$
     real(dp)                  :: rr(NDIM), dr(NDIM)
@@ -636,7 +636,7 @@ contains
   !> Return the coordinates at the center of a cell face on a block
 #:if NDIM == 2
   pure function f4_block_face_coord(f4, i_block, face, i) result(rr)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_block
     integer, intent(in)       :: face
@@ -661,7 +661,7 @@ contains
   end function f4_block_face_coord
 #:elif NDIM == 3
   pure function f4_block_face_coord(f4, i_block, face, i, j) result(rr)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_block
     integer, intent(in)       :: face
@@ -829,10 +829,10 @@ contains
 
     if (allocated(f4%gc_srl_local)) then
        ! OpenACC - deallocate arrays
-       !$acc exit data delete(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf)
-       !$acc exit data delete(f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf)
-       !$acc exit data delete(f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
-       !$acc exit data delete(f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
+       ${EXIT_DATA_DELETE('f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf')}$
+       ${EXIT_DATA_DELETE('f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf')}$
+       ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys')}$
+       ${EXIT_DATA_DELETE('f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix')}$
 
        deallocate(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
             f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
@@ -1114,16 +1114,16 @@ contains
 
     ! OpenACC - copy/sync data to device
 
-    !$acc enter data copyin(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf)
-    !$acc enter data copyin(f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf)
-    !$acc enter data copyin(f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
-    !$acc enter data copyin(f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
+    ${ENTER_DATA_COPYIN('f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf')}$
+    ${ENTER_DATA_COPYIN('f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf')}$
+    ${ENTER_DATA_COPYIN('f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys')}$
+    ${ENTER_DATA_COPYIN('f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix')}$
 
-    !$acc update device(f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface)
-    !$acc update device(f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface)
-    !$acc update device(f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface)
-    !$acc update device(f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface)
-    !$acc update device(f4%gc_phys_iface)
+    ${UPDATE_DEVICE('f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface')}$
+    ${UPDATE_DEVICE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
+    ${UPDATE_DEVICE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
+    ${UPDATE_DEVICE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
+    ${UPDATE_DEVICE('f4%gc_phys_iface')}$
 
   end subroutine set_ghost_cell_pattern
 
@@ -1421,13 +1421,13 @@ contains
     end if
 
 #:def fyp_srl_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    !$acc loop private(iq, i_buf0)
+    ${LOOP('private(iq, i_buf0)')}$
     do n = f4%gc_srl_to_buf_iface(${face}$), f4%gc_srl_to_buf_iface(${face}$+1)-1
        iq = f4%gc_srl_to_buf(1, n) + 1 + block_offset
        i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
 
 #:if NDIM == 2
-       !$acc loop collapse(3) private(ivar, i_buf)
+       ${LOOP('collapse(3) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -1438,7 +1438,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(4) private(ivar, i_buf)
+       ${LOOP('collapse(4) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -1458,13 +1458,13 @@ contains
     ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
 
 #:def fyp_f2c_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    !$acc loop private(iq, i_buf0)
+    ${LOOP('private(iq, i_buf0)')}$
     do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        iq = f4%gc_f2c_to_buf(1, n) + 1 + block_offset ! fine block
        i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
 
 #:if NDIM == 2
-       !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
+       ${LOOP('collapse(3) private(ivar, j_f, i_f, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -1481,7 +1481,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(4) private(ivar, k_f, j_f, i_f, i_buf)
+       ${LOOP('collapse(4) private(ivar, k_f, j_f, i_f, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -1509,7 +1509,7 @@ contains
     end do
 #:enddef
 
-    !$acc parallel default(present) copyin(i_vars)
+    ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
 
 #:if NDIM == 2
     @:fyp_srl_to_buf(0, f4%n_gc, f4%bx(2))
@@ -1538,7 +1538,7 @@ contains
     @:fyp_f2c_to_buf(4, f4%hbx(1), f4%hbx(2), f4%n_gc)
     @:fyp_f2c_to_buf(5, f4%hbx(1), f4%hbx(2), f4%n_gc, k0=f4%bx(3) - 2*f4%n_gc)
 #:endif
-    !$acc end parallel
+    ${END_PARALLEL()}$
 
     f4%recv_offset(:) = f4%gc_recv_offset * n_vars
     f4%send_offset(:) = f4%gc_send_offset * n_vars
@@ -1582,13 +1582,13 @@ contains
 #:if NDIM == 2
 #:def fyp_c2f_to_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &ic0=0, jc0=0)
-    !$acc loop private(iq, offset, i_buf0)
+    ${LOOP('private(iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
        iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
        offset(1) = f4%gc_c2f_to_buf(2, n)
        i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars
 
-       !$acc loop collapse(3) private(ivar, j_c, i_c, i_buf, fine)
+       ${LOOP('collapse(3) private(ivar, j_c, i_c, i_buf, fine)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1,  ${ilim}$
@@ -1611,7 +1611,7 @@ contains
        i_buf0 = i_buf0 + 4 * n_vars * ${jlim}$ * ${ilim}$
 
        if (odd_n_gc) then
-          !$acc loop collapse(2) private(ivar, i_c, j_c, i_buf, fine)
+          ${LOOP('collapse(2) private(ivar, i_c, j_c, i_buf, fine)')}$
           do iv = 1, n_vars
 #:if face == '0'
              do j = 1, ${jlim}$
@@ -1693,13 +1693,13 @@ contains
 #:elif NDIM == 3
 #:def fyp_c2f_to_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     klim='f4%hbx(3)', ic0=0, jc0=0, kc0=0)
-    !$acc loop private(iq, offset, i_buf0)
+    ${LOOP('private(iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
        iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
        offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
        i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars
 
-       !$acc loop collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine)
+       ${LOOP('collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -1730,7 +1730,7 @@ contains
        i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
 
        if (odd_n_gc) then
-          !$acc loop collapse(3) private(ivar, i_c, j_c, k_c, i_buf, fine)
+          ${LOOP('collapse(3) private(ivar, i_c, j_c, k_c, i_buf, fine)')}$
           do iv = 1, n_vars
 #:if face == '0'
              do k = 1, ${klim}$
@@ -1895,7 +1895,7 @@ contains
 #:enddef
 #:endif
 
-    !$acc parallel default(present) copyin(i_vars)
+    ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
 
 #:if NDIM == 2
     @:fyp_c2f_to_buf(0, ilim=half_n_gc, jc0=offset(1)*f4%hbx(2))
@@ -1919,7 +1919,7 @@ contains
          &jc0=offset(2)*f4%hbx(2), kc0=f4%bx(3)-half_n_gc)
 #:endif
 
-    !$acc end parallel
+    ${END_PARALLEL()}$
 
   end subroutine fill_ghostcell_buffers_round_two
 
@@ -1998,10 +1998,10 @@ contains
          error stop "increase f4%max_requests"
       end if
 
-      !$acc host_data use_device(buf)
+      @{HOST_DATA_USE_DEVICE('buf')}@
       call mpi_isend(buf(offset + 1), chunk_count, f4_mpi_float, &
                      dest, chunk_tag, comm, requests(nreqs), ierr)
-      !$acc end host_data
+      @{END_HOST_DATA()}@
 
       if (ierr /= MPI_SUCCESS) then
         if (present(ierror)) ierror = ierr
@@ -2045,10 +2045,10 @@ contains
          error stop "increase f4%max_requests"
       end if
 
-      !$acc host_data use_device(buf)
+      @{HOST_DATA_USE_DEVICE('buf')}@
       call mpi_irecv(buf(offset + 1), chunk_count, f4_mpi_float, &
                      source, chunk_tag, comm, requests(nreqs), ierr)
-      !$acc end host_data
+      @{END_HOST_DATA()}@
 
       if (ierr /= MPI_SUCCESS) then
         if (present(ierror)) ierror = ierr
@@ -2079,13 +2079,13 @@ contains
 
 #:def fyp_srl_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
     &i2=0, j2=0, k2=0)
-    !$acc loop private(iq, jq)
+    ${LOOP('private(iq, jq)')}$
     do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
        iq = f4%gc_srl_local(1, n) + 1 + block_offset
        jq = f4%gc_srl_local(2, n) + 1 + block_offset
 
 #:if NDIM == 2
-       !$acc loop collapse(3) private(ivar)
+       ${LOOP('collapse(3) private(ivar)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -2098,7 +2098,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(4) private(ivar)
+       ${LOOP('collapse(4) private(ivar)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -2119,7 +2119,7 @@ contains
     ! Fill physical boundaries
 
 #:def fyp_phys(face, ilim, jlim, klim=None)
-    !$acc loop private(iq, level, dr, i_bc_data)
+    ${LOOP('private(iq, level, dr, i_bc_data)')}$
     do n = f4%gc_phys_iface(${face}$), f4%gc_phys_iface(${face}$+1)-1
        iq    = f4%gc_phys(n) + 1 + block_offset
        level = f4%block_level(iq - block_offset)
@@ -2128,7 +2128,7 @@ contains
        i_bc_data = f4%bc_data_ix(${face}$, iq - block_offset)
 
 #:if NDIM == 2
-       !$acc loop collapse(3) private(ivar, bc_type, bc_value, slope)
+       ${LOOP('collapse(3) private(ivar, bc_type, bc_value, slope)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -2210,7 +2210,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(4) private(ivar, bc_type, bc_value, slope)
+       ${LOOP('collapse(4) private(ivar, bc_type, bc_value, slope)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -2323,7 +2323,7 @@ contains
 #:enddef
 
 #:def fyp_f2c_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, if0=0, jf0=0, kf0=0)
-    !$acc loop private(iq, jq, offset)
+    ${LOOP('private(iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
@@ -2334,7 +2334,7 @@ contains
 #:endif
 
 #:if NDIM == 2
-       !$acc loop collapse(3) private(i_f, j_f, ivar)
+       ${LOOP('collapse(3) private(i_f, j_f, ivar)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -2350,7 +2350,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(4) private(i_f, j_f, k_f, ivar)
+       ${LOOP('collapse(4) private(i_f, j_f, k_f, ivar)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -2377,13 +2377,13 @@ contains
 #:enddef
 
 #:def fyp_srl_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    !$acc loop private(iq, i_buf0)
+    ${LOOP('private(iq, i_buf0)')}$
     do n = f4%gc_srl_from_buf_iface(${face}$), f4%gc_srl_from_buf_iface(${face}$+1)-1
        iq = f4%gc_srl_from_buf(1, n) + 1 + block_offset
        i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
 
 #:if NDIM == 2
-       !$acc loop collapse(3) private(ivar, i_buf)
+       ${LOOP('collapse(3) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -2394,7 +2394,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(4) private(ivar, i_buf)
+       ${LOOP('collapse(4) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -2412,7 +2412,7 @@ contains
 #:enddef
 
 #:def fyp_c2f_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    !$acc loop private(iq, offset, i_buf0)
+    ${LOOP('private(iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        iq     = f4%gc_c2f_from_buf(1, n) + 1 + block_offset ! Coarse block
 #:if NDIM == 2
@@ -2424,7 +2424,7 @@ contains
 #:endif
 
 #:if NDIM == 2
-       !$acc loop collapse(3) private(ivar, i_buf)
+       ${LOOP('collapse(3) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -2436,7 +2436,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(4) private(ivar, i_buf)
+       ${LOOP('collapse(4) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -2454,7 +2454,7 @@ contains
     end do
 #:enddef
 
-    !$acc parallel default(present) copyin(i_vars)
+    ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
 
     ! Fill local boundaries at the same refinement level
 #:if NDIM == 2
@@ -2538,7 +2538,7 @@ contains
          &i0=offset(1)*f4%hbx(1), j0=offset(2)*f4%hbx(2), k0=f4%bx(3))
 #:endif
 
-    !$acc end parallel
+    ${END_PARALLEL()}$
 
   end subroutine fill_ghostcells_round_one
 
@@ -2567,13 +2567,13 @@ contains
 #:if NDIM == 2
 #:def fyp_f2c_local_fine(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &ic0=0, jc0=0, if0=0, jf0=0)
-    !$acc loop private(iq, jq, offset)
+    ${LOOP('private(iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
        offset(1) = f4%gc_f2c_local(3, n)     ! Offset
 
-       !$acc loop collapse(3) private(ivar, j_f, j_c, i_f, i_c, fine)
+       ${LOOP('collapse(3) private(ivar, j_f, j_c, i_f, i_c, fine)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1,  ${ilim}$
@@ -2597,7 +2597,7 @@ contains
        end do
 
        if (odd_n_gc) then
-          !$acc loop collapse(2) private(ivar, j_f, j_c, i_f, i_c, fine)
+          ${LOOP('collapse(2) private(ivar, j_f, j_c, i_f, i_c, fine)')}$
           do iv = 1, n_vars
 #:if face == '0'
              do j = 1, ${jlim}$
@@ -2683,13 +2683,13 @@ contains
 #:elif NDIM == 3
 #:def fyp_f2c_local_fine(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &klim='f4%hbx(3)', ic0=0, jc0=0, kc0=0, if0=0, jf0=0, kf0=0)
-    !$acc loop private(iq, jq, offset)
+    ${LOOP('private(iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
        jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
        offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
 
-       !$acc loop collapse(4) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine)
+       ${LOOP('collapse(4) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -2724,7 +2724,7 @@ contains
        end do
 
        if (odd_n_gc) then
-          !$acc loop collapse(3) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine)
+          ${LOOP('collapse(3) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine)')}$
           do iv = 1, n_vars
 #:if face == '0'
              do k = 1, ${klim}$
@@ -2903,12 +2903,12 @@ contains
 
 #:if NDIM == 2
 #:def fyp_f2c_from_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', if0=0, jf0=0)
-    !$acc loop private(iq, i_buf0)
+    ${LOOP('private(iq, i_buf0)')}$
     do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
 
-       !$acc loop collapse(3) private(ivar, j_f, i_f, i_buf)
+       ${LOOP('collapse(3) private(ivar, j_f, i_f, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -2928,7 +2928,7 @@ contains
        if (odd_n_gc) then
           i_buf0 = i_buf0 + 4 * n_vars * ${jlim}$ * ${ilim}$
 #:if face == '0'
-          !$acc loop collapse(2) private(ivar, i_f, j_f, i_buf)
+          ${LOOP('collapse(2) private(ivar, i_f, j_f, i_buf)')}$
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 ivar = i_vars(iv)
@@ -2941,7 +2941,7 @@ contains
              end do
           end do
 #:elif face == '1'
-          !$acc loop collapse(2) private(ivar, i_f, j_f, i_buf)
+          ${LOOP('collapse(2) private(ivar, i_f, j_f, i_buf)')}$
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 ivar = i_vars(iv)
@@ -2954,7 +2954,7 @@ contains
              end do
           end do
 #:elif face == '2'
-          !$acc loop collapse(2) private(ivar, i_f, j_f, i_buf)
+          ${LOOP('collapse(2) private(ivar, i_f, j_f, i_buf)')}$
           do iv = 1, n_vars
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
@@ -2967,7 +2967,7 @@ contains
              end do
           end do
 #:elif face == '3'
-          !$acc loop collapse(2) private(ivar, i_f, j_f, i_buf)
+          ${LOOP('collapse(2) private(ivar, i_f, j_f, i_buf)')}$
           do iv = 1, n_vars
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
@@ -2986,12 +2986,12 @@ contains
 #:elif NDIM == 3
 #:def fyp_f2c_from_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     & klim='f4%hbx(3)', if0=0, jf0=0, kf0=0)
-    !$acc loop private(iq, i_buf0)
+    ${LOOP('private(iq, i_buf0)')}$
     do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
        iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
        i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
 
-       !$acc loop collapse(4) private(ivar, k_f, j_f, i_f, i_buf)
+       ${LOOP('collapse(4) private(ivar, k_f, j_f, i_f, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
@@ -3019,7 +3019,7 @@ contains
        if (odd_n_gc) then
           i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
 #:if face in ['0', '1']
-          !$acc loop collapse(3) private(ivar, k_f, j_f, i_f, i_buf)
+          ${LOOP('collapse(3) private(ivar, k_f, j_f, i_f, i_buf)')}$
           do iv = 1, n_vars
              do k = 1, ${klim}$
                 do j = 1, ${jlim}$
@@ -3041,7 +3041,7 @@ contains
              end do
           end do
 #:elif face in ['2', '3']
-          !$acc loop collapse(3) private(ivar, k_f, j_f, i_f, i_buf)
+          ${LOOP('collapse(3) private(ivar, k_f, j_f, i_f, i_buf)')}$
           do iv = 1, n_vars
              do k = 1, ${klim}$
                 do i = 1, ${ilim}$
@@ -3063,7 +3063,7 @@ contains
              end do
           end do
 #:elif face in ['4', '5']
-          !$acc loop collapse(3) private(ivar, k_f, j_f, i_f, i_buf)
+          ${LOOP('collapse(3) private(ivar, k_f, j_f, i_f, i_buf)')}$
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
@@ -3090,7 +3090,7 @@ contains
 #:enddef
 #:endif
 
-    !$acc parallel default(present) copyin(i_vars)
+    ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
 
     ! ----------------------------------------
     ! Fill fine side of local coarse-to-fine boundaries
@@ -3137,7 +3137,7 @@ contains
     @:fyp_f2c_from_buf(4, klim=half_n_gc, kf0=-2*half_n_gc)
     @:fyp_f2c_from_buf(5, klim=half_n_gc, kf0=f4%bx(2))
 #:endif
-    !$acc end parallel
+    ${END_PARALLEL()}$
 
   end subroutine fill_ghostcells_round_two
 
@@ -3252,15 +3252,15 @@ contains
 
     t1 = MPI_Wtime()
 
-    !$acc enter data copyin(srl, refine, coarsen)
+    ${ENTER_DATA_COPYIN('srl, refine, coarsen')}$
 
     ! Copy on device
-    !$acc parallel loop private(i_from, i_to) default(present) async
+    ${PARALLEL_LOOP('private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
     do n = 1, i_srl
        i_from = srl(1, n)
        i_to = srl(2, n)
 
-       !$acc loop collapse(ndim+1)
+       ${LOOP('collapse(NDIM+1)')}$
        do iv = 1, f4%n_vars
           do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
              f4%uu(${IJK}$, iv, i_to) = f4%uu(${IJK}$, iv, i_from)
@@ -3269,13 +3269,13 @@ contains
     end do
 
     ! Refine on device
-    !$acc parallel loop private(i_from, i_to) default(present) async
+    ${PARALLEL_LOOP('private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
     do n = 1, i_refine
        i_from = refine(1, n)
        i_to = refine(2, n)
 
 #:if NDIM == 2
-       !$acc loop collapse(4) private(j_c, j_f, i_c, i_f, fine)
+       ${LOOP('collapse(4) private(j_c, j_f, i_c, i_f, fine)')}$
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
              do j = 1, f4%hbx(2)
@@ -3302,7 +3302,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(5) private(k_c, k_f, j_c, j_f, i_c, i_f, fine)
+       ${LOOP('collapse(5) private(k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
              do k = 1, f4%hbx(3)
@@ -3342,13 +3342,13 @@ contains
     end do
 
     ! Coarsen on device
-    !$acc parallel loop private(i_from, i_to) default(present) async
+    ${PARALLEL_LOOP('private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
     do n = 1, i_coarsen
        i_from = coarsen(1, n)
        i_to = coarsen(2, n)
 
 #:if NDIM == 2
-       !$acc loop collapse(4) private(j_c, j_f, i_c, i_f)
+       ${LOOP('collapse(4) private(j_c, j_f, i_c, i_f)')}$
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
              do j = 1, f4%hbx(2)
@@ -3368,7 +3368,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(5) private(k_c, k_f, j_c, j_f, i_c, i_f)
+       ${LOOP('collapse(5) private(k_c, k_f, j_c, j_f, i_c, i_f)')}$
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
              do k = 1, f4%hbx(3)
@@ -3398,8 +3398,8 @@ contains
 #:endif
     end do
 
-    !$acc wait
-    !$acc exit data delete(srl, refine, coarsen)
+    ${WAIT()}$
+    ${EXIT_DATA_DELETE('srl, refine, coarsen')}$
 
     t0 = MPI_Wtime()
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
@@ -3439,9 +3439,9 @@ contains
     end do
 
     ! Copy block solution data on device
-    !$acc parallel loop default(present)
+    ${PARALLEL_LOOP()}$ ${DEFAULT_PRESENT()}$
     do n = 1, n_blocks_old
-       !$acc loop collapse(ndim+1)
+       ${LOOP('collapse(NDIM+1)')}$
        do iv = 1, f4%n_vars
           do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
              f4%uu(${IJK}$, iv, offset_copy+n) = f4%uu(${IJK}$, iv, n)
@@ -3453,7 +3453,7 @@ contains
   !> Method for prolongation (interpolation) of a coarse block to its children
 #:if NDIM == 2
   subroutine prolong(theta, center, xlo, xhi, ylo, yhi, fine)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     real(fp), intent(in)  :: theta
     real(fp), intent(in)  :: center ! Center value
     real(fp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
@@ -3476,7 +3476,7 @@ contains
   end subroutine prolong
 #:elif NDIM == 3
   subroutine prolong(theta, center, xlo, xhi, ylo, yhi, zlo, zhi, fine)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     real(fp), intent(in)  :: theta
     real(fp), intent(in)  :: center   ! Center value
     real(fp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
@@ -3510,7 +3510,7 @@ contains
   !> the limiter is, with 1 corresponding to the minmod limiter and 2 to the MC
   !> limiter.
   elemental function limiter_gminmod(a, b, theta) result(phi)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     real(fp), intent(in) :: a, b, theta
     real(fp)             :: phi
 
@@ -3715,14 +3715,14 @@ contains
     if (f4%gc_f2c_to_buf_iface(2*NDIM) == 1) return
 
 #:def fyp_fixflux_to_buf(face, ilim, jlim=None)
-    !$acc loop private(i_fine, i_buf0, i_bflux)
+    ${LOOP('private(i_fine, i_buf0, i_bflux)')}$
     do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
        i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
        i_bflux = f4%bflux_ix(${face}$, i_fine)
 
 #:if NDIM == 2
-       !$acc loop collapse(2) private(i_f, ivar, i_buf)
+       ${LOOP('collapse(2) private(i_f, ivar, i_buf)')}$
        do iv = 1, n_vars
           do i = 1, ${ilim}$
              ivar = i_vars(iv)
@@ -3736,7 +3736,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       !$acc loop collapse(3) private(i_f, j_f, ivar, i_buf)
+       ${LOOP('collapse(3) private(i_f, j_f, ivar, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -3758,7 +3758,7 @@ contains
     end do
 #:enddef
 
-    !$acc parallel default(present) copyin(i_vars)
+    ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
 
 #:if NDIM == 2
     @:fyp_fixflux_to_buf(0, f4%hbx(2))
@@ -3774,7 +3774,7 @@ contains
     @:fyp_fixflux_to_buf(5, f4%hbx(1), f4%hbx(2))
 #:endif
 
-    !$acc end parallel
+    ${END_PARALLEL()}$
 
   end subroutine fixflux_to_buf
 
@@ -3802,7 +3802,7 @@ contains
 
 #:if NDIM == 2
 #:def fyp_fixflux_from_buf(face, ilim, ix, sign)
-    !$acc loop private(i_coarse, offset, i_buf0, fac, i_bflux)
+    ${LOOP('private(i_coarse, offset, i_buf0, fac, i_bflux)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 + s_out ! Coarse block
        offset(1)   = f4%gc_c2f_from_buf_fluxfix(2, n)
@@ -3811,7 +3811,7 @@ contains
        fac      = real(${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
 
-       !$acc loop collapse(2) private(i_c, ivar, i_buf, flux_diff)
+       ${LOOP('collapse(2) private(i_c, ivar, i_buf, flux_diff)')}$
        do iv = 1, n_vars
           do i = 1, ${ilim}$
              ivar = i_vars(iv)
@@ -3824,7 +3824,7 @@ contains
 
              ! Correct solution on coarse side. Prevent a race condition with
              ! the atomic statement.
-             !$acc atomic
+             ${ATOMIC()}$
              f4%uu(${ix}$, ivar, i_coarse) = &
                   f4%uu(${ix}$, ivar, i_coarse) + flux_diff
           end do
@@ -3833,7 +3833,7 @@ contains
 #:enddef
 
 #:def fyp_fixflux_local(face, oface, ilim, ix, sign)
-    !$acc loop private(i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)
+    ${LOOP('private(i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 + s_out ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 + s_out ! coarse block
@@ -3843,7 +3843,7 @@ contains
        fac = real(${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
 
-       !$acc loop collapse(2) private(i_c, i_f, ivar, flux_diff)
+       ${LOOP('collapse(2) private(i_c, i_f, ivar, flux_diff)')}$
        do iv = 1, n_vars
           do i = 1, ${ilim}$
              ivar = i_vars(iv)
@@ -3858,7 +3858,7 @@ contains
 
              ! Correct solution on coarse side. Prevent a race condition with
              ! the atomic statement.
-             !$acc atomic
+             ${ATOMIC()}$
              f4%uu(${ix}$, ivar, i_coarse) = &
                   f4%uu(${ix}$, ivar, i_coarse) + flux_diff
           end do
@@ -3868,7 +3868,7 @@ contains
 
 #:elif NDIM == 3
 #:def fyp_fixflux_from_buf(face, ilim, jlim, ix, sign)
-    !$acc loop private(i_coarse, offset, i_buf0, fac, i_bflux)
+    ${LOOP('private(i_coarse, offset, i_buf0, fac, i_bflux)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 + s_out ! Coarse block
        offset(1:2) = f4%gc_c2f_from_buf_fluxfix(2:3, n)
@@ -3877,7 +3877,7 @@ contains
        fac      = real(${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
 
-       !$acc loop collapse(3) private(i_c, j_c, ivar, i_buf, flux_diff)
+       ${LOOP('collapse(3) private(i_c, j_c, ivar, i_buf, flux_diff)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -3892,7 +3892,7 @@ contains
 
                 ! Correct solution on coarse side. Prevent a race condition with
                 ! the atomic statement.
-                !$acc atomic
+                ${ATOMIC()}$
                 f4%uu(${ix}$, ivar, i_coarse) = &
                      f4%uu(${ix}$, ivar, i_coarse) + flux_diff
              end do
@@ -3902,7 +3902,7 @@ contains
 #:enddef
 
 #:def fyp_fixflux_local(face, oface, ilim, jlim, ix, sign)
-    !$acc loop private(i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)
+    ${LOOP('private(i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        i_fine   = f4%gc_f2c_local(1, n) + 1 + s_out ! Fine block
        i_coarse = f4%gc_f2c_local(2, n) + 1 + s_out ! coarse block
@@ -3912,7 +3912,7 @@ contains
        fac      = real(${sign}$ / &
             f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
 
-       !$acc loop collapse(3) private(i_c, i_f, j_c, j_f, ivar, flux_diff)
+       ${LOOP('collapse(3) private(i_c, i_f, j_c, j_f, ivar, flux_diff)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
@@ -3932,7 +3932,7 @@ contains
 
                 ! Correct solution on coarse side. Prevent a race condition with
                 ! the atomic statement.
-                !$acc atomic
+                ${ATOMIC()}$
                 f4%uu(${ix}$, ivar, i_coarse) = &
                      f4%uu(${ix}$, ivar, i_coarse) + flux_diff
              end do
@@ -3944,7 +3944,7 @@ contains
 
     ! Correct solution on coarse side of non-local refinement boundaries
 
-    !$acc parallel default(present) copyin(i_vars)
+    ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
 #:if NDIM == 2
     @:fyp_fixflux_from_buf(0, f4%hbx(2), {1, i_c}, -1)
     @:fyp_fixflux_from_buf(1, f4%hbx(2), {f4%bx(1), i_c}, 1)
@@ -3973,7 +3973,7 @@ contains
     @:fyp_fixflux_local(4, 5, f4%hbx(1), f4%hbx(2), {i_c, j_c, f4%bx(3)}, 1)
     @:fyp_fixflux_local(5, 4, f4%hbx(1), f4%hbx(2), {i_c, j_c, 1}, -1)
 #:endif
-    !$acc end parallel
+    ${END_PARALLEL()}$
 
   end subroutine fixflux_correct
 
@@ -4017,7 +4017,7 @@ contains
 
     var_sum = 0.0_dp
 
-    !$acc parallel loop private(level, dvol) reduction(+:var_sum) default(present)
+    ${PARALLEL_LOOP('private(level, dvol) reduction(+:var_sum)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
 #:if NDIM == 2
@@ -4027,7 +4027,7 @@ contains
             f4%dr_level(3, level)
 #:endif
 
-       !$acc loop collapse(ndim) reduction(+:var_sum)
+       ${LOOP('collapse(NDIM) reduction(+:var_sum)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
             var_sum = var_sum + f4%uu(${IJK}$, i_var, n) * dvol
        end do; ${KJI_CLOSE_LOOP}$
@@ -4047,11 +4047,11 @@ contains
 
     var_max = -huge(1.0_dp)
 
-    !$acc parallel loop private(level) reduction(max:var_max) default(present)
+    ${PARALLEL_LOOP('private(level) reduction(max:var_max)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
 
-       !$acc loop collapse(ndim) reduction(max:var_max)
+       ${LOOP('collapse(NDIM) reduction(max:var_max)')}$
        do @{KJI_LOOP_1_to_array(f4%bx)}@
             var_max = max(var_max, f4%uu(${IJK}$, i_var, n))
        end do; ${KJI_CLOSE_LOOP}$
@@ -4064,7 +4064,7 @@ contains
 
   !> Compute index offset for indexing in 4D array shaped (*, n2, n3, n4)
   pure integer function ix_offset4(i1, i2, i3, i4, n2, n3, n4)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     integer, intent(in) :: i1, i2, i3, i4, n2, n3, n4
     ix_offset4 = &
          (i1 - 1) * n2 * n3 * n4 + &
@@ -4075,14 +4075,14 @@ contains
 
   !> Compute index offset for indexing in 3D array shaped (*, n2, n3)
   pure integer function ix_offset3(i1, i2, i3, n2, n3)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     integer, intent(in) :: i1, i2, i3, n2, n3
     ix_offset3 = (i1 - 1) * n2 * n3 + (i2 - 1) * n3 + (i3 - 1)
   end function ix_offset3
 
   !> Compute index offset for indexing in 2D array shaped (*, n2)
   pure integer function ix_offset2(i1, i2, n2)
-    !$acc routine seq
+    @{ROUTINE_SEQ()}@
     integer, intent(in) :: i1, i2, n2
     ix_offset2 = (i1 - 1) * n2 + (i2 - 1)
   end function ix_offset2

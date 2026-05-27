@@ -43,7 +43,7 @@ module m_foap4_types_${NDIM}$d
        [0,0,0, 1,0,0, 0,1,0, 1,1,0, &
        0,0,1, 1,0,1, 0,1,1, 1,1,1], [3,8])
 #:endif
-  !$acc declare create(f4_child_offset)
+  ${DECLARE_DEVICE('f4_child_offset')}$
 
   !> The dimension of faces
 #:if NDIM == 2
@@ -51,7 +51,7 @@ module m_foap4_types_${NDIM}$d
 #:elif NDIM == 3
   integer, parameter, public :: f4_face_dim(0:2*ndim-1) = [1, 1, 2, 2, 3, 3]
 #:endif
-  !$acc declare create(f4_face_dim)
+  ${DECLARE_DEVICE('f4_face_dim')}$
 
   !> Index of the face pointing to -x
   integer, parameter, public :: f4_face_xlo = 0
