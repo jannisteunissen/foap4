@@ -253,10 +253,11 @@ contains
     !$acc exit data delete(f4%uu, f4%uu_prim, f4%refinement_flags)
     !$acc exit data delete(f4%bc_data_ix, f4%bc_data, f4%bc_data_type, f4%bflux_ix, f4%bflux)
     !$acc exit data delete(f4%recv_buffer, f4%send_buffer)
-    !$acc exit data delete(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
-    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
-    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+    !$acc exit data delete(f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface)
+    !$acc exit data delete(f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface)
+    !$acc exit data delete(f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface)
+    !$acc exit data delete(f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface)
+    !$acc exit data delete(f4%gc_phys_iface)
     !$acc exit data delete(f4)
 
     ! TODO: delete ghost cell patterns
@@ -413,10 +414,11 @@ contains
     !$acc enter data create(f4%bc_data_ix, f4%bc_data, f4%bc_data_type)
     !$acc enter data create(f4%bflux_ix, f4%bflux)
     !$acc enter data create(f4%recv_buffer, f4%send_buffer)
-    !$acc enter data create(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
-    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
-    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+    !$acc enter data create(f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface)
+    !$acc enter data create(f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface)
+    !$acc enter data create(f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface)
+    !$acc enter data create(f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface)
+    !$acc enter data create(f4%gc_phys_iface)
 
     call f4_set_quadrants(f4)
     call update_ghostcell_pattern(f4)
@@ -599,8 +601,8 @@ contains
     end do
 
     ! OpenACC - synchronize block information to device
-    !$acc update device(f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks), &
-    !$acc &f4%block_level(1:f4%n_blocks))
+    !$acc update device(f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks))
+    !$acc update device(f4%block_level(1:f4%n_blocks))
   end subroutine f4_set_quadrants
 
   !> Get the global highest refinement level (on all MPI ranks)
@@ -827,11 +829,10 @@ contains
 
     if (allocated(f4%gc_srl_local)) then
        ! OpenACC - deallocate arrays
-       !$acc exit data delete(&
-       !$acc &f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
-       !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
-       !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys, &
-       !$acc &f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
+       !$acc exit data delete(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf)
+       !$acc exit data delete(f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf)
+       !$acc exit data delete(f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+       !$acc exit data delete(f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
 
        deallocate(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
             f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
@@ -1113,16 +1114,16 @@ contains
 
     ! OpenACC - copy/sync data to device
 
-    !$acc enter data copyin(&
-    !$acc &f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
-    !$acc &f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
-    !$acc &f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys, &
-    !$acc &f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
+    !$acc enter data copyin(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf)
+    !$acc enter data copyin(f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf)
+    !$acc enter data copyin(f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys)
+    !$acc enter data copyin(f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
 
-    !$acc update device(&
-    !$acc &f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface, f4%gc_srl_to_buf_iface, &
-    !$acc &f4%gc_f2c_local_iface, f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface, &
-    !$acc &f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface, f4%gc_phys_iface)
+    !$acc update device(f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface)
+    !$acc update device(f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface)
+    !$acc update device(f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface)
+    !$acc update device(f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface)
+    !$acc update device(f4%gc_phys_iface)
 
   end subroutine set_ghost_cell_pattern
 
