@@ -154,7 +154,7 @@ async
 #:enddef
 
 #:def LOOP(clauses='')
-!$omp distribute parallel do ${clauses}$
+!$omp parallel do ${clauses}$
 #:enddef
 
 #:def PARALLEL_LOOP(clauses='')
@@ -170,7 +170,7 @@ async
 #:enddef
 
 #:def HOST_DATA_USE_DEVICE(varlist)
-!$omp target data use_device_ptr(${varlist}$)
+!$omp target data use_device_addr(${varlist}$)
 #:enddef
 
 #:def END_HOST_DATA()
