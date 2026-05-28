@@ -203,33 +203,43 @@ contains
     integer                      :: j
 #:endif
 
-    ${PARALLEL()}$
-    do face = 0, 2*NDIM-1
-       ${LOOP('collapse(NDIM) private(i_block, ix, rr)')}$
-       do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
+#:def set_bc_data(face)
+    ${LOOP('collapse(NDIM) private(i_block, ix, rr)')}$
+    do n = f4%gc_phys_iface(${face}$), f4%gc_phys_iface(${face}$+1)-1
 #:if NDIM == 2
+       do i = 1, f4%bx(1)
+          i_block = f4%gc_phys(n) + 1
+          f4%bc_data_ix(${face}$, i_block) = abs(f4%bc_data_ix(${face}$, i_block))
+          ix = f4%bc_data_ix(${face}$, i_block)
+          rr = f4_block_face_coord(f4, i_block, ${face}$, i)
+          f4%bc_data(i, i_phi, ix) = real(phi_init(rr(1), rr(2)), fp)
+          f4%bc_data_type(i, i_phi, ix) = f4_bc_dirichlet
+       end do
+#:elif NDIM == 3
+       do j = 1, f4%bx(1)
           do i = 1, f4%bx(1)
              i_block = f4%gc_phys(n) + 1
-             f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
-             ix = f4%bc_data_ix(face, i_block)
-             rr = f4_block_face_coord(f4, i_block, face, i)
-             f4%bc_data(i, i_phi, ix) = real(phi_init(rr(1), rr(2)), fp)
-             f4%bc_data_type(i, i_phi, ix) = f4_bc_dirichlet
+             f4%bc_data_ix(${face}$, i_block) = abs(f4%bc_data_ix(${face}$, i_block))
+             ix = f4%bc_data_ix(${face}$, i_block)
+
+             rr = f4_block_face_coord(f4, i_block, ${face}$, i, j)
+             f4%bc_data(i, j, i_phi, ix) = real(phi_init(rr(1), rr(2), rr(3)), fp)
+             f4%bc_data_type(i, j, i_phi, ix) = f4_bc_dirichlet
           end do
-#:elif NDIM == 3
-          do j = 1, f4%bx(1)
-             do i = 1, f4%bx(1)
-                i_block = f4%gc_phys(n) + 1
-                f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
-                ix = f4%bc_data_ix(face, i_block)
-                rr = f4_block_face_coord(f4, i_block, face, i, j)
-                f4%bc_data(i, j, i_phi, ix) = real(phi_init(rr(1), rr(2), rr(3)), fp)
-                f4%bc_data_type(i, j, i_phi, ix) = f4_bc_dirichlet
-             end do
-          end do
-#:endif
        end do
+#:endif
     end do
+#:enddef
+
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    @:set_bc_data(0)
+    @:set_bc_data(1)
+    @:set_bc_data(2)
+    @:set_bc_data(3)
+#:if NDIM > 2
+    @:set_bc_data(4)
+    @:set_bc_data(5)
+#:endif
     ${END_PARALLEL()}$
   end subroutine bc_callback
 
