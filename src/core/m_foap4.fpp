@@ -1998,10 +1998,10 @@ contains
          error stop "increase f4%max_requests"
       end if
 
-      @{HOST_DATA_USE_DEVICE('buf')}@
+      ${HOST_DATA_USE_DEVICE('buf')}$
       call mpi_isend(buf(offset + 1), chunk_count, f4_mpi_float, &
                      dest, chunk_tag, comm, requests(nreqs), ierr)
-      @{END_HOST_DATA()}@
+      ${END_HOST_DATA()}$
 
       if (ierr /= MPI_SUCCESS) then
         if (present(ierror)) ierror = ierr
@@ -2045,10 +2045,10 @@ contains
          error stop "increase f4%max_requests"
       end if
 
-      @{HOST_DATA_USE_DEVICE('buf')}@
+      ${HOST_DATA_USE_DEVICE('buf')}$
       call mpi_irecv(buf(offset + 1), chunk_count, f4_mpi_float, &
                      source, chunk_tag, comm, requests(nreqs), ierr)
-      @{END_HOST_DATA()}@
+      ${END_HOST_DATA()}$
 
       if (ierr /= MPI_SUCCESS) then
         if (present(ierror)) ierror = ierr
