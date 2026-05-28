@@ -2566,16 +2566,15 @@ contains
 #:if NDIM == 2
 #:def fyp_f2c_local_fine(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &ic0=0, jc0=0, if0=0, jf0=0)
-    ${LOOP('private(iq, jq, offset)')}$
+    ${LOOP('collapse(4) private(ivar, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
-       iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
-       jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
-       offset(1) = f4%gc_f2c_local(3, n)     ! Offset
-
-       ${LOOP('collapse(3) private(ivar, j_f, j_c, i_f, i_c, fine)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1,  ${ilim}$
+                iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_f2c_local(3, n)     ! Offset
+
                 ivar = i_vars(iv)
                 i_f = ${if0}$ + 2 * i - 1
                 j_f = ${jf0}$ + 2 * j - 1
@@ -2594,12 +2593,18 @@ contains
              end do
           end do
        end do
+    end do
 
-       if (odd_n_gc) then
-          ${LOOP('collapse(2) private(ivar, j_f, j_c, i_f, i_c, fine)')}$
+    if (odd_n_gc) then
+       ${LOOP('collapse(3) private(ivar, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
+       do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
           do iv = 1, n_vars
 #:if face == '0'
              do j = 1, ${jlim}$
+                iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_f2c_local(3, n)     ! Offset
+
                 ! i = 0
                 ivar = i_vars(iv)
                 i_f = ${if0}$ + 2 * 0 - 1
@@ -2619,6 +2624,10 @@ contains
              end do
 #:elif face == '1'
              do j = 1, ${jlim}$
+                iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_f2c_local(3, n)     ! Offset
+
                 ! i = half_n_gc + 1
                 ivar = i_vars(iv)
                 i_f = ${if0}$ + 2 * (half_n_gc + 1) - 1
@@ -2638,6 +2647,10 @@ contains
              end do
 #:elif face == '2'
              do i = 1, ${ilim}$
+                iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_f2c_local(3, n)     ! Offset
+
                 ! j = 0
                 ivar = i_vars(iv)
                 i_f = ${if0}$ + 2 * i - 1
@@ -2657,6 +2670,10 @@ contains
              end do
 #:elif face == '3'
              do i = 1, ${ilim}$
+                iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_f2c_local(3, n)     ! Offset
+
                 ! j = half_n_gc + 1
                 ivar = i_vars(iv)
                 i_f = ${if0}$ + 2 * i - 1
@@ -2676,23 +2693,22 @@ contains
              end do
 #:endif
           end do
-       end if
-    end do
+       end do
+    end if
 #:enddef
 #:elif NDIM == 3
 #:def fyp_f2c_local_fine(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &klim='f4%hbx(3)', ic0=0, jc0=0, kc0=0, if0=0, jf0=0, kf0=0)
-    ${LOOP('private(iq, jq, offset)')}$
+    ${LOOP('collapse(5) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
-       iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
-       jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
-       offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
-
-       ${LOOP('collapse(4) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1,  ${ilim}$
+                   iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                   jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
+
                    ivar = i_vars(iv)
                    i_f = ${if0}$ + 2 * i - 1
                    j_f = ${jf0}$ + 2 * j - 1
@@ -2721,13 +2737,19 @@ contains
              end do
           end do
        end do
+    end do
 
-       if (odd_n_gc) then
-          ${LOOP('collapse(3) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine)')}$
+    if (odd_n_gc) then
+       ${LOOP('collapse(4) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
+       do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
           do iv = 1, n_vars
 #:if face == '0'
              do k = 1, ${klim}$
                 do j = 1, ${jlim}$
+                   iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                   jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
+
                    ! i = 0
                    ivar = i_vars(iv)
                    i_f = ${if0}$ + 2 * 0 - 1
@@ -2756,6 +2778,10 @@ contains
 #:elif face == '1'
              do k = 1, ${klim}$
                 do j = 1, ${jlim}$
+                   iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                   jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
+
                    ! i = half_n_gc + 1
                    ivar = i_vars(iv)
                    i_f = ${if0}$ + 2 * (half_n_gc + 1) - 1
@@ -2784,6 +2810,10 @@ contains
 #:elif face == '2'
              do k = 1, ${klim}$
                 do i = 1, ${ilim}$
+                   iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                   jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
+
                    ! j = 0
                    ivar = i_vars(iv)
                    i_f = ${if0}$ + 2 * i - 1
@@ -2812,6 +2842,10 @@ contains
 #:elif face == '3'
              do k = 1, ${klim}$
                 do i = 1, ${ilim}$
+                   iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                   jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
+
                    ! j = half_n_gc + 1
                    ivar = i_vars(iv)
                    i_f = ${if0}$ + 2 * i - 1
@@ -2840,6 +2874,10 @@ contains
 #:elif face == '4'
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
+                   iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                   jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
+
                    ! k = 0
                    ivar = i_vars(iv)
                    i_f = ${if0}$ + 2 * i - 1
@@ -2868,6 +2906,10 @@ contains
 #:elif face == '5'
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
+                   iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                   jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_f2c_local(3:4, n)     ! Offset
+
                    ! k = half_n_gc + 1
                    ivar = i_vars(iv)
                    i_f = ${if0}$ + 2 * i - 1
@@ -2895,8 +2937,8 @@ contains
              end do
 #:endif
           end do
-       end if
-    end do
+       end do
+    end if
 #:enddef
 #:endif
 
