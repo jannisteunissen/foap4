@@ -1421,16 +1421,14 @@ contains
     end if
 
 #:def fyp_srl_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    ${LOOP('private(iq, i_buf0)')}$
+    ${LOOP('collapse(NDIM+2) private(iq, i_buf0, ivar, i_buf)')}$
     do n = f4%gc_srl_to_buf_iface(${face}$), f4%gc_srl_to_buf_iface(${face}$+1)-1
-       iq = f4%gc_srl_to_buf(1, n) + 1 + block_offset
-       i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
-
 #:if NDIM == 2
-       ${LOOP('collapse(3) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
+                iq = f4%gc_srl_to_buf(1, n) + 1 + block_offset
+                i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
                 ivar = i_vars(iv)
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
                 f4%send_buffer(i_buf) = f4%uu(${i0}$+i, ${j0}$+j, ivar, iq)
@@ -1438,11 +1436,12 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       ${LOOP('collapse(4) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
+                   iq = f4%gc_srl_to_buf(1, n) + 1 + block_offset
+                   i_buf0 = f4%gc_srl_to_buf(2, n) * n_vars
                    ivar = i_vars(iv)
                    i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
                         ${klim}$, ${jlim}$, ${ilim}$) + 1
@@ -1458,17 +1457,16 @@ contains
     ! Nonlocal fine-to-coarse boundaries, fill buffer for coarse side
 
 #:def fyp_f2c_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    ${LOOP('private(iq, i_buf0)')}$
-    do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
-       iq = f4%gc_f2c_to_buf(1, n) + 1 + block_offset ! fine block
-       i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
-
 #:if NDIM == 2
-       ${LOOP('collapse(3) private(ivar, j_f, i_f, i_buf)')}$
+    ${LOOP('collapse(NDIM+1) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
+    do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
+                iq = f4%gc_f2c_to_buf(1, n) + 1 + block_offset ! fine block
+                i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
+
                 j_f = ${j0}$ + 2 * j - 1
                 i_f = ${i0}$ + 2 * i - 1
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
@@ -1480,13 +1478,18 @@ contains
              end do
           end do
        end do
+    end do
 #:elif NDIM == 3
-       ${LOOP('collapse(4) private(ivar, k_f, j_f, i_f, i_buf)')}$
+    ${LOOP('collapse(NDIM+1) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
+    do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
+                   iq = f4%gc_f2c_to_buf(1, n) + 1 + block_offset ! fine block
+                   i_buf0 = f4%gc_f2c_to_buf(2, n) * n_vars
+
                    k_f = ${k0}$ + 2 * k - 1
                    j_f = ${j0}$ + 2 * j - 1
                    i_f = ${i0}$ + 2 * i - 1
@@ -1505,8 +1508,8 @@ contains
              end do
           end do
        end do
-#:endif
     end do
+#:endif
 #:enddef
 
     ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
@@ -2079,16 +2082,14 @@ contains
 
 #:def fyp_srl_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
     &i2=0, j2=0, k2=0)
-    ${LOOP('private(iq, jq)')}$
+    ${LOOP('collapse(NDIM+2) private(iq, jq, ivar)')}$
     do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
-       iq = f4%gc_srl_local(1, n) + 1 + block_offset
-       jq = f4%gc_srl_local(2, n) + 1 + block_offset
-
 #:if NDIM == 2
-       ${LOOP('collapse(3) private(ivar)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
+                iq = f4%gc_srl_local(1, n) + 1 + block_offset
+                jq = f4%gc_srl_local(2, n) + 1 + block_offset
                 ivar = i_vars(iv)
                 f4%uu(${i0}$+i, ${j0}$+j, ivar, iq) = &
                      f4%uu(i, j, ivar, jq)
@@ -2098,11 +2099,12 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       ${LOOP('collapse(4) private(ivar)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
+                   iq = f4%gc_srl_local(1, n) + 1 + block_offset
+                   jq = f4%gc_srl_local(2, n) + 1 + block_offset
                    ivar = i_vars(iv)
                    f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = &
                         f4%uu(i, j, k, ivar, jq)
@@ -2119,20 +2121,18 @@ contains
     ! Fill physical boundaries
 
 #:def fyp_phys(face, ilim, jlim, klim=None)
-    ${LOOP('private(iq, level, dr, i_bc_data)')}$
+    ${LOOP('collapse(NDIM+2) private(ivar, bc_type, bc_value, slope, iq, level, dr, i_bc_data)')}$
     do n = f4%gc_phys_iface(${face}$), f4%gc_phys_iface(${face}$+1)-1
-       iq    = f4%gc_phys(n) + 1 + block_offset
-       level = f4%block_level(iq - block_offset)
-       dr    = real(f4%dr_level(:, level), fp)
-       ! Do not use block_offset when accessing b.c. data
-       i_bc_data = f4%bc_data_ix(${face}$, iq - block_offset)
-
 #:if NDIM == 2
-       ${LOOP('collapse(3) private(ivar, bc_type, bc_value, slope)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
+                iq    = f4%gc_phys(n) + 1 + block_offset
+                level = f4%block_level(iq - block_offset)
+                dr    = real(f4%dr_level(:, level), fp)
+                ! Do not use block_offset when accessing b.c. data
+                i_bc_data = f4%bc_data_ix(${face}$, iq - block_offset)
 
                 if (i_bc_data > 0) then
                    ! Use array value
@@ -2210,12 +2210,16 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       ${LOOP('collapse(4) private(ivar, bc_type, bc_value, slope)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
+                   iq    = f4%gc_phys(n) + 1 + block_offset
+                   level = f4%block_level(iq - block_offset)
+                   dr    = real(f4%dr_level(:, level), fp)
+                   ! Do not use block_offset when accessing b.c. data
+                   i_bc_data = f4%bc_data_ix(${face}$, iq - block_offset)
 
                    if (i_bc_data > 0) then
                    ! Use array value
@@ -2323,22 +2327,17 @@ contains
 #:enddef
 
 #:def fyp_f2c_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, if0=0, jf0=0, kf0=0)
-    ${LOOP('private(iq, jq, offset)')}$
+#:if NDIM == 2
+    ${LOOP('collapse(NDIM+2) private(i_f, j_f, ivar, iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
-       iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
-       jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
-#:if NDIM == 2
-       offset(1) = f4%gc_f2c_local(3, n)     ! offset
-#:elif NDIM == 3
-       offset(1:2) = f4%gc_f2c_local(3:4, n)     ! offset
-#:endif
-
-#:if NDIM == 2
-       ${LOOP('collapse(3) private(i_f, j_f, ivar)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
+                iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_f2c_local(3, n)     ! offset
+
                 j_f = ${jf0}$ + 2 * j - 1
                 i_f = ${if0}$ + 2 * i - 1
                 f4%uu(${i0}$+i, ${j0}$+j, ivar, jq) = 0.25_fp * ( &
@@ -2349,13 +2348,19 @@ contains
              end do
           end do
        end do
+    end do
 #:elif NDIM == 3
-       ${LOOP('collapse(4) private(i_f, j_f, k_f, ivar)')}$
+    ${LOOP('collapse(NDIM+2) private(i_f, j_f, k_f, ivar, iq, jq, offset)')}$
+    do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
+                   iq     = f4%gc_f2c_local(1, n) + 1 + block_offset ! Fine block
+                   jq     = f4%gc_f2c_local(2, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_f2c_local(3:4, n)     ! offset
+
                    k_f = ${kf0}$ + 2 * k - 1
                    j_f = ${jf0}$ + 2 * j - 1
                    i_f = ${if0}$ + 2 * i - 1
@@ -2372,34 +2377,33 @@ contains
              end do
           end do
        end do
-#:endif
     end do
+#:endif
 #:enddef
 
 #:def fyp_srl_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    ${LOOP('private(iq, i_buf0)')}$
+    ${LOOP('collapse(NDIM+2) private(ivar, i_buf, iq, i_buf0)')}$
     do n = f4%gc_srl_from_buf_iface(${face}$), f4%gc_srl_from_buf_iface(${face}$+1)-1
-       iq = f4%gc_srl_from_buf(1, n) + 1 + block_offset
-       i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
-
 #:if NDIM == 2
-       ${LOOP('collapse(3) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
+                iq = f4%gc_srl_from_buf(1, n) + 1 + block_offset
+                i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$)
                 f4%uu(${i0}$+i, ${j0}$+j, ivar, iq) = f4%recv_buffer(i_buf+1)
              end do
           end do
        end do
 #:elif NDIM == 3
-       ${LOOP('collapse(4) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
+                   iq = f4%gc_srl_from_buf(1, n) + 1 + block_offset
+                   i_buf0 = f4%gc_srl_from_buf(2, n) * n_vars
                    i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
                         ${klim}$, ${jlim}$, ${ilim}$)
                    f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = f4%recv_buffer(i_buf+1)
@@ -2412,23 +2416,16 @@ contains
 #:enddef
 
 #:def fyp_c2f_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    ${LOOP('private(iq, offset, i_buf0)')}$
+    ${LOOP('collapse(NDIM+2) private(ivar, i_buf, iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
-       iq     = f4%gc_c2f_from_buf(1, n) + 1 + block_offset ! Coarse block
 #:if NDIM == 2
-       offset(1) = f4%gc_c2f_from_buf(2, n)     ! Offset
-       i_buf0  = f4%gc_c2f_from_buf(3, n) * n_vars
-#:elif NDIM == 3
-       offset(1:2) = f4%gc_c2f_from_buf(2:3, n)     ! Offset
-       i_buf0  = f4%gc_c2f_from_buf(4, n) * n_vars
-#:endif
-
-#:if NDIM == 2
-       ${LOOP('collapse(3) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
+                iq     = f4%gc_c2f_from_buf(1, n) + 1 + block_offset ! Coarse block
+                offset(1) = f4%gc_c2f_from_buf(2, n)     ! Offset
+                i_buf0  = f4%gc_c2f_from_buf(3, n) * n_vars
                 i_buf = i_buf0 + ix_offset3(iv, j, i, ${jlim}$, ${ilim}$) + 1
                 f4%uu(${i0}$+i, ${j0}$+j, ivar, iq) = &
                      f4%recv_buffer(i_buf)
@@ -2436,12 +2433,14 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       ${LOOP('collapse(4) private(ivar, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
                    ivar = i_vars(iv)
+                   iq     = f4%gc_c2f_from_buf(1, n) + 1 + block_offset ! Coarse block
+                   offset(1:2) = f4%gc_c2f_from_buf(2:3, n)     ! Offset
+                   i_buf0  = f4%gc_c2f_from_buf(4, n) * n_vars
                    i_buf = i_buf0 + ix_offset4(iv, k, j, i, &
                         ${klim}$, ${jlim}$, ${ilim}$) + 1
                    f4%uu(${i0}$+i, ${j0}$+j, ${k0}$+k, ivar, iq) = &
@@ -3716,19 +3715,16 @@ contains
     if (f4%gc_f2c_to_buf_iface(2*NDIM) == 1) return
 
 #:def fyp_fixflux_to_buf(face, ilim, jlim=None)
-    ${LOOP('private(i_fine, i_buf0, i_bflux)')}$
-    do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
-       i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
-       i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
-       i_bflux = f4%bflux_ix(${face}$, i_fine)
-
 #:if NDIM == 2
-       ${LOOP('collapse(2) private(i_f, ivar, i_buf)')}$
+    ${LOOP('collapse(NDIM+1) private(i_f, ivar, i_buf, i_fine, i_buf0, i_bflux)')}$
+    do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do i = 1, ${ilim}$
              ivar = i_vars(iv)
+             i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
+             i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
+             i_bflux = f4%bflux_ix(${face}$, i_fine)
              i_f = 2 * i - 1
-
              i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$) + 1
 
              f4%send_buffer(i_buf) = 0.5_fp * ( &
@@ -3736,12 +3732,17 @@ contains
                   f4%bflux(i_f+1, ivar, i_bflux))
           end do
        end do
+    end do
 #:elif NDIM == 3
-       ${LOOP('collapse(3) private(i_f, j_f, ivar, i_buf)')}$
+    ${LOOP('collapse(NDIM+1) private(i_f, j_f, ivar, i_buf, i_fine, i_buf0, i_bflux)')}$
+    do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
+                i_fine = f4%gc_f2c_to_buf_fluxfix(1, n) + 1 ! Fine block
+                i_buf0 = f4%gc_f2c_to_buf_fluxfix(2, n) * n_vars
+                i_bflux = f4%bflux_ix(${face}$, i_fine)
                 i_f = 2 * i - 1
                 j_f = 2 * j - 1
 
@@ -3755,8 +3756,8 @@ contains
              end do
           end do
        end do
-#:endif
     end do
+#:endif
 #:enddef
 
     ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
@@ -3803,19 +3804,17 @@ contains
 
 #:if NDIM == 2
 #:def fyp_fixflux_from_buf(face, ilim, ix, sign)
-    ${LOOP('private(i_coarse, offset, i_buf0, fac, i_bflux)')}$
+    ${LOOP('collapse(3) private(i_c, ivar, i_buf, flux_diff, i_coarse, offset, i_buf0, fac, i_bflux)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
-       i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 + s_out ! Coarse block
-       offset(1)   = f4%gc_c2f_from_buf_fluxfix(2, n)
-       i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
-       i_bflux = f4%bflux_ix(${face}$, i_coarse-s_out)
-       fac      = real(${sign}$ / &
-            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
-
-       ${LOOP('collapse(2) private(i_c, ivar, i_buf, flux_diff)')}$
        do iv = 1, n_vars
           do i = 1, ${ilim}$
              ivar = i_vars(iv)
+             i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 + s_out ! Coarse block
+             offset(1)   = f4%gc_c2f_from_buf_fluxfix(2, n)
+             i_buf0   = f4%gc_c2f_from_buf_fluxfix(3, n) * n_vars
+             i_bflux = f4%bflux_ix(${face}$, i_coarse-s_out)
+             fac      = real(${sign}$ / &
+                  f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
              i_c = i + offset(1) * ${ilim}$
 
              i_buf = i_buf0 + ix_offset2(iv, i, ${ilim}$) + 1
@@ -3834,20 +3833,18 @@ contains
 #:enddef
 
 #:def fyp_fixflux_local(face, oface, ilim, ix, sign)
-    ${LOOP('private(i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
+    ${LOOP('collapse(3) private(i_c, i_f, ivar, flux_diff, i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
-       i_fine   = f4%gc_f2c_local(1, n) + 1 + s_out ! Fine block
-       i_coarse = f4%gc_f2c_local(2, n) + 1 + s_out ! coarse block
-       offset(1) = f4%gc_f2c_local(3, n)  ! offset
-       i_bflux_fine = f4%bflux_ix(${face}$, i_fine-s_out)
-       i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse-s_out)
-       fac = real(${sign}$ / &
-            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
-
-       ${LOOP('collapse(2) private(i_c, i_f, ivar, flux_diff)')}$
        do iv = 1, n_vars
           do i = 1, ${ilim}$
              ivar = i_vars(iv)
+             i_fine   = f4%gc_f2c_local(1, n) + 1 + s_out ! Fine block
+             i_coarse = f4%gc_f2c_local(2, n) + 1 + s_out ! coarse block
+             offset(1) = f4%gc_f2c_local(3, n)  ! offset
+             i_bflux_fine = f4%bflux_ix(${face}$, i_fine-s_out)
+             i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse-s_out)
+             fac = real(${sign}$ / &
+                  f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
              i_f = 2 * i - 1
              i_c = i + offset(1) * ${ilim}$
 
@@ -3869,20 +3866,18 @@ contains
 
 #:elif NDIM == 3
 #:def fyp_fixflux_from_buf(face, ilim, jlim, ix, sign)
-    ${LOOP('private(i_coarse, offset, i_buf0, fac, i_bflux)')}$
+    ${LOOP('collapse(4) private(i_c, j_c, ivar, i_buf, flux_diff, i_coarse, offset, i_buf0, fac, i_bflux)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
-       i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 + s_out ! Coarse block
-       offset(1:2) = f4%gc_c2f_from_buf_fluxfix(2:3, n)
-       i_buf0   = f4%gc_c2f_from_buf_fluxfix(4, n) * n_vars
-       i_bflux = f4%bflux_ix(${face}$, i_coarse-s_out)
-       fac      = real(${sign}$ / &
-            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
-
-       ${LOOP('collapse(3) private(i_c, j_c, ivar, i_buf, flux_diff)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
+                i_coarse = f4%gc_c2f_from_buf_fluxfix(1, n) + 1 + s_out ! Coarse block
+                offset(1:2) = f4%gc_c2f_from_buf_fluxfix(2:3, n)
+                i_buf0   = f4%gc_c2f_from_buf_fluxfix(4, n) * n_vars
+                i_bflux = f4%bflux_ix(${face}$, i_coarse-s_out)
+                fac      = real(${sign}$ / &
+                     f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
                 i_c = i + offset(1) * ${ilim}$
                 j_c = j + offset(2) * ${jlim}$
 
@@ -3903,21 +3898,20 @@ contains
 #:enddef
 
 #:def fyp_fixflux_local(face, oface, ilim, jlim, ix, sign)
-    ${LOOP('private(i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
+    ${LOOP('collapse(4) private(i_c, i_f, j_c, j_f, ivar, flux_diff, i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
-       i_fine   = f4%gc_f2c_local(1, n) + 1 + s_out ! Fine block
-       i_coarse = f4%gc_f2c_local(2, n) + 1 + s_out ! coarse block
-       offset(1:2) = f4%gc_f2c_local(3:4, n)   ! offset
-       i_bflux_fine = f4%bflux_ix(${face}$, i_fine-s_out)
-       i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse-s_out)
-       fac      = real(${sign}$ / &
-            f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
-
-       ${LOOP('collapse(3) private(i_c, i_f, j_c, j_f, ivar, flux_diff)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
                 ivar = i_vars(iv)
+                i_fine   = f4%gc_f2c_local(1, n) + 1 + s_out ! Fine block
+                i_coarse = f4%gc_f2c_local(2, n) + 1 + s_out ! coarse block
+                offset(1:2) = f4%gc_f2c_local(3:4, n)   ! offset
+                i_bflux_fine = f4%bflux_ix(${face}$, i_fine-s_out)
+                i_bflux_coarse = f4%bflux_ix(${oface}$, i_coarse-s_out)
+                fac      = real(${sign}$ / &
+                     f4%dr_level(f4_face_dim(${face}$), f4%block_level(i_coarse-s_out)), fp)
+
                 i_f = 2 * i - 1
                 j_f = 2 * j - 1
                 i_c = i + offset(1) * ${ilim}$
