@@ -1,4 +1,5 @@
 #:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 #:set LIMITER = getvar('USE_LIMITER', 'weno5')
 #:set FLUX_SCHEME = getvar('USE_FLUX_SCHEME', 'hll')
 
@@ -320,7 +321,7 @@ contains
 
 #:include 'flux_finite_volume.fpp'
 
-  include 'flux_${FLUX_SCHEME}$.f90'
+  include 'flux_scheme_${FLUX_SCHEME}$.f90'
 
   include 'limiter_${LIMITER}$.f90'
 

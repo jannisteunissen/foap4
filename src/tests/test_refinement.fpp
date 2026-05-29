@@ -1,4 +1,5 @@
-#:include '../core/definitions.fpp'
+#:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 program test_ref
   use m_config
   use m_foap4_${NDIM}$d
@@ -197,7 +198,7 @@ contains
 
   subroutine bc_callback(f4)
     type(foap4_t), intent(inout) :: f4
-    integer                      :: face, i_block, ix, n, i
+    integer                      :: i_block, ix, n, i
     real(dp)                     :: rr(NDIM)
 #:if NDIM == 3
     integer                      :: j

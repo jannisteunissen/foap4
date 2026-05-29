@@ -1,4 +1,5 @@
 #:include '../core/definitions.fpp'
+#:include '../core/definitions_parallel.fpp'
 #:set LIMITER = 'weno5'
 #:set FLUX_SCHEME = 'hll'
 #:assert NDIM == 2
@@ -232,7 +233,7 @@ contains
 
   #:include 'flux_finite_volume.fpp'
 
-  include 'flux_${FLUX_SCHEME}$.f90'
+  include 'flux_scheme_${FLUX_SCHEME}$.f90'
 
   include 'limiter_${LIMITER}$.f90'
 

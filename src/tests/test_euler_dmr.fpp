@@ -4,7 +4,8 @@
 !> two-dimensional fluid flow with strong shocks"
 !> J. Comput. Phys. 54, 115–173 (1984)
 #:assert NDIM == 2
-#:include '../core/definitions.fpp'
+#:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 #:set LIMITER = 'vanleer'
 #:set FLUX_SCHEME = 'hll'
 program test_dmr
@@ -319,7 +320,7 @@ contains
 
   #:include 'flux_finite_volume.fpp'
 
-  include 'flux_${FLUX_SCHEME}$.f90'
+  include 'flux_scheme_${FLUX_SCHEME}$.f90'
 
   include 'limiter_${LIMITER}$.f90'
 

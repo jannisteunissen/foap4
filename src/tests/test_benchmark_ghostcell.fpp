@@ -1,4 +1,5 @@
 #:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 program benchmark_gc
 
   use mpi_f08

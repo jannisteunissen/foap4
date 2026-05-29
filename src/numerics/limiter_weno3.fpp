@@ -1,5 +1,6 @@
+#:include 'definitions_parallel.fpp'
 pure subroutine reconstruct(u, i0, u_LR)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(in)  :: u(5, n_tvars)
   integer, intent(in)   :: i0
   real(fp), intent(out) :: u_LR(n_tvars, 2)
@@ -14,7 +15,7 @@ end subroutine reconstruct
 !> Perform weno3 reconstruction to a cell face
 !> Reference: Jiang & Shu "Efficient Implementation of Weighted ENO Schemes", JCP 1996
 pure real(fp) function weno3_reconstruct(u, di)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
 
   !> Cell-centered values. The face value is reconstructed at one side of
   !> the central cell at u(2), depending on the argument di.

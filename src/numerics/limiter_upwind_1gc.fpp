@@ -1,6 +1,7 @@
+#:include 'definitions_parallel.fpp'
 !> For testing purposes, simple upwind scheme with one ghost cell
 pure subroutine reconstruct(u, i0, u_LR)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(in)  :: u(3, n_tvars)
   integer, intent(in)   :: i0
   real(fp), intent(out) :: u_LR(n_tvars, 2)

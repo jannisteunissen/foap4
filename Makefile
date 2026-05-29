@@ -32,7 +32,7 @@ vpath %.f90 $(COREDIR) $(PHYSICSDIR) $(NUMERICSDIR) $(TESTSDIR) $(UTILSDIR)
 # External libraries
 # ==============================================================================
 INCDIRS := p4est/build/local/include
-INCDIRS += $(COREDIR) $(PHYSICSDIR) $(UTILSDIR) $(NUMERICSDIR)
+INCDIRS += $(COREDIR) $(PHYSICSDIR) $(UTILSDIR) $(NUMERICSDIR) $(GENDIR)
 INCFLAGS := $(addprefix -I,$(INCDIRS))
 LIBDIRS := p4est/build/local/lib
 LIBS := p4est sc z m
@@ -168,6 +168,13 @@ TARGETS_3D := $(addprefix $(BINDIR)/,\
     test_xdmf_writer_3d \
     test_euler_3d \
 )
+
+# ==============================================================================
+# Ensure limiter and flux schemes in NUMERICSDIR are preprocessed
+# ==============================================================================
+NUMERICS_FPP := $(wildcard $(NUMERICSDIR)/limiter_*.fpp) \
+	$(wildcard $(NUMERICSDIR)/flux_scheme_*.fpp)
+NUMERICS_GEN := $(patsubst $(NUMERICSDIR)/%.fpp,$(GENDIR)/%.f90,$(NUMERICS_FPP))
 
 # ==============================================================================
 # Phony targets
@@ -313,7 +320,7 @@ $(OBJDIR)/m_physics_shallow_water_3d.o: $(OBJDIR)/m_foap4_types_2d.o
 # ==============================================================================
 
 # All 2D target objects depend on 2D library
-$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_2D)): $(LIB_2D)
+$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_2D)): $(LIB_2D) $(NUMERICS_GEN)
 
 # All 3D target objects depend on 3D library
-$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_3D)): $(LIB_3D)
+$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_3D)): $(LIB_3D) $(NUMERICS_GEN)

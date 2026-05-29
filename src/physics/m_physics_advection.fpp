@@ -1,4 +1,5 @@
 #:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 module m_physics_advection_${NDIM}$d
   use m_foap4_types_${NDIM}$d
 

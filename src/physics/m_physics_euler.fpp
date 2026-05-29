@@ -1,5 +1,6 @@
 !> Definitions for Euler's equations of gas dynamics
 #:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 module m_physics_euler_${NDIM}$d
   use m_foap4_types_${NDIM}$d
 

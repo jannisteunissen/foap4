@@ -1,5 +1,6 @@
+#:include 'definitions_parallel.fpp'
 subroutine flux_cell_faces(flux_dim, u, flux, max_wavespeed)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   integer, intent(in)   :: flux_dim
   real(fp), intent(in)  :: u(1+2*n_gc, n_tvars)
   real(fp), intent(out) :: flux(n_tvars, 2)
@@ -12,7 +13,7 @@ subroutine flux_cell_faces(flux_dim, u, flux, max_wavespeed)
 end subroutine flux_cell_faces
 
 subroutine flux_hll_one_side(flux_dim, i0, u, flux, max_wavespeed)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   integer, intent(in)   :: flux_dim
   integer, intent(in)   :: i0
   real(fp), intent(in)  :: u(1+2*n_gc, n_tvars)

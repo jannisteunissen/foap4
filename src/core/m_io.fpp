@@ -4,6 +4,7 @@
 !> src/amrvacio/amrio.t in
 !> https://gitlab.itp.uni-frankfurt.de/BHAC-release/bhac
 #:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 module m_io_${NDIM}$d
   use mpi_f08
   use, intrinsic :: iso_c_binding
@@ -38,7 +39,7 @@ contains
     out_gc = 0; if (present(n_gc_out)) out_gc = n_gc_out
     if (out_gc < 0 .or. out_gc > f4%n_gc) error stop "Invalid n_gc_out"
 
-    ! OpenACC - get the block data from the device
+    ! Get the block data from the device
     $:UPDATE_SELF('f4%uu(' + DTIMES(':') + ', :, 1:f4%n_blocks)')
 
     write(full_fname, "(A,A,I06.6)") trim(fname), "_", n_output

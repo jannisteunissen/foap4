@@ -1,6 +1,7 @@
 !> Definitions for shallow water equations (2D only)
 #:assert NDIM == 2
 #:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 module m_physics_shallow_water_${NDIM}$d
   use m_foap4_types_${NDIM}$d
 

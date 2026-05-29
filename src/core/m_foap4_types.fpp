@@ -1,4 +1,5 @@
 #:include 'definitions.fpp'
+#:include 'definitions_parallel.fpp'
 module m_foap4_types_${NDIM}$d
   use, intrinsic :: iso_c_binding
   use, intrinsic :: iso_fortran_env, only: real32, real64

@@ -1,5 +1,6 @@
+#:include 'definitions_parallel.fpp'
 pure subroutine reconstruct(u, i0, u_LR)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(in)  :: u(5, n_tvars)
   integer, intent(in)   :: i0
   real(fp), intent(out) :: u_LR(n_tvars, 2)
@@ -23,7 +24,7 @@ end function mc_limiter
 !> the limiter is, with 1 corresponding to the minmod limiter and 2 to the MC
 !> limiter.
 elemental function limiter_gminmod(a, b, theta) result(phi)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(in) :: a, b, theta
   real(fp)             :: phi
 

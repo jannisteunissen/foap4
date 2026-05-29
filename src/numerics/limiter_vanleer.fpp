@@ -1,5 +1,6 @@
+#:include 'definitions_parallel.fpp'
 pure subroutine reconstruct(u, i0, u_LR)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(in)  :: u(5, n_tvars)
   integer, intent(in)   :: i0
   real(fp), intent(out) :: u_LR(n_tvars, 2)
@@ -14,7 +15,7 @@ pure subroutine reconstruct(u, i0, u_LR)
 end subroutine reconstruct
 
 elemental pure real(fp) function vanleer(a, b) result(phi)
-  !$acc routine seq
+  ${ROUTINE_SEQ()}$
   real(fp), intent(in) :: a, b
   real(fp)             :: ab
 
