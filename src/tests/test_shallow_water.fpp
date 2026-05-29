@@ -207,7 +207,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp) :: rr(NDIM), d_center
 
-    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr, d_center) copyin(dam_center)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr, d_center)')}$ ${COPYIN('dam_center')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
