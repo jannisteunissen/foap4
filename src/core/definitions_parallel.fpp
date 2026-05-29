@@ -52,7 +52,15 @@ copyin(${varlist}$)
 !$acc loop independent ${clauses}$
 #:enddef
 
+#:def LOOP_OUTER(clauses='')
+!$acc loop independent ${clauses}$
+#:enddef
+
 #:def PARALLEL_LOOP(clauses='')
+!$acc parallel loop independent ${clauses}$
+#:enddef
+
+#:def PARALLEL_LOOP_OUTER(clauses='')
 !$acc parallel loop independent ${clauses}$
 #:enddef
 
@@ -132,8 +140,16 @@ map(to: ${varlist}$)
 !$omp parallel do ${clauses}$
 #:enddef
 
+#:def LOOP_OUTER(clauses='')
+!$omp distribute ${clauses}$
+#:enddef
+
 #:def PARALLEL_LOOP(clauses='')
 !$omp target teams distribute parallel do ${clauses}$
+#:enddef
+
+#:def PARALLEL_LOOP_OUTER(clauses='')
+!$omp target teams distribute ${clauses}$
 #:enddef
 
 #:def ATOMIC()
@@ -190,7 +206,11 @@ nowait
 #:enddef
 #:def LOOP(clauses='')
 #:enddef
+#:def LOOP_OUTER(clauses='')
+#:enddef
 #:def PARALLEL_LOOP(clauses='')
+#:enddef
+#:def PARALLEL_LOOP_OUTER(clauses='')
 #:enddef
 #:def ATOMIC()
 #:enddef

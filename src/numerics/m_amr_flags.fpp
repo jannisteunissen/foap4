@@ -30,7 +30,7 @@ contains
     integer             :: n, ${IJK}$, level
     real(dp)            :: diff(NDIM), diff_norm
 
-    ${PARALLEL_LOOP('private(level, diff_norm)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_OUTER('private(level, diff_norm)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        level = f4%block_level(n)
        diff_norm = 0.0_dp

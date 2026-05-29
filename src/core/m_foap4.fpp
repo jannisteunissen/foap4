@@ -1586,16 +1586,15 @@ contains
 #:if NDIM == 2
 #:def fyp_c2f_to_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &ic0=0, jc0=0)
-    ${LOOP('private(iq, offset, i_buf0)')}$
+    ${LOOP('collapse(4) private(ivar, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
-       iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
-       offset(1) = f4%gc_c2f_to_buf(2, n)
-       i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars
-
-       ${LOOP('collapse(3) private(ivar, j_c, i_c, i_buf, fine)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1,  ${ilim}$
+                iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_c2f_to_buf(2, n)
+                i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars
+
                 ivar = i_vars(iv)
                 i_c = ${ic0}$ + i
                 j_c = ${jc0}$ + j
@@ -1611,14 +1610,18 @@ contains
              end do
           end do
        end do
+    end do
 
-       i_buf0 = i_buf0 + 4 * n_vars * ${jlim}$ * ${ilim}$
-
-       if (odd_n_gc) then
-          ${LOOP('collapse(2) private(ivar, i_c, j_c, i_buf, fine)')}$
+    if (odd_n_gc) then
+       ${LOOP('collapse(3) private(ivar, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
+       do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
           do iv = 1, n_vars
 #:if face == '0'
              do j = 1, ${jlim}$
+                iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_c2f_to_buf(2, n)
+                i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars + 4 * n_vars * ${jlim}$ * ${ilim}$
+
                 ! i = half_n_gc + 1
                 ivar = i_vars(iv)
                 i_c = ${ic0}$ + half_n_gc + 1
@@ -1637,6 +1640,10 @@ contains
              end do
 #:elif face == '1'
              do j = 1, ${jlim}$
+                iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_c2f_to_buf(2, n)
+                i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars + 4 * n_vars * ${jlim}$ * ${ilim}$
+
                 ! i = 0
                 ivar = i_vars(iv)
                 i_c = ${ic0}$ + 0
@@ -1655,6 +1662,10 @@ contains
              end do
 #:elif face == '2'
              do i = 1, ${ilim}$
+                iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_c2f_to_buf(2, n)
+                i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars + 4 * n_vars * ${jlim}$ * ${ilim}$
+
                 ! j = half_n_gc + 1
                 ivar = i_vars(iv)
                 i_c = ${ic0}$ + i
@@ -1673,6 +1684,10 @@ contains
              end do
 #:elif face == '3'
              do i = 1, ${ilim}$
+                iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                offset(1) = f4%gc_c2f_to_buf(2, n)
+                i_buf0 = f4%gc_c2f_to_buf(3, n) * n_vars + 4 * n_vars * ${jlim}$ * ${ilim}$
+
                 ! j = 0
                 ivar = i_vars(iv)
                 i_c = ${ic0}$ + i
@@ -1691,23 +1706,22 @@ contains
              end do
 #:endif
           end do
-       end if
-    end do
+       end do
+    end if
 #:enddef
 #:elif NDIM == 3
 #:def fyp_c2f_to_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     klim='f4%hbx(3)', ic0=0, jc0=0, kc0=0)
-    ${LOOP('private(iq, offset, i_buf0)')}$
+    ${LOOP('collapse(5) private(ivar, k_c, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
-       iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
-       offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
-       i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars
-
-       ${LOOP('collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1,  ${ilim}$
+                   iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
+                   i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars
+
                    ivar = i_vars(iv)
                    i_c = ${ic0}$ + i
                    j_c = ${jc0}$ + j
@@ -1730,15 +1744,22 @@ contains
              end do
           end do
        end do
+    end do
 
-       i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+    i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
 
-       if (odd_n_gc) then
-          ${LOOP('collapse(3) private(ivar, i_c, j_c, k_c, i_buf, fine)')}$
+    if (odd_n_gc) then
+       ${LOOP('collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
+       do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
           do iv = 1, n_vars
 #:if face == '0'
              do k = 1, ${klim}$
                 do j = 1, ${jlim}$
+                   iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
+                   i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+
                    ! i = half_n_gc + 1
                    ivar = i_vars(iv)
                    i_c = ${ic0}$ + half_n_gc + 1
@@ -1764,6 +1785,11 @@ contains
 #:elif face == '1'
              do k = 1, ${klim}$
                 do j = 1, ${jlim}$
+                   iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
+                   i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+
                    ! i = 0
                    ivar = i_vars(iv)
                    i_c = ${ic0}$ + 0
@@ -1790,6 +1816,11 @@ contains
 #:elif face == '2'
              do k = 1, ${klim}$
                 do i = 1, ${ilim}$
+                   iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
+                   i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+
                    ! j = half_n_gc + 1
                    ivar = i_vars(iv)
                    i_c = ${ic0}$ + i
@@ -1816,6 +1847,11 @@ contains
 #:elif face == '3'
              do k = 1, ${klim}$
                 do i = 1, ${ilim}$
+                   iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
+                   i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+
                    ! j = 0
                    ivar = i_vars(iv)
                    i_c = ${ic0}$ + i
@@ -1842,6 +1878,11 @@ contains
 #:elif face == '4'
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
+                   iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
+                   i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+
                    ! k = half_n_gc + 1
                    ivar = i_vars(iv)
                    i_c = ${ic0}$ + i
@@ -1869,6 +1910,11 @@ contains
 #:elif face == '5'
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
+                   iq = f4%gc_c2f_to_buf(1, n) + 1 + block_offset ! coarse block
+                   offset(1:2) = f4%gc_c2f_to_buf(2:3, n)
+                   i_buf0 = f4%gc_c2f_to_buf(4, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+
                    ! k = 0
                    ivar = i_vars(iv)
                    i_c = ${ic0}$ + i
@@ -1894,8 +1940,8 @@ contains
              end do
 #:endif
           end do
-       end if
-    end do
+       end do
+    end if
 #:enddef
 #:endif
 
