@@ -224,7 +224,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM), x_boundary
 
-    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr, x_boundary)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, x_boundary)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
@@ -254,7 +254,7 @@ contains
 
     face = f4_face_ylo
 
-    ${PARALLEL_LOOP('collapse(2) private(i_block, ix, rr)')}$
+    ${PARALLEL_LOOP_FLAT('collapse(2) private(i_block, ix, rr)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        do i = 1, f4%bx(1)
           i_block = f4%gc_phys(n) + 1
@@ -276,7 +276,7 @@ contains
 
     face = f4_face_yhi
 
-    ${PARALLEL_LOOP('collapse(2) private(i_block, ix, rr)')}$
+    ${PARALLEL_LOOP_FLAT('collapse(2) private(i_block, ix, rr)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        do i = 1, f4%bx(1)
           i_block = f4%gc_phys(n) + 1
@@ -296,7 +296,7 @@ contains
 
     face = f4_face_xlo
 
-    ${PARALLEL_LOOP('collapse(2) private(i_block, ix, rr)')}$
+    ${PARALLEL_LOOP_FLAT('collapse(2) private(i_block, ix, rr)')}$
     do n = f4%gc_phys_iface(face), f4%gc_phys_iface(face+1)-1
        do i = 1, f4%bx(1)
           i_block = f4%gc_phys(n) + 1

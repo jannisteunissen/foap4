@@ -25,7 +25,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
   max_cfl = 0.0_dp
   dt = real(dt_in, fp)
 
-  ${PARALLEL_LOOP('collapse(NDIM+1) private(u, ghost_dim, valid_cell)')}$ ${DEFAULT_PRESENT()}$
+  ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(u, ghost_dim, valid_cell)')}$ ${DEFAULT_PRESENT()}$
   do n = 1, f4%n_blocks
      do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
         ghost_dim(1) = i < 1 .or. i > f4%bx(1)
@@ -52,7 +52,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
      end do; ${KJI_CLOSE_LOOP}$
   end do
 
-  ${PARALLEL_LOOP('collapse(NDIM+1) private(level, inv_dr, tmp, flux, dvar, cmax, cfl_sum, iv, m, u) reduction(max:max_cfl)')}$ ${COPYIN('w_prev, s_prev')}$ ${DEFAULT_PRESENT()}$
+  ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(level, inv_dr, tmp, flux, dvar, cmax, cfl_sum, iv, m, u) reduction(max:max_cfl)')}$ ${COPYIN('w_prev, s_prev')}$ ${DEFAULT_PRESENT()}$
   do n = 1, f4%n_blocks
      do @{KJI_LOOP_1_to_array(f4%bx)}@
         level = f4%block_level(n)

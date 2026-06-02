@@ -130,7 +130,7 @@ contains
     integer                      :: n, i, j
     real(dp)                     :: rr(2)
 
-    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)

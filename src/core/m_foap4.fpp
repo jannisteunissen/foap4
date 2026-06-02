@@ -3401,7 +3401,7 @@ contains
     ${ENTER_DATA_COPYIN('srl, refine, coarsen')}$
 
     ! Copy on device
-    ${PARALLEL_LOOP('collapse(NDIM+2) private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+2) private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_srl
        do iv = 1, f4%n_vars
           do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
@@ -3414,7 +3414,7 @@ contains
 
     ! Refine on device
 #:if NDIM == 2
-    ${PARALLEL_LOOP('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f, fine)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f, fine)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_refine
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3445,7 +3445,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${PARALLEL_LOOP('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_refine
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3489,7 +3489,7 @@ contains
 
     ! Coarsen on device
     #:if NDIM == 2
-    ${PARALLEL_LOOP('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_coarsen
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3513,7 +3513,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${PARALLEL_LOOP('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f)')}$ ${DEFAULT_PRESENT()}$ ${ASYNC()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_coarsen
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3546,7 +3546,6 @@ contains
     end do
 #:endif
 
-    ${WAIT()}$
     ${EXIT_DATA_DELETE('srl, refine, coarsen')}$
 
     t0 = MPI_Wtime()
@@ -3587,7 +3586,7 @@ contains
     end do
 
     ! Copy block solution data on device
-    ${PARALLEL_LOOP('collapse(NDIM+2)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+2)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, n_blocks_old
        do iv = 1, f4%n_vars
           do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
@@ -4159,7 +4158,7 @@ contains
 
     var_sum = 0.0_dp
 
-    ${PARALLEL_LOOP('collapse(NDIM+1) private(level, dvol) reduction(+:var_sum)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(level, dvol) reduction(+:var_sum)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           level = f4%block_level(n)
@@ -4187,7 +4186,7 @@ contains
 
     var_max = -huge(1.0_dp)
 
-    ${PARALLEL_LOOP('collapse(NDIM+1) reduction(max:var_max)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) reduction(max:var_max)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
             var_max = max(var_max, f4%uu(${IJK}$, i_var, n))

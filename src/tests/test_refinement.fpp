@@ -249,7 +249,7 @@ contains
     integer                      :: n, ${IJK}$
     real(dp)                     :: rr(NDIM)
 
-    ${PARALLEL_LOOP('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
@@ -295,7 +295,7 @@ contains
 
     max_err = 0.0_dp
 
-    ${PARALLEL_LOOP('collapse(NDIM+1) reduction(max:max_err) private(rr, sol, ghost_dim, valid_cell)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) reduction(max:max_err) private(rr, sol, ghost_dim, valid_cell)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
 

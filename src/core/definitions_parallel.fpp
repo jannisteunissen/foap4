@@ -56,7 +56,7 @@ copyin(${varlist}$)
 !$acc loop independent ${clauses}$
 #:enddef
 
-#:def PARALLEL_LOOP(clauses='')
+#:def PARALLEL_LOOP_FLAT(clauses='')
 !$acc parallel loop independent ${clauses}$
 #:enddef
 
@@ -78,14 +78,6 @@ copyin(${varlist}$)
 
 #:def END_HOST_DATA()
 !$acc end host_data
-#:enddef
-
-#:def WAIT()
-!$acc wait
-#:enddef
-
-#:def ASYNC()
-async
 #:enddef
 
 #:elif defined('USE_OPENMP')
@@ -144,7 +136,7 @@ map(to: ${varlist}$)
 !$omp distribute ${clauses}$
 #:enddef
 
-#:def PARALLEL_LOOP(clauses='')
+#:def PARALLEL_LOOP_FLAT(clauses='')
 !$omp target teams distribute parallel do ${clauses}$
 #:enddef
 
@@ -166,14 +158,6 @@ map(to: ${varlist}$)
 
 #:def END_HOST_DATA()
 !$omp end target data
-#:enddef
-
-#:def WAIT()
-!$omp taskwait
-#:enddef
-
-#:def ASYNC()
-nowait
 #:enddef
 
 #:else
@@ -208,7 +192,7 @@ nowait
 #:enddef
 #:def LOOP_OUTER(clauses='')
 #:enddef
-#:def PARALLEL_LOOP(clauses='')
+#:def PARALLEL_LOOP_FLAT(clauses='')
 #:enddef
 #:def PARALLEL_LOOP_OUTER(clauses='')
 #:enddef
@@ -219,10 +203,6 @@ nowait
 #:def HOST_DATA_USE_DEVICE(varlist)
 #:enddef
 #:def END_HOST_DATA()
-#:enddef
-#:def WAIT()
-#:enddef
-#:def ASYNC()
 #:enddef
 #:endif
 
