@@ -9,7 +9,7 @@ module m_physics_shallow_water_${NDIM}$d
   public
 
   ! Gravitational acceleration
-  real(fp), parameter :: gravity_constant = 9.81_fp
+  real(fp) :: gravity_constant = 9.81_fp
   ${DECLARE_DEVICE('gravity_constant')}$
 
   ! Number of temporal variables (h, momentum components)
