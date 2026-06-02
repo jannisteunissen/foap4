@@ -95,16 +95,17 @@ contains
     ! if they exceed 16 GB.
     f4%max_requests = 2 * f4%mpisize + 10
 
-#ifdef _OPENACC
-    call set_openacc_device(f4)
-#endif
+@{GPU_IFDEF()}@
+    call set_gpu_device(f4)
+@{GPU_ENDIF()}@
 
   end subroutine f4_initialize
 
-#ifdef _OPENACC
+@{GPU_IFDEF()}@
+#:if defined('USE_OPENACC')
   !> Set the device to be used by OpenACC
   !> Inspired by https://enccs.github.io/gpu-programming/10-multiple_gpu/
-  subroutine set_openacc_device(f4)
+  subroutine set_gpu_device(f4)
     use openacc
     type(foap4_t), intent(in) :: f4
     type(MPI_Comm)            :: host_comm
@@ -144,8 +145,50 @@ contains
 
     call MPI_Comm_free(host_comm, ierr)
 
-  end subroutine set_openacc_device
-#endif
+  end subroutine set_gpu_device
+#:elif defined('USE_OPENMP')
+  !> Set the device to be used by OpenMP target offloading
+  !> Consistent with the OpenACC version above
+  subroutine set_gpu_device(f4)
+    use omp_lib
+    type(foap4_t), intent(in) :: f4
+    type(MPI_Comm)            :: host_comm
+    integer                   :: host_rank, host_size, ierr
+    integer                   :: my_device, num_devices, tasks_per_device
+
+    ! Split communicator into subgroups per node
+    call MPI_Comm_split_type(f4%mpicomm, MPI_COMM_TYPE_SHARED, 0, &
+                            MPI_INFO_NULL, host_comm, ierr)
+    call MPI_Comm_rank(host_comm, host_rank, ierr)
+    call MPI_Comm_size(host_comm, host_size, ierr)
+
+    num_devices = omp_get_num_devices()
+
+    if (num_devices < 1) error stop "No devices available on host"
+
+    if (num_devices < host_size) then
+       if (f4%mpirank == 0) then
+          write(*, "(A,I0,A,I0,A,I0,A)") "WARNING from ", f4%mpirank, &
+               ": more local processes (", host_size, &
+               ") than GPUs (", num_devices, ")"
+       endif
+
+       ! Round up
+       tasks_per_device = (host_size + num_devices - 1)/num_devices
+
+       ! Rank 0 to tasks_per_device-1 on device 0, etc.
+       my_device = host_rank/tasks_per_device
+    else
+       my_device = host_rank
+    endif
+
+    call omp_set_default_device(my_device)
+
+    call MPI_Comm_free(host_comm, ierr)
+
+  end subroutine set_gpu_device
+#:endif
+@{GPU_ENDIF()}@
 
   !> Reset wall clock time measurements
   subroutine f4_reset_wtime(f4)
