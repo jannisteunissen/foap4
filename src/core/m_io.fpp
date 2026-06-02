@@ -3,7 +3,7 @@
 !> The XDMF part was inspired by the implementation in the bhac code, see
 !> src/amrvacio/amrio.t in
 !> https://gitlab.itp.uni-frankfurt.de/BHAC-release/bhac
-#:include 'definitions.fpp'
+#:include 'definitions_ndim.fpp'
 #:include 'definitions_parallel.fpp'
 module m_io_${NDIM}$d
   use mpi_f08

@@ -1,5 +1,5 @@
 !> Module for setting flags for adaptive mesh refinement
-#:include 'definitions.fpp'
+#:include 'definitions_ndim.fpp'
 #:include 'definitions_parallel.fpp'
 module m_amr_flags_${NDIM}$d
 

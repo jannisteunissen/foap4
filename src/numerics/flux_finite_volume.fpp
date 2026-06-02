@@ -1,4 +1,4 @@
-#:include 'definitions.fpp'
+#:include 'definitions_ndim.fpp'
 #:include 'definitions_parallel.fpp'
 subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
      n_prev, s_prev, w_prev, s_out, i_step, n_steps)

@@ -1,4 +1,4 @@
-#:include 'definitions.fpp'
+#:include 'definitions_ndim.fpp'
 #:include 'definitions_parallel.fpp'
 #:set LIMITER = getvar('USE_LIMITER', 'weno5')
 #:set FLUX_SCHEME = getvar('USE_FLUX_SCHEME', 'hll')

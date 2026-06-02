@@ -1,4 +1,4 @@
-#:include '../core/definitions.fpp'
+#:include '../core/definitions_ndim.fpp'
 #:include '../core/definitions_parallel.fpp'
 #:set LIMITER = 'weno5'
 #:set FLUX_SCHEME = 'hll'

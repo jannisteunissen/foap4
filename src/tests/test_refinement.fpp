@@ -1,4 +1,4 @@
-#:include 'definitions.fpp'
+#:include 'definitions_ndim.fpp'
 #:include 'definitions_parallel.fpp'
 program test_ref
   use m_config

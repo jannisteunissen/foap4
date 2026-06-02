@@ -4,7 +4,7 @@
 !> methods.
 !>
 !> Author(s): Jannis Teunissen
-#:include 'definitions.fpp'
+#:include 'definitions_ndim.fpp'
 #:include 'definitions_parallel.fpp'
 module m_foap4_${NDIM}$d
   use mpi_f08
@@ -3034,15 +3034,13 @@ contains
 
 #:if NDIM == 2
 #:def fyp_f2c_from_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', if0=0, jf0=0)
-    ${LOOP('private(iq, i_buf0)')}$
+    ${LOOP('collapse(4) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
     do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
-       iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
-       i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
-
-       ${LOOP('collapse(3) private(ivar, j_f, i_f, i_buf)')}$
        do iv = 1, n_vars
           do j = 1, ${jlim}$
              do i = 1, ${ilim}$
+                iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
                 ivar = i_vars(iv)
                 i_f = ${if0}$ + 2 * i - 1
                 j_f = ${jf0}$ + 2 * j - 1
@@ -3055,13 +3053,17 @@ contains
              end do
           end do
        end do
+    end do
 
-       if (odd_n_gc) then
-          i_buf0 = i_buf0 + 4 * n_vars * ${jlim}$ * ${ilim}$
+    if (odd_n_gc) then
+       ${LOOP('collapse(3) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
+       do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
 #:if face == '0'
-          ${LOOP('collapse(2) private(ivar, i_f, j_f, i_buf)')}$
           do iv = 1, n_vars
              do j = 1, ${jlim}$
+                iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars + &
+                     4 * n_vars * ${jlim}$ * ${ilim}$
                 ivar = i_vars(iv)
                 i_f = -f4%n_gc + 1
                 j_f = 2 * j - 1
@@ -3072,9 +3074,11 @@ contains
              end do
           end do
 #:elif face == '1'
-          ${LOOP('collapse(2) private(ivar, i_f, j_f, i_buf)')}$
           do iv = 1, n_vars
              do j = 1, ${jlim}$
+                iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars + &
+                     4 * n_vars * ${jlim}$ * ${ilim}$
                 ivar = i_vars(iv)
                 i_f = f4%bx(1) + f4%n_gc
                 j_f = 2 * j - 1
@@ -3085,9 +3089,11 @@ contains
              end do
           end do
 #:elif face == '2'
-          ${LOOP('collapse(2) private(ivar, i_f, j_f, i_buf)')}$
           do iv = 1, n_vars
              do i = 1, ${ilim}$
+                iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars + &
+                     4 * n_vars * ${jlim}$ * ${ilim}$
                 ivar = i_vars(iv)
                 i_f = 2 * i - 1
                 j_f = -f4%n_gc + 1
@@ -3098,9 +3104,11 @@ contains
              end do
           end do
 #:elif face == '3'
-          ${LOOP('collapse(2) private(ivar, i_f, j_f, i_buf)')}$
           do iv = 1, n_vars
              do i = 1, ${ilim}$
+                iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars + &
+                     4 * n_vars * ${jlim}$ * ${ilim}$
                 ivar = i_vars(iv)
                 i_f = 2 * i - 1
                 j_f = f4%bx(2) + f4%n_gc
@@ -3111,22 +3119,21 @@ contains
              end do
           end do
 #:endif
-       end if
-    end do
+       end do
+    end if
 #:enddef
 #:elif NDIM == 3
 #:def fyp_f2c_from_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     & klim='f4%hbx(3)', if0=0, jf0=0, kf0=0)
-    ${LOOP('private(iq, i_buf0)')}$
+    ${LOOP('collapse(5) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
     do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
-       iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
-       i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
-
-       ${LOOP('collapse(4) private(ivar, k_f, j_f, i_f, i_buf)')}$
        do iv = 1, n_vars
           do k = 1, ${klim}$
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
+                   iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                   i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars
+
                    ivar = i_vars(iv)
                    i_f = ${if0}$ + 2 * i - 1
                    j_f = ${jf0}$ + 2 * j - 1
@@ -3146,14 +3153,18 @@ contains
              end do
           end do
        end do
+    end do
 
-       if (odd_n_gc) then
-          i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
+    if (odd_n_gc) then
+       ${LOOP('collapse(4) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
+       do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
 #:if face in ['0', '1']
-          ${LOOP('collapse(3) private(ivar, k_f, j_f, i_f, i_buf)')}$
           do iv = 1, n_vars
              do k = 1, ${klim}$
                 do j = 1, ${jlim}$
+                   iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                   i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
                    ivar = i_vars(iv)
 #:if face == '0'
                    i_f = -f4%n_gc + 1
@@ -3172,10 +3183,12 @@ contains
              end do
           end do
 #:elif face in ['2', '3']
-          ${LOOP('collapse(3) private(ivar, k_f, j_f, i_f, i_buf)')}$
           do iv = 1, n_vars
              do k = 1, ${klim}$
                 do i = 1, ${ilim}$
+                   iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                   i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
                    ivar = i_vars(iv)
                    i_f = 2 * i - 1
 #:if face == '2'
@@ -3194,10 +3207,12 @@ contains
              end do
           end do
 #:elif face in ['4', '5']
-          ${LOOP('collapse(3) private(ivar, k_f, j_f, i_f, i_buf)')}$
           do iv = 1, n_vars
              do j = 1, ${jlim}$
                 do i = 1, ${ilim}$
+                   iq    = f4%gc_f2c_from_buf(1, n) + 1 + block_offset ! Fine block
+                   i_buf0 = f4%gc_f2c_from_buf(2, n) * n_vars + &
+                        8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
                    ivar = i_vars(iv)
                    i_f = 2 * i - 1
                    j_f = 2 * j - 1
@@ -3216,8 +3231,8 @@ contains
              end do
           end do
 #:endif
-       end if
-    end do
+       end do
+    end if
 #:enddef
 #:endif
 

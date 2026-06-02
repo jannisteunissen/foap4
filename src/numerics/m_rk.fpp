@@ -1,5 +1,5 @@
 !> Module for Runge-Kutta time integration
-#:include 'definitions.fpp'
+#:include 'definitions_ndim.fpp'
 #:include 'definitions_parallel.fpp'
 module m_rk_${NDIM}$d
 
