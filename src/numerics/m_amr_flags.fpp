@@ -36,7 +36,7 @@ contains
        diff_norm = 0.0_dp
 
 #:if NDIM == 2
-       ${LOOP('collapse(2) private(diff) reduction(max: diff_norm)')}$
+       ${LOOP_INNER('collapse(2) private(diff) reduction(max: diff_norm)')}$
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
              diff(1) = abs(f4%uu(i+1, j, iv, n) - 2 * f4%uu(i, j, iv, n) + &
@@ -57,7 +57,7 @@ contains
           end do
        end do
 #:elif NDIM == 3
-       ${LOOP('collapse(3) private(diff) reduction(max: diff_norm)')}$
+       ${LOOP_INNER('collapse(3) private(diff) reduction(max: diff_norm)')}$
        do k = 1, f4%bx(3)
           do j = 1, f4%bx(2)
              do i = 1, f4%bx(1)

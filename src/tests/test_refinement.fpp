@@ -205,7 +205,7 @@ contains
 #:endif
 
 #:def set_bc_data(face)
-    ${LOOP('collapse(NDIM) private(i_block, ix, rr)')}$
+    ${LOOP_FLAT('collapse(NDIM) private(i_block, ix, rr)')}$
     do n = f4%gc_phys_iface(${face}$), f4%gc_phys_iface(${face}$+1)-1
 #:if NDIM == 2
        do i = 1, f4%bx(1)

@@ -1465,7 +1465,7 @@ contains
     end if
 
 #:def fyp_srl_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    ${LOOP('collapse(NDIM+2) private(iq, i_buf0, ivar, i_buf)')}$
+    ${LOOP_FLAT('collapse(NDIM+2) private(iq, i_buf0, ivar, i_buf)')}$
     do n = f4%gc_srl_to_buf_iface(${face}$), f4%gc_srl_to_buf_iface(${face}$+1)-1
 #:if NDIM == 2
        do iv = 1, n_vars
@@ -1502,7 +1502,7 @@ contains
 
 #:def fyp_f2c_to_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
 #:if NDIM == 2
-    ${LOOP('collapse(NDIM+1) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
+    ${LOOP_FLAT('collapse(NDIM+1) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
     do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -1524,7 +1524,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${LOOP('collapse(NDIM+1) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
+    ${LOOP_FLAT('collapse(NDIM+1) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
     do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do k = 1, ${klim}$
@@ -1629,7 +1629,7 @@ contains
 #:if NDIM == 2
 #:def fyp_c2f_to_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &ic0=0, jc0=0)
-    ${LOOP('collapse(4) private(ivar, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
+    ${LOOP_FLAT('collapse(4) private(ivar, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -1656,7 +1656,7 @@ contains
     end do
 
     if (odd_n_gc) then
-       ${LOOP('collapse(3) private(ivar, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
+       ${LOOP_FLAT('collapse(3) private(ivar, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
        do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
           do iv = 1, n_vars
 #:if face == '0'
@@ -1755,7 +1755,7 @@ contains
 #:elif NDIM == 3
 #:def fyp_c2f_to_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     klim='f4%hbx(3)', ic0=0, jc0=0, kc0=0)
-    ${LOOP('collapse(5) private(ivar, k_c, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
+    ${LOOP_FLAT('collapse(5) private(ivar, k_c, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do k = 1, ${klim}$
@@ -1792,7 +1792,7 @@ contains
     i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
 
     if (odd_n_gc) then
-       ${LOOP('collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
+       ${LOOP_FLAT('collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
        do n = f4%gc_c2f_to_buf_iface(${face}$), f4%gc_c2f_to_buf_iface(${face}$+1)-1
           do iv = 1, n_vars
 #:if face == '0'
@@ -2172,7 +2172,7 @@ contains
 
 #:def fyp_srl_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, i1=0, j1=0, k1=0, &
     &i2=0, j2=0, k2=0)
-    ${LOOP('collapse(NDIM+2) private(iq, jq, ivar)')}$
+    ${LOOP_FLAT('collapse(NDIM+2) private(iq, jq, ivar)')}$
     do n = f4%gc_srl_local_iface(${face}$), f4%gc_srl_local_iface(${face}$+1)-1
 #:if NDIM == 2
        do iv = 1, n_vars
@@ -2211,7 +2211,7 @@ contains
     ! Fill physical boundaries
 
 #:def fyp_phys(face, ilim, jlim, klim=None)
-    ${LOOP('collapse(NDIM+2) private(ivar, bc_type, bc_value, slope, iq, level, dr, i_bc_data)')}$
+    ${LOOP_FLAT('collapse(NDIM+2) private(ivar, bc_type, bc_value, slope, iq, level, dr, i_bc_data)')}$
     do n = f4%gc_phys_iface(${face}$), f4%gc_phys_iface(${face}$+1)-1
 #:if NDIM == 2
        do iv = 1, n_vars
@@ -2418,7 +2418,7 @@ contains
 
 #:def fyp_f2c_local(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0, if0=0, jf0=0, kf0=0)
 #:if NDIM == 2
-    ${LOOP('collapse(NDIM+2) private(i_f, j_f, ivar, iq, jq, offset)')}$
+    ${LOOP_FLAT('collapse(NDIM+2) private(i_f, j_f, ivar, iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -2440,7 +2440,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${LOOP('collapse(NDIM+2) private(i_f, j_f, k_f, ivar, iq, jq, offset)')}$
+    ${LOOP_FLAT('collapse(NDIM+2) private(i_f, j_f, k_f, ivar, iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        do iv = 1, n_vars
           do k = 1, ${klim}$
@@ -2472,7 +2472,7 @@ contains
 #:enddef
 
 #:def fyp_srl_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    ${LOOP('collapse(NDIM+2) private(ivar, i_buf, iq, i_buf0)')}$
+    ${LOOP_FLAT('collapse(NDIM+2) private(ivar, i_buf, iq, i_buf0)')}$
     do n = f4%gc_srl_from_buf_iface(${face}$), f4%gc_srl_from_buf_iface(${face}$+1)-1
 #:if NDIM == 2
        do iv = 1, n_vars
@@ -2506,7 +2506,7 @@ contains
 #:enddef
 
 #:def fyp_c2f_from_buf(face, ilim, jlim, klim=None, i0=0, j0=0, k0=0)
-    ${LOOP('collapse(NDIM+2) private(ivar, i_buf, iq, offset, i_buf0)')}$
+    ${LOOP_FLAT('collapse(NDIM+2) private(ivar, i_buf, iq, offset, i_buf0)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
 #:if NDIM == 2
        do iv = 1, n_vars
@@ -2656,7 +2656,7 @@ contains
 #:if NDIM == 2
 #:def fyp_f2c_local_fine(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &ic0=0, jc0=0, if0=0, jf0=0)
-    ${LOOP('collapse(4) private(ivar, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
+    ${LOOP_FLAT('collapse(4) private(ivar, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -2686,7 +2686,7 @@ contains
     end do
 
     if (odd_n_gc) then
-       ${LOOP('collapse(3) private(ivar, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
+       ${LOOP_FLAT('collapse(3) private(ivar, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
        do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
           do iv = 1, n_vars
 #:if face == '0'
@@ -2789,7 +2789,7 @@ contains
 #:elif NDIM == 3
 #:def fyp_f2c_local_fine(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     &klim='f4%hbx(3)', ic0=0, jc0=0, kc0=0, if0=0, jf0=0, kf0=0)
-    ${LOOP('collapse(5) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
+    ${LOOP_FLAT('collapse(5) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        do iv = 1, n_vars
           do k = 1, ${klim}$
@@ -2830,7 +2830,7 @@ contains
     end do
 
     if (odd_n_gc) then
-       ${LOOP('collapse(4) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
+       ${LOOP_FLAT('collapse(4) private(ivar, k_f, k_c, j_f, j_c, i_f, i_c, fine, iq, jq, offset)')}$
        do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
           do iv = 1, n_vars
 #:if face == '0'
@@ -3034,7 +3034,7 @@ contains
 
 #:if NDIM == 2
 #:def fyp_f2c_from_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', if0=0, jf0=0)
-    ${LOOP('collapse(4) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
+    ${LOOP_FLAT('collapse(4) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
     do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -3056,7 +3056,7 @@ contains
     end do
 
     if (odd_n_gc) then
-       ${LOOP('collapse(3) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
+       ${LOOP_FLAT('collapse(3) private(ivar, j_f, i_f, i_buf, iq, i_buf0)')}$
        do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
 #:if face == '0'
           do iv = 1, n_vars
@@ -3125,7 +3125,7 @@ contains
 #:elif NDIM == 3
 #:def fyp_f2c_from_buf(face, ilim='f4%hbx(1)', jlim='f4%hbx(2)', &
     & klim='f4%hbx(3)', if0=0, jf0=0, kf0=0)
-    ${LOOP('collapse(5) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
+    ${LOOP_FLAT('collapse(5) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
     do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do k = 1, ${klim}$
@@ -3156,7 +3156,7 @@ contains
     end do
 
     if (odd_n_gc) then
-       ${LOOP('collapse(4) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
+       ${LOOP_FLAT('collapse(4) private(ivar, k_f, j_f, i_f, i_buf, iq, i_buf0)')}$
        do n = f4%gc_f2c_from_buf_iface(${face}$), f4%gc_f2c_from_buf_iface(${face}$+1)-1
 #:if face in ['0', '1']
           do iv = 1, n_vars
@@ -3862,7 +3862,7 @@ contains
 
 #:def fyp_fixflux_to_buf(face, ilim, jlim=None)
 #:if NDIM == 2
-    ${LOOP('collapse(NDIM+1) private(i_f, ivar, i_buf, i_fine, i_buf0, i_bflux)')}$
+    ${LOOP_FLAT('collapse(NDIM+1) private(i_f, ivar, i_buf, i_fine, i_buf0, i_bflux)')}$
     do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do i = 1, ${ilim}$
@@ -3880,7 +3880,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${LOOP('collapse(NDIM+1) private(i_f, j_f, ivar, i_buf, i_fine, i_buf0, i_bflux)')}$
+    ${LOOP_FLAT('collapse(NDIM+1) private(i_f, j_f, ivar, i_buf, i_fine, i_buf0, i_bflux)')}$
     do n = f4%gc_f2c_to_buf_iface(${face}$), f4%gc_f2c_to_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -3950,7 +3950,7 @@ contains
 
 #:if NDIM == 2
 #:def fyp_fixflux_from_buf(face, ilim, ix, sign)
-    ${LOOP('collapse(3) private(i_c, ivar, i_buf, flux_diff, i_coarse, offset, i_buf0, fac, i_bflux)')}$
+    ${LOOP_FLAT('collapse(3) private(i_c, ivar, i_buf, flux_diff, i_coarse, offset, i_buf0, fac, i_bflux)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do i = 1, ${ilim}$
@@ -3979,7 +3979,7 @@ contains
 #:enddef
 
 #:def fyp_fixflux_local(face, oface, ilim, ix, sign)
-    ${LOOP('collapse(3) private(i_c, i_f, ivar, flux_diff, i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
+    ${LOOP_FLAT('collapse(3) private(i_c, i_f, ivar, flux_diff, i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        do iv = 1, n_vars
           do i = 1, ${ilim}$
@@ -4012,7 +4012,7 @@ contains
 
 #:elif NDIM == 3
 #:def fyp_fixflux_from_buf(face, ilim, jlim, ix, sign)
-    ${LOOP('collapse(4) private(i_c, j_c, ivar, i_buf, flux_diff, i_coarse, offset, i_buf0, fac, i_bflux)')}$
+    ${LOOP_FLAT('collapse(4) private(i_c, j_c, ivar, i_buf, flux_diff, i_coarse, offset, i_buf0, fac, i_bflux)')}$
     do n = f4%gc_c2f_from_buf_iface(${face}$), f4%gc_c2f_from_buf_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$
@@ -4044,7 +4044,7 @@ contains
 #:enddef
 
 #:def fyp_fixflux_local(face, oface, ilim, jlim, ix, sign)
-    ${LOOP('collapse(4) private(i_c, i_f, j_c, j_f, ivar, flux_diff, i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
+    ${LOOP_FLAT('collapse(4) private(i_c, i_f, j_c, j_f, ivar, flux_diff, i_coarse, i_fine, offset, fac, i_bflux_fine, i_bflux_coarse)')}$
     do n = f4%gc_f2c_local_iface(${face}$), f4%gc_f2c_local_iface(${face}$+1)-1
        do iv = 1, n_vars
           do j = 1, ${jlim}$

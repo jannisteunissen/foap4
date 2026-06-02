@@ -48,7 +48,11 @@ copyin(${varlist}$)
 !$acc end parallel
 #:enddef
 
-#:def LOOP(clauses='')
+#:def LOOP_INNER(clauses='')
+!$acc loop independent ${clauses}$
+#:enddef
+
+#:def LOOP_FLAT(clauses='')
 !$acc loop independent ${clauses}$
 #:enddef
 
@@ -128,8 +132,12 @@ map(to: ${varlist}$)
 !$omp end target teams
 #:enddef
 
-#:def LOOP(clauses='')
+#:def LOOP_INNER(clauses='')
 !$omp parallel do ${clauses}$
+#:enddef
+
+#:def LOOP_FLAT(clauses='')
+!$omp distribute parallel do ${clauses}$
 #:enddef
 
 #:def LOOP_OUTER(clauses='')
@@ -188,7 +196,9 @@ map(to: ${varlist}$)
 #:enddef
 #:def END_PARALLEL()
 #:enddef
-#:def LOOP(clauses='')
+#:def LOOP_INNER(clauses='')
+#:enddef
+#:def LOOP_FLAT(clauses='')
 #:enddef
 #:def LOOP_OUTER(clauses='')
 #:enddef
