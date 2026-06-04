@@ -141,7 +141,6 @@ contains
     endif
 
     call acc_set_device_num(my_device, dev_type)
-    call acc_init(dev_type)
 
     call MPI_Comm_free(host_comm, ierr)
 
