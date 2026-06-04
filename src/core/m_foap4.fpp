@@ -3398,10 +3398,10 @@ contains
 
     t1 = MPI_Wtime()
 
-    ${ENTER_DATA_COPYIN('srl, refine, coarsen')}$
+    ${PARALLEL()}$ ${COPYIN('srl, refine, coarsen')}$ ${DEFAULT_PRESENT()}$
 
     ! Copy on device
-    ${PARALLEL_LOOP_FLAT('collapse(NDIM+2) private(i_from, i_to)')}$ ${DEFAULT_PRESENT()}$
+    ${LOOP_FLAT('collapse(NDIM+2) private(i_from, i_to)')}$
     do n = 1, i_srl
        do iv = 1, f4%n_vars
           do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
@@ -3414,7 +3414,7 @@ contains
 
     ! Refine on device
 #:if NDIM == 2
-    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f, fine)')}$ ${DEFAULT_PRESENT()}$
+    ${LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f, fine)')}$
     do n = 1, i_refine
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3445,7 +3445,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$ ${DEFAULT_PRESENT()}$
+    ${LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$
     do n = 1, i_refine
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3489,7 +3489,7 @@ contains
 
     ! Coarsen on device
     #:if NDIM == 2
-    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f)')}$ ${DEFAULT_PRESENT()}$
+    ${LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f)')}$
     do n = 1, i_coarsen
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3513,7 +3513,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f)')}$ ${DEFAULT_PRESENT()}$
+    ${LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f)')}$
     do n = 1, i_coarsen
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3546,7 +3546,7 @@ contains
     end do
 #:endif
 
-    ${EXIT_DATA_DELETE('srl, refine, coarsen')}$
+    ${END_PARALLEL()}$
 
     t0 = MPI_Wtime()
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
