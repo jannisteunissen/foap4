@@ -168,8 +168,82 @@ map(to: ${varlist}$)
 !$omp end target data
 #:enddef
 
-#:else
+#:elif defined('USE_OPENMP_CPU')
 ! No GPU offloading - emit nothing
+#:def GPU_IFDEF()
+#if 0
+#:enddef
+#:def GPU_ENDIF()
+#endif
+#:enddef
+
+#:def DEFAULT_PRESENT()
+#:enddef
+
+#:def COPYIN(varlist)
+#:enddef
+
+#:def DECLARE_DEVICE(varlist)
+#:enddef
+
+#:def ENTER_DATA_COPYIN(varlist)
+#:enddef
+
+#:def ENTER_DATA_CREATE(varlist)
+#:enddef
+
+#:def EXIT_DATA_DELETE(varlist)
+#:enddef
+
+#:def UPDATE_DEVICE(varlist)
+#:enddef
+
+#:def UPDATE_SELF(varlist)
+#:enddef
+
+#:def PARALLEL(clauses='')
+!$omp parallel ${clauses}$
+#:enddef
+
+#:def END_PARALLEL()
+!$omp end parallel
+#:enddef
+
+! Don't use nested parallelism on CPU
+#:def LOOP_INNER(clauses='')
+#:enddef
+
+#:def LOOP_FLAT(clauses='')
+!$omp do ${clauses}$
+#:enddef
+
+#:def LOOP_OUTER(clauses='')
+!$omp do ${clauses}$
+#:enddef
+
+#:def PARALLEL_LOOP_FLAT(clauses='')
+!$omp parallel do ${clauses}$
+#:enddef
+
+#:def PARALLEL_LOOP_OUTER(clauses='')
+!$omp parallel do ${clauses}$
+#:enddef
+
+#:def ATOMIC()
+!$omp atomic
+#:enddef
+
+#:def ROUTINE_SEQ()
+#:enddef
+
+#:def HOST_DATA_USE_DEVICE(varlist)
+#:enddef
+
+#:def END_HOST_DATA()
+#:enddef
+
+#:else
+
 #:def GPU_IFDEF()
 #if 0
 #:enddef
