@@ -87,7 +87,7 @@ compiler_brand ?= $(word 1, $(compiler_version))
 ifeq ($(compiler_brand),GNU)
     FFLAGS ?= -Wall -g -J$(OBJDIR) -cpp -Wno-unused-dummy-argument -Wl,--no-warn-execstack
     ifeq ($(DEBUG),1)
-        FFLAGS += -O0 -fcheck=all -ffpe-trap=invalid,zero,overflow -finit-real=snan
+        FFLAGS += -O0 -fcheck=all
         CFLAGS += -O0
     endif
     ifeq ($(SAFE),1)

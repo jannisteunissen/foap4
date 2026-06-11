@@ -28,6 +28,9 @@ module m_foap4_types_${NDIM}$d
   !> Maximum count for MPI messages
   integer(MPI_COUNT_KIND), parameter, public :: f4_mpi_max_count = huge(1)
 
+  !> Minimum array size (zero-size is not always supported on GPUs)
+  integer, parameter, public :: f4_min_array_size = 1
+
   !> The opposite of the faces 0-3
 #:if NDIM == 2
   integer, parameter, public :: face_swap(0:2*ndim-1) = [1, 0, 3, 2]
@@ -37,13 +40,14 @@ module m_foap4_types_${NDIM}$d
 
   !> The offset of the children
 #:if NDIM == 2
-  integer, parameter, public :: f4_child_offset(ndim, 4) = reshape(&
+  integer, protected, public :: f4_child_offset(ndim, 4) = reshape(&
        [0,0, 1,0, 0,1, 1,1], [2,4])
 #:elif NDIM == 3
-  integer, parameter, public :: f4_child_offset(ndim, 8) = reshape( &
+  integer, protected, public :: f4_child_offset(ndim, 8) = reshape( &
        [0,0,0, 1,0,0, 0,1,0, 1,1,0, &
        0,0,1, 1,0,1, 0,1,1, 1,1,1], [3,8])
 #:endif
+  ${DECLARE_DEVICE('f4_child_offset')}$
 
   !> The dimension of faces
 #:if NDIM == 2

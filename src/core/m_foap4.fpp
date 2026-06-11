@@ -300,10 +300,21 @@ contains
     ${EXIT_DATA_DELETE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
     ${EXIT_DATA_DELETE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
     ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
-    ${EXIT_DATA_DELETE('f4%gc_phys_iface')}$
-    ${EXIT_DATA_DELETE('f4')}$
 
-    ! TODO: delete ghost cell patterns
+    ${EXIT_DATA_DELETE('f4%gc_phys_iface')}$
+    ${EXIT_DATA_DELETE('f4%gc_srl_local')}$
+    ${EXIT_DATA_DELETE('f4%gc_srl_from_buf')}$
+    ${EXIT_DATA_DELETE('f4%gc_srl_to_buf')}$
+    ${EXIT_DATA_DELETE('f4%gc_f2c_local')}$
+    ${EXIT_DATA_DELETE('f4%gc_f2c_from_buf')}$
+    ${EXIT_DATA_DELETE('f4%gc_f2c_to_buf')}$
+    ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf')}$
+    ${EXIT_DATA_DELETE('f4%gc_c2f_to_buf')}$
+    ${EXIT_DATA_DELETE('f4%gc_phys')}$
+    ${EXIT_DATA_DELETE('f4%gc_f2c_to_buf_fluxfix')}$
+    ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf_fluxfix')}$
+
+    ${EXIT_DATA_DELETE('f4')}$
 
     call pw_destroy(f4%pw)
 
@@ -324,6 +335,18 @@ contains
     deallocate(f4%send_buffer)
     deallocate(f4%recv_offset)
     deallocate(f4%send_offset)
+
+    deallocate(f4%gc_srl_local)
+    deallocate(f4%gc_srl_from_buf)
+    deallocate(f4%gc_srl_to_buf)
+    deallocate(f4%gc_f2c_local)
+    deallocate(f4%gc_f2c_from_buf)
+    deallocate(f4%gc_f2c_to_buf)
+    deallocate(f4%gc_c2f_from_buf)
+    deallocate(f4%gc_c2f_to_buf)
+    deallocate(f4%gc_phys)
+    deallocate(f4%gc_f2c_to_buf_fluxfix)
+    deallocate(f4%gc_c2f_from_buf_fluxfix)
 
     f4%gc_mesh_revision = -1
   end subroutine f4_destroy
@@ -415,9 +438,9 @@ contains
          f4%n_vars, max_blocks * n_temporal_states))
     allocate(f4%uu_prim(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
          f4%n_vars, max_blocks))
-    allocate(f4%bflux(bx(1), n_vars, 0))
-    allocate(f4%bc_data(bx(1), n_vars, 0))
-    allocate(f4%bc_data_type(bx(1), n_vars, 0))
+    allocate(f4%bflux(bx(1), n_vars, f4_min_array_size))
+    allocate(f4%bc_data(bx(1), n_vars, f4_min_array_size))
+    allocate(f4%bc_data_type(bx(1), n_vars, f4_min_array_size))
     f4%gc_data_size = f4%bx(1) * f4%n_gc
     f4%gc_data_size_c2f = (f4%bx(1)/2) * f4%n_gc
     f4%gc_data_size_fluxfix = f4%bx(1)/2
@@ -426,9 +449,9 @@ contains
          f4%n_vars, max_blocks * n_temporal_states))
     allocate(f4%uu_prim(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, 1-n_gc:bx(3)+n_gc, &
          f4%n_vars, max_blocks))
-    allocate(f4%bflux(bx(1), bx(1), n_vars, 0))
-    allocate(f4%bc_data(bx(1), bx(1), n_vars, 0))
-    allocate(f4%bc_data_type(bx(1), bx(1), n_vars, 0))
+    allocate(f4%bflux(bx(1), bx(1), n_vars, f4_min_array_size))
+    allocate(f4%bc_data(bx(1), bx(1), n_vars, f4_min_array_size))
+    allocate(f4%bc_data_type(bx(1), bx(1), n_vars, f4_min_array_size))
     f4%gc_data_size = f4%bx(1)**2 * f4%n_gc
     f4%gc_data_size_c2f = (f4%bx(1)/2)**2 * f4%n_gc
     f4%gc_data_size_fluxfix = (f4%bx(1)/2)**2
@@ -441,7 +464,7 @@ contains
     if (f4%mpisize > 1) then
        i = max_blocks * 2 * NDIM * f4%gc_data_size * f4%n_vars
     else
-       i = 0
+       i = f4_min_array_size
     end if
 
     allocate(f4%recv_buffer(i))
@@ -449,20 +472,21 @@ contains
     allocate(f4%recv_offset(0:f4%mpisize))
     allocate(f4%send_offset(0:f4%mpisize))
 
-    ! OpenACC - Copy data structure and create allocatable components
-    ${ENTER_DATA_COPYIN('f4')}$
-    ${ENTER_DATA_COPYIN('f4%bc_simple_type, f4%bc_simple')}$
-    ${ENTER_DATA_CREATE('f4%block_level, f4%block_origin')}$
-    ${ENTER_DATA_CREATE('f4%uu, f4%uu_prim, f4%refinement_flags')}$
-    ${ENTER_DATA_CREATE('f4%bc_data_ix, f4%bc_data, f4%bc_data_type')}$
-    ${ENTER_DATA_CREATE('f4%bflux_ix, f4%bflux')}$
-    ${ENTER_DATA_CREATE('f4%recv_buffer, f4%send_buffer')}$
-    ${ENTER_DATA_CREATE('f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface')}$
-    ${ENTER_DATA_CREATE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
-    ${ENTER_DATA_CREATE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
-    ${ENTER_DATA_CREATE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
-    ${ENTER_DATA_CREATE('f4%gc_phys_iface')}$
+    ! Initial dummies for ghost cell index arrays
+    allocate( &
+         f4%gc_srl_local(2, f4_min_array_size), &
+         f4%gc_srl_from_buf(2, f4_min_array_size), &
+         f4%gc_srl_to_buf(2, f4_min_array_size), &
+         f4%gc_f2c_local(2+NDIM-1, f4_min_array_size), &
+         f4%gc_f2c_from_buf(2, f4_min_array_size), &
+         f4%gc_f2c_to_buf(2, f4_min_array_size), &
+         f4%gc_c2f_from_buf(2+NDIM-1, f4_min_array_size), &
+         f4%gc_c2f_to_buf(2+NDIM-1, f4_min_array_size), &
+         f4%gc_phys(f4_min_array_size), &
+         f4%gc_f2c_to_buf_fluxfix(2, f4_min_array_size), &
+         f4%gc_c2f_from_buf_fluxfix(2+NDIM-1, f4_min_array_size))
 
+    call copy_f4_to_device(f4)
     call f4_set_quadrants(f4)
     call update_ghostcell_pattern(f4)
     call set_face_data_storage(f4)
@@ -471,6 +495,29 @@ contains
     t1 = MPI_Wtime()
 
   end subroutine f4_construct_brick
+
+  subroutine copy_f4_to_device(f4)
+    type(foap4_t), intent(inout) :: f4
+
+    ! OpenACC - Copy data structure and create allocatable components
+    ${ENTER_DATA_COPYIN('f4')}$
+    ${ENTER_DATA_COPYIN('f4%bc_simple_type, f4%bc_simple')}$
+    ${ENTER_DATA_CREATE('f4%block_level, f4%block_origin')}$
+    ${ENTER_DATA_CREATE('f4%uu, f4%uu_prim, f4%refinement_flags')}$
+    ${ENTER_DATA_CREATE('f4%bc_data, f4%bc_data_type')}$
+    ${ENTER_DATA_CREATE('f4%bc_data_ix, f4%bflux_ix, f4%bflux')}$
+    ${ENTER_DATA_CREATE('f4%recv_buffer, f4%send_buffer')}$
+    ${ENTER_DATA_CREATE('f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface')}$
+    ${ENTER_DATA_CREATE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
+    ${ENTER_DATA_CREATE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
+    ${ENTER_DATA_CREATE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
+    ${ENTER_DATA_CREATE('f4%gc_phys_iface')}$
+
+    ${ENTER_DATA_CREATE('f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf')}$
+    ${ENTER_DATA_CREATE('f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf')}$
+    ${ENTER_DATA_CREATE('f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys')}$
+    ${ENTER_DATA_CREATE('f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix')}$
+  end subroutine copy_f4_to_device
 
   !> Allocate storage for fluxes at refinement boundaries and for boundary
   !> condition data, and set indices into this storage.
@@ -495,12 +542,13 @@ contains
        ! Resize storage, and reserve extra space
        ${EXIT_DATA_DELETE('f4%bc_data, f4%bc_data_type')}$
        deallocate(f4%bc_data, f4%bc_data_type)
+       n = max(2*n_face_bc, f4_min_array_size)
 #:if NDIM == 2
-       allocate(f4%bc_data(f4%bx(1), f4%n_vars, 2*n_face_bc))
-       allocate(f4%bc_data_type(f4%bx(1), f4%n_vars, 2*n_face_bc))
+       allocate(f4%bc_data(f4%bx(1), f4%n_vars, n))
+       allocate(f4%bc_data_type(f4%bx(1), f4%n_vars, n))
 #:elif NDIM == 3
-       allocate(f4%bc_data(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_bc))
-       allocate(f4%bc_data_type(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_bc))
+       allocate(f4%bc_data(f4%bx(1), f4%bx(1), f4%n_vars, n))
+       allocate(f4%bc_data_type(f4%bx(1), f4%bx(1), f4%n_vars, n))
 #:endif
        ${ENTER_DATA_CREATE('f4%bc_data, f4%bc_data_type')}$
     end if
@@ -509,10 +557,11 @@ contains
        ! Resize storage, and reserve extra space
        ${EXIT_DATA_DELETE('f4%bflux')}$
        deallocate(f4%bflux)
+       n = max(2*n_face_rb, f4_min_array_size)
 #:if NDIM == 2
-       allocate(f4%bflux(f4%bx(1), f4%n_vars, 2*n_face_rb))
+       allocate(f4%bflux(f4%bx(1), f4%n_vars, n))
 #:elif NDIM == 3
-       allocate(f4%bflux(f4%bx(1), f4%bx(1), f4%n_vars, 2*n_face_rb))
+       allocate(f4%bflux(f4%bx(1), f4%bx(1), f4%n_vars, n))
 #:endif
        ${ENTER_DATA_CREATE('f4%bflux')}$
     end if
@@ -573,8 +622,10 @@ contains
        end do
     end do
 
-    ${UPDATE_DEVICE('f4%bc_data_ix(:, 1:f4%n_blocks)')}$
-    ${UPDATE_DEVICE('f4%bflux_ix(:, 1:f4%n_blocks)')}$
+    associate (bc_data_ix => f4%bc_data_ix, bflux_ix => f4%bflux_ix)
+      ${UPDATE_DEVICE('bc_data_ix(:, 1:f4%n_blocks)')}$
+      ${UPDATE_DEVICE('bflux_ix(:, 1:f4%n_blocks)')}$
+    end associate
 
   end subroutine set_face_data_storage
 
@@ -596,7 +647,10 @@ contains
 
     f4%bc_simple_type(ivar, iface) = bc_type
     f4%bc_simple(ivar, iface) = real(bc_value, fp)
-    ${UPDATE_DEVICE('f4%bc_simple_type(ivar, iface), f4%bc_simple(ivar, iface)')}$
+
+    associate (bc_simple_type => f4%bc_simple_type, bc_simple => f4%bc_simple)
+      ${UPDATE_DEVICE('bc_simple_type(ivar, iface), bc_simple(ivar, iface)')}$
+    end associate
 
   end subroutine f4_set_bc_scalar
 
@@ -644,8 +698,12 @@ contains
     end do
 
     ! OpenACC - synchronize block information to device
-    ${UPDATE_DEVICE('f4%n_blocks, f4%block_origin(:, 1:f4%n_blocks)')}$
-    ${UPDATE_DEVICE('f4%block_level(1:f4%n_blocks)')}$
+    associate (block_origin => f4%block_origin, &
+         block_level => f4%block_level)
+      ${UPDATE_DEVICE('f4%n_blocks')}$
+      ${UPDATE_DEVICE('block_origin(:, 1:f4%n_blocks)')}$
+      ${UPDATE_DEVICE('block_level(1:f4%n_blocks)')}$
+    end associate
   end subroutine f4_set_quadrants
 
   !> Get the global highest refinement level (on all MPI ranks)
@@ -870,27 +928,28 @@ contains
        end if
     end do
 
-    if (allocated(f4%gc_srl_local)) then
-       ! OpenACC - deallocate arrays
-       ${EXIT_DATA_DELETE('f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf')}$
-       ${EXIT_DATA_DELETE('f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf')}$
-       ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys')}$
-       ${EXIT_DATA_DELETE('f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix')}$
+    ! OpenACC - deallocate arrays
+    ${EXIT_DATA_DELETE('f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf')}$
+    ${EXIT_DATA_DELETE('f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf')}$
+    ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys')}$
+    ${EXIT_DATA_DELETE('f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix')}$
 
-       deallocate(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
-            f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
-            f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys, &
-            f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
-    end if
+    deallocate(f4%gc_srl_local, f4%gc_srl_from_buf, f4%gc_srl_to_buf, &
+         f4%gc_f2c_local, f4%gc_f2c_from_buf, f4%gc_f2c_to_buf, &
+         f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys, &
+         f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix)
 
     ! Local ghost cell exchange at the same level
-    allocate(f4%gc_srl_local(2, i_same(mpirank)))
+    n = max(i_same(mpirank), f4_min_array_size)
+    allocate(f4%gc_srl_local(2, n))
 
     ! Local ghost cell exchange at refinement boundaries
-    allocate(f4%gc_f2c_local(2+NDIM-1, i_f2c(mpirank)))
+    n = max(i_f2c(mpirank), f4_min_array_size)
+    allocate(f4%gc_f2c_local(2+NDIM-1, n))
 
     ! Physical boundaries
-    allocate(f4%gc_phys(i_phys))
+    n = max(i_phys, f4_min_array_size)
+    allocate(f4%gc_phys(n))
     allocate(phys_ix%i(i_phys))
 
     ! To store indices for different types of face boundaries
@@ -966,24 +1025,27 @@ contains
 
     ! Non-local ghost cell exchange at the same level
     n = sum(i_same) - i_same(mpirank)
-    allocate(f4%gc_srl_from_buf(2, n))
-    allocate(f4%gc_srl_to_buf(2, n))
+    i = max(n, f4_min_array_size)
+    allocate(f4%gc_srl_from_buf(2, i))
+    allocate(f4%gc_srl_to_buf(2, i))
     allocate(all_srl_from_buf%i(n))
     allocate(all_srl_to_buf%i(n))
 
     ! Non-local ghost cell exchange from fine to coarse
     n = sum(i_f2c) - i_f2c(mpirank)
-    allocate(f4%gc_f2c_from_buf(2, n))
-    allocate(f4%gc_f2c_to_buf(2, n))
-    allocate(f4%gc_f2c_to_buf_fluxfix(2, n))
+    i = max(n, f4_min_array_size)
+    allocate(f4%gc_f2c_from_buf(2, i))
+    allocate(f4%gc_f2c_to_buf(2, i))
+    allocate(f4%gc_f2c_to_buf_fluxfix(2, i))
     allocate(all_f2c_from_buf%i(n))
     allocate(all_f2c_to_buf%i(n))
 
     ! Non-local ghost cell exchange from coarse to fine
     n = sum(i_c2f) - i_c2f(mpirank)
-    allocate(f4%gc_c2f_from_buf(2+NDIM-1, n))
-    allocate(f4%gc_c2f_from_buf_fluxfix(2+NDIM-1, n))
-    allocate(f4%gc_c2f_to_buf(2+NDIM-1, n))
+    i = max(n, f4_min_array_size)
+    allocate(f4%gc_c2f_from_buf(2+NDIM-1, i))
+    allocate(f4%gc_c2f_from_buf_fluxfix(2+NDIM-1, i))
+    allocate(f4%gc_c2f_to_buf(2+NDIM-1, i))
     allocate(all_c2f_from_buf%i(n))
     allocate(all_c2f_to_buf%i(n))
 
@@ -1162,11 +1224,22 @@ contains
     ${ENTER_DATA_COPYIN('f4%gc_c2f_from_buf, f4%gc_c2f_to_buf, f4%gc_phys')}$
     ${ENTER_DATA_COPYIN('f4%gc_f2c_to_buf_fluxfix, f4%gc_c2f_from_buf_fluxfix')}$
 
-    ${UPDATE_DEVICE('f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface')}$
-    ${UPDATE_DEVICE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
-    ${UPDATE_DEVICE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
-    ${UPDATE_DEVICE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
-    ${UPDATE_DEVICE('f4%gc_phys_iface')}$
+    associate(gc_srl_local_iface => f4%gc_srl_local_iface, &
+         gc_srl_from_buf_iface => f4%gc_srl_from_buf_iface, &
+         gc_srl_to_buf_iface => f4%gc_srl_to_buf_iface, &
+         gc_f2c_local_iface => f4%gc_f2c_local_iface, &
+         gc_f2c_from_buf_iface => f4%gc_f2c_from_buf_iface, &
+         gc_f2c_to_buf_iface => f4%gc_f2c_to_buf_iface, &
+         gc_c2f_from_buf_iface => f4%gc_c2f_from_buf_iface, &
+         gc_c2f_to_buf_iface => f4%gc_c2f_to_buf_iface, &
+         gc_phys_iface => f4%gc_phys_iface)
+
+      ${UPDATE_DEVICE('gc_srl_local_iface, gc_srl_from_buf_iface')}$
+      ${UPDATE_DEVICE('gc_srl_to_buf_iface, gc_f2c_local_iface')}$
+      ${UPDATE_DEVICE('gc_f2c_from_buf_iface, gc_f2c_to_buf_iface')}$
+      ${UPDATE_DEVICE('gc_c2f_from_buf_iface, gc_c2f_to_buf_iface')}$
+      ${UPDATE_DEVICE('gc_phys_iface')}$
+    end associate
 
   end subroutine set_ghost_cell_pattern
 
@@ -3597,30 +3670,39 @@ contains
 
   !> Method for prolongation (interpolation) of a coarse block to its children
 #:if NDIM == 2
-  subroutine prolong(theta, center, xlo, xhi, ylo, yhi, fine)
+  pure subroutine prolong(theta, center, xlo, xhi, ylo, yhi, fine)
     @{ROUTINE_SEQ()}@
     real(fp), intent(in)  :: theta
-    real(fp), intent(in)  :: center ! Center value
-    real(fp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
-    real(fp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
-    real(fp), intent(out) :: fine(2**NDIM)
-    real(fp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
+    real(fp), intent(in)  :: center
+    real(fp), intent(in)  :: xlo, xhi
+    real(fp), intent(in)  :: ylo, yhi
+    real(fp), intent(out) :: fine(4)
+    real(fp)              :: fx, fy
 
-    f(0) = center
-    slopes_a(1) = center - xlo
-    slopes_a(2) = center - ylo
-    slopes_b(1) = xhi - center
-    slopes_b(2) = yhi - center
+    fx = 0.25_fp * minmod(center - xlo, xhi - center)
+    fy = 0.25_fp * minmod(center - ylo, yhi - center)
 
-    f(1:) = 0.25_fp * limiter_gminmod(slopes_a, slopes_b, theta)
+    fine(1) = center - fx - fy
+    fine(2) = center + fx - fy
+    fine(3) = center - fx + fy
+    fine(4) = center + fx + fy
 
-    fine(1) = f(0) - f(1) - f(2)
-    fine(2) = f(0) + f(1) - f(2)
-    fine(3) = f(0) - f(1) + f(2)
-    fine(4) = f(0) + f(1) + f(2)
+  contains
+
+    pure function minmod(a, b) result(phi)
+      @{ROUTINE_SEQ()}@
+      real(fp), intent(in) :: a, b
+      real(fp)             :: phi
+      if (a * b > 0.0_fp) then
+         phi = sign(min(abs(a), abs(b)), a)
+      else
+         phi = 0.0_fp
+      end if
+    end function minmod
+
   end subroutine prolong
 #:elif NDIM == 3
-  subroutine prolong(theta, center, xlo, xhi, ylo, yhi, zlo, zhi, fine)
+  pure subroutine prolong(theta, center, xlo, xhi, ylo, yhi, zlo, zhi, fine)
     @{ROUTINE_SEQ()}@
     real(fp), intent(in)  :: theta
     real(fp), intent(in)  :: center   ! Center value
