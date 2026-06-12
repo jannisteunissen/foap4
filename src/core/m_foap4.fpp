@@ -3308,34 +3308,43 @@ contains
 #:enddef
 #:endif
 
-    ${PARALLEL(COPYIN('i_vars'))}$ ${DEFAULT_PRESENT()}$
-
     ! ----------------------------------------
     ! Fill fine side of local coarse-to-fine boundaries
     ! ----------------------------------------
 
+    ${ENTER_DATA_COPYIN('i_vars')}$
 #:if NDIM == 2
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=f4%bx(1)-half_n_gc, &
          &jc0=offset(1)*f4%hbx(2), if0=-2*half_n_gc)
     @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
          &jc0=offset(1)*f4%hbx(2), if0=f4%bx(1))
+    ${END_PARALLEL()}$
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*f4%hbx(1), &
          &jc0=f4%bx(2)-half_n_gc, jf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
          &ic0=offset(1)*f4%hbx(1), jf0=f4%bx(2))
+    ${END_PARALLEL()}$
 #:elif NDIM == 3
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=f4%bx(1)-half_n_gc, &
          &jc0=offset(1)*f4%hbx(2), kc0=offset(2)*f4%hbx(3), if0=-2*half_n_gc)
     @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
          &jc0=offset(1)*f4%hbx(2), kc0=offset(2)*f4%hbx(3), if0=f4%bx(1))
+    ${END_PARALLEL()}$
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*f4%hbx(1), &
          &jc0=f4%bx(2)-half_n_gc, kc0=offset(2)*f4%hbx(3), jf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
          &ic0=offset(1)*f4%hbx(1), kc0=offset(2)*f4%hbx(3), jf0=f4%bx(2))
+    ${END_PARALLEL()}$
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(4, klim=half_n_gc, ic0=offset(1)*f4%hbx(1), &
          &jc0=offset(2)*f4%hbx(2), kc0=f4%bx(3)-half_n_gc, kf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(5, klim=half_n_gc, &
          &ic0=offset(1)*f4%hbx(1), jc0=offset(2)*f4%hbx(2), kf0=f4%bx(3))
+    ${END_PARALLEL()}$
 #:endif
 
     ! ----------------------------------------
@@ -3343,19 +3352,29 @@ contains
     ! ----------------------------------------
 
 #:if NDIM == 2
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(0, ilim=half_n_gc, if0=-2*half_n_gc)
     @:fyp_f2c_from_buf(1, ilim=half_n_gc, if0=f4%bx(1))
+    ${END_PARALLEL()}$
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(2, jlim=half_n_gc, jf0=-2*half_n_gc)
     @:fyp_f2c_from_buf(3, jlim=half_n_gc, jf0=f4%bx(2))
+    ${END_PARALLEL()}$
 #:elif NDIM == 3
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(0, ilim=half_n_gc, if0=-2*half_n_gc)
     @:fyp_f2c_from_buf(1, ilim=half_n_gc, if0=f4%bx(1))
+    ${END_PARALLEL()}$
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(2, jlim=half_n_gc, jf0=-2*half_n_gc)
     @:fyp_f2c_from_buf(3, jlim=half_n_gc, jf0=f4%bx(2))
+    ${END_PARALLEL()}$
+    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(4, klim=half_n_gc, kf0=-2*half_n_gc)
     @:fyp_f2c_from_buf(5, klim=half_n_gc, kf0=f4%bx(2))
-#:endif
     ${END_PARALLEL()}$
+#:endif
+    ${EXIT_DATA_DELETE('i_vars')}$
 
   end subroutine fill_ghostcells_round_two
 
@@ -3470,10 +3489,8 @@ contains
 
     t1 = MPI_Wtime()
 
-    ${PARALLEL()}$ ${COPYIN('srl, refine, coarsen')}$ ${DEFAULT_PRESENT()}$
-
     ! Copy on device
-    ${LOOP_FLAT('collapse(NDIM+2) private(i_from, i_to)')}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+2) private(i_from, i_to)')}$ ${COPYIN('srl')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_srl
        do iv = 1, f4%n_vars
           do @{KJI_LOOP_array_to_array(f4%ilo, f4%ihi)}@
@@ -3486,7 +3503,7 @@ contains
 
     ! Refine on device
 #:if NDIM == 2
-    ${LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f, fine)')}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f, fine)')}$ ${COPYIN('refine')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_refine
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3517,7 +3534,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f, fine)')}$ ${COPYIN('refine')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_refine
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3561,7 +3578,7 @@ contains
 
     ! Coarsen on device
     #:if NDIM == 2
-    ${LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f)')}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, j_c, j_f, i_c, i_f)')}$ ${COPYIN('coarsen')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_coarsen
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3585,7 +3602,7 @@ contains
        end do
     end do
 #:elif NDIM == 3
-    ${LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f)')}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+3) private(i_from, i_to, k_c, k_f, j_c, j_f, i_c, i_f)')}$ ${COPYIN('coarsen')}$ ${DEFAULT_PRESENT()}$
     do n = 1, i_coarsen
        do i_ch = 1, 2**NDIM
           do iv = 1, f4%n_vars
@@ -3617,8 +3634,6 @@ contains
        end do
     end do
 #:endif
-
-    ${END_PARALLEL()}$
 
     t0 = MPI_Wtime()
     f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
@@ -3679,27 +3694,13 @@ contains
     real(fp), intent(out) :: fine(4)
     real(fp)              :: fx, fy
 
-    fx = 0.25_fp * minmod(center - xlo, xhi - center)
-    fy = 0.25_fp * minmod(center - ylo, yhi - center)
+    fx = 0.25_fp * limiter_gminmod(center - xlo, xhi - center, theta)
+    fy = 0.25_fp * limiter_gminmod(center - ylo, yhi - center, theta)
 
     fine(1) = center - fx - fy
     fine(2) = center + fx - fy
     fine(3) = center - fx + fy
     fine(4) = center + fx + fy
-
-  contains
-
-    pure function minmod(a, b) result(phi)
-      @{ROUTINE_SEQ()}@
-      real(fp), intent(in) :: a, b
-      real(fp)             :: phi
-      if (a * b > 0.0_fp) then
-         phi = sign(min(abs(a), abs(b)), a)
-      else
-         phi = 0.0_fp
-      end if
-    end function minmod
-
   end subroutine prolong
 #:elif NDIM == 3
   pure subroutine prolong(theta, center, xlo, xhi, ylo, yhi, zlo, zhi, fine)
@@ -3709,27 +3710,21 @@ contains
     real(fp), intent(in)  :: xlo, xhi ! x-neighbors (-1, +1)
     real(fp), intent(in)  :: ylo, yhi ! y-neighbors (-1, +1)
     real(fp), intent(in)  :: zlo, zhi ! z-neighbors (-1, +1)
-    real(fp), intent(out) :: fine(2**NDIM)
-    real(fp)              :: f(0:NDIM), slopes_a(NDIM), slopes_b(NDIM)
+    real(fp), intent(out) :: fine(8)
+    real(fp)              :: fx, fy, fz
 
-    f(0) = center
-    slopes_a(1) = center - xlo
-    slopes_a(2) = center - ylo
-    slopes_a(3) = center - zlo
-    slopes_b(1) = xhi - center
-    slopes_b(2) = yhi - center
-    slopes_b(3) = zhi - center
+    fx = 0.25_fp * limiter_gminmod(center - xlo, xhi - center, theta)
+    fy = 0.25_fp * limiter_gminmod(center - ylo, yhi - center, theta)
+    fz = 0.25_fp * limiter_gminmod(center - zlo, zhi - center, theta)
 
-    f(1:) = 0.25_fp * limiter_gminmod(slopes_a, slopes_b, theta)
-
-    fine(1) = f(0) - f(1) - f(2) - f(3)
-    fine(2) = f(0) + f(1) - f(2) - f(3)
-    fine(3) = f(0) - f(1) + f(2) - f(3)
-    fine(4) = f(0) + f(1) + f(2) - f(3)
-    fine(5) = f(0) - f(1) - f(2) + f(3)
-    fine(6) = f(0) + f(1) - f(2) + f(3)
-    fine(7) = f(0) - f(1) + f(2) + f(3)
-    fine(8) = f(0) + f(1) + f(2) + f(3)
+    fine(1) = center - fx - fy - fz
+    fine(2) = center + fx - fy - fz
+    fine(3) = center - fx + fy - fz
+    fine(4) = center + fx + fy - fz
+    fine(5) = center - fx - fy + fz
+    fine(6) = center + fx - fy + fz
+    fine(7) = center - fx + fy + fz
+    fine(8) = center + fx + fy + fz
   end subroutine prolong
 #:endif
 
@@ -3747,6 +3742,19 @@ contains
        phi = 0.0_fp
     end if
   end function limiter_gminmod
+
+  !> Minmod limiter
+  elemental function limiter_minmod(a, b) result(phi)
+    @{ROUTINE_SEQ()}@
+    real(fp), intent(in) :: a, b
+    real(fp)             :: phi
+
+    if (a * b > 0) then
+       phi = sign(min(abs(a), abs(b)), a)
+    else
+       phi = 0.0_fp
+    end if
+  end function limiter_minmod
 
   !> Get load imbalance, defined as the ratio of max_blocks/avg_blocks,
   !> normalized by the minimum achievable imbalance for the given block count
