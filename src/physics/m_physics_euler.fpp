@@ -33,14 +33,16 @@ module m_physics_euler_${NDIM}$d
 
 #:if NDIM == 2
   ! Indices of temporal variables
-  integer, parameter :: i_tvars(n_tvars) = [i_rho, i_mom0+1, i_mom0+2, i_e]
+  integer, protected :: i_tvars(n_tvars) = [i_rho, i_mom0+1, i_mom0+2, i_e]
+  ${DECLARE_DEVICE('i_tvars')}$
 
   ! Names of variables
   character(len=10), parameter :: var_names(n_vars_all) = [character(len=10) :: &
        "rho", "momx", "momy", "e"]
 #:elif NDIM == 3
   ! Indices of temporal variables
-  integer, parameter :: i_tvars(n_tvars) = [i_rho, i_mom0+1, i_mom0+2, i_mom0+3, i_e]
+  integer, protected :: i_tvars(n_tvars) = [i_rho, i_mom0+1, i_mom0+2, i_mom0+3, i_e]
+  ${DECLARE_DEVICE('i_tvars')}$
 
   ! Names of variables
   character(len=10), parameter :: var_names(n_vars_all) = [character(len=10) :: &
