@@ -3312,34 +3312,33 @@ contains
     ! Fill fine side of local coarse-to-fine boundaries
     ! ----------------------------------------
 
-    ${ENTER_DATA_COPYIN('i_vars')}$
 #:if NDIM == 2
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=f4%bx(1)-half_n_gc, &
          &jc0=offset(1)*f4%hbx(2), if0=-2*half_n_gc)
     @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
          &jc0=offset(1)*f4%hbx(2), if0=f4%bx(1))
     ${END_PARALLEL()}$
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*f4%hbx(1), &
          &jc0=f4%bx(2)-half_n_gc, jf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
          &ic0=offset(1)*f4%hbx(1), jf0=f4%bx(2))
     ${END_PARALLEL()}$
 #:elif NDIM == 3
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(0, ilim=half_n_gc, ic0=f4%bx(1)-half_n_gc, &
          &jc0=offset(1)*f4%hbx(2), kc0=offset(2)*f4%hbx(3), if0=-2*half_n_gc)
     @:fyp_f2c_local_fine(1, ilim=half_n_gc, &
          &jc0=offset(1)*f4%hbx(2), kc0=offset(2)*f4%hbx(3), if0=f4%bx(1))
     ${END_PARALLEL()}$
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(2, jlim=half_n_gc, ic0=offset(1)*f4%hbx(1), &
          &jc0=f4%bx(2)-half_n_gc, kc0=offset(2)*f4%hbx(3), jf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(3, jlim=half_n_gc, &
          &ic0=offset(1)*f4%hbx(1), kc0=offset(2)*f4%hbx(3), jf0=f4%bx(2))
     ${END_PARALLEL()}$
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_local_fine(4, klim=half_n_gc, ic0=offset(1)*f4%hbx(1), &
          &jc0=offset(2)*f4%hbx(2), kc0=f4%bx(3)-half_n_gc, kf0=-2*half_n_gc)
     @:fyp_f2c_local_fine(5, klim=half_n_gc, &
@@ -3352,29 +3351,28 @@ contains
     ! ----------------------------------------
 
 #:if NDIM == 2
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(0, ilim=half_n_gc, if0=-2*half_n_gc)
     @:fyp_f2c_from_buf(1, ilim=half_n_gc, if0=f4%bx(1))
     ${END_PARALLEL()}$
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(2, jlim=half_n_gc, jf0=-2*half_n_gc)
     @:fyp_f2c_from_buf(3, jlim=half_n_gc, jf0=f4%bx(2))
     ${END_PARALLEL()}$
 #:elif NDIM == 3
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(0, ilim=half_n_gc, if0=-2*half_n_gc)
     @:fyp_f2c_from_buf(1, ilim=half_n_gc, if0=f4%bx(1))
     ${END_PARALLEL()}$
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(2, jlim=half_n_gc, jf0=-2*half_n_gc)
     @:fyp_f2c_from_buf(3, jlim=half_n_gc, jf0=f4%bx(2))
     ${END_PARALLEL()}$
-    ${PARALLEL()}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL()}$ ${COPYIN('i_vars')}$ ${DEFAULT_PRESENT()}$
     @:fyp_f2c_from_buf(4, klim=half_n_gc, kf0=-2*half_n_gc)
     @:fyp_f2c_from_buf(5, klim=half_n_gc, kf0=f4%bx(2))
     ${END_PARALLEL()}$
 #:endif
-    ${EXIT_DATA_DELETE('i_vars')}$
 
   end subroutine fill_ghostcells_round_two
 
