@@ -51,7 +51,8 @@ contains
     integer                      :: lo(2), hi(2)
     real(dp)                     :: rr(2)
     real(dp), parameter          :: pi = acos(-1.0_dp)
-    real(dp), parameter          :: domain_length(2) = [1.0_dp, 1.0_dp]
+    real(dp), parameter          :: r_min(2) = 0.0_dp
+    real(dp), parameter          :: r_max(2) = [1.0_dp, 1.0_dp]
 
     lo = 1 - n_gc
     hi = nx + n_gc
@@ -64,7 +65,7 @@ contains
        do ii = 1, n_blocks_dim(1)
           i_block = (jj - 1) * n_blocks_dim(1) + ii
 
-          dr(:, i_block) = domain_length / (nx * n_blocks_dim)
+          dr(:, i_block) = r_max / (nx * n_blocks_dim)
           origin(:, i_block) = [ii-1, jj-1] * dr(:, i_block) * nx
 
           do j = lo(2), hi(2)
@@ -78,8 +79,8 @@ contains
     end do
 
     call io_xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, cc_data, time=time, &
-         viewer=viewer)
+         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, r_min, r_max, &
+         cc_data, time=time, viewer=viewer)
 
   end subroutine multi_block_test_2d
 #:elif NDIM == 3
@@ -99,7 +100,8 @@ contains
     integer                      :: lo(3), hi(3)
     real(dp)                     :: rr(3)
     real(dp), parameter          :: pi = acos(-1.0_dp)
-    real(dp), parameter          :: domain_length(3) = [1.0_dp, 1.0_dp, 1.0_dp]
+    real(dp), parameter          :: r_min(3) = 0.0_dp
+    real(dp), parameter          :: r_max(3) = [1.0_dp, 1.0_dp, 1.0_dp]
 
     lo = 1 - n_gc
     hi = nx + n_gc
@@ -114,7 +116,7 @@ contains
              i_block = (kk - 1) * n_blocks_dim(2) * n_blocks_dim(1) + &
                   (jj - 1) * n_blocks_dim(1) + ii
 
-             dr(:, i_block) = domain_length / (nx * n_blocks_dim)
+             dr(:, i_block) = r_max / (nx * n_blocks_dim)
              origin(:, i_block) = [ii-1, jj-1, kk-1] * dr(:, i_block) * nx
 
              do k = lo(3), hi(3)
@@ -132,8 +134,8 @@ contains
     end do
 
     call io_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, cc_data, time=time, &
-         viewer=viewer)
+         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, r_min, r_max, &
+         cc_data, time=time, viewer=viewer)
 
   end subroutine multi_block_test_3d
 #:endif

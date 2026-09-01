@@ -135,6 +135,9 @@ module m_foap4_types_${NDIM}$d
      character(len=32), allocatable :: var_names(:) !< Names of the variables
      real(dp) :: time = 0.0_dp !< Time variable
 
+     real(dp) :: r_min(ndim) = -1.0_dp !< Minimum coordinate of domain
+     real(dp) :: r_max(ndim) = -1.0_dp !< Maximum coordinate of domain
+
      integer :: n_blocks              !< Number of blocks used
      integer :: gc_mesh_revision = -1 !< Revision number (global) of the mesh
 

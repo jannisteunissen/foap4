@@ -34,6 +34,7 @@ program test_adv
   integer           :: blocks_per_dim(NDIM) = 1
   integer           :: bx(NDIM)             = 32
   integer           :: num_outputs          = 40
+  integer           :: n_gc_out = 1
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=40) :: integrator_name      = "heuns_method"
   character(len=40) :: viewer               = "visit"
@@ -143,7 +144,7 @@ contains
 
     if (dt_output <= end_time) then
        call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu, &
-            viewer=viewer)
+            viewer=viewer, n_gc_out=n_gc_out)
     end if
     n_output = n_output + 1
 
@@ -162,7 +163,7 @@ contains
           call set_error(f4)
           call compute_error_norms(f4, i_error, l1_err, l2_err)
           call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu, &
-               viewer=viewer)
+               viewer=viewer, n_gc_out=n_gc_out)
           call f4_compute_sum(f4, i_rho, rho_sum)
           if (f4%mpirank == 0) then
              write(*, "(A,E12.4)") " Conservation error: ", &

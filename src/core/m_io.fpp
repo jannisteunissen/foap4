@@ -59,7 +59,7 @@ contains
     call io_xdmf_write_blocks_${NDIM}$DCoRect(f4%mpicomm, trim(full_fname), &
          f4%n_blocks, f4%bx, f4%n_vars, &
          f4%var_names(1:f4%n_vars), f4%n_gc, out_gc, &
-         f4%block_origin(:, 1:f4%n_blocks), dr, &
+         f4%block_origin(:, 1:f4%n_blocks), dr, f4%r_min, f4%r_max, &
          get_block_cc_data=get_block_data, time=f4%time, viewer=viewer)
     t1 = MPI_Wtime()
     f4%wtime_write_grid = f4%wtime_write_grid + t1 - t0
@@ -76,19 +76,22 @@ contains
 
   !> Write block data to binary files (one per task) and a single .xdmf header file
   subroutine io_xdmf_write_blocks_${NDIM}$DCoRect(mpicomm, filename, n_blocks, nx, n_cc, &
-       cc_names, in_gc, out_gc, origin, dr, cc_data, get_block_cc_data, time, viewer)
-    integer, parameter             :: NDIM = ${NDIM}$
-    type(MPI_comm), intent(in)     :: mpicomm !< MPI communicator
-    character(len=*), intent(in)   :: filename !< File name without extension
-    integer, intent(in)            :: n_blocks !< Number of blocks
-    integer, intent(in)            :: nx(NDIM) !< Size of the blocks (excl. ghost cells)
-    integer, intent(in)            :: n_cc !< Number of variables
-    character(len=*), intent(in)   :: cc_names(n_cc) !< Names of variables
-    integer, intent(in)            :: in_gc !< Number of ghost cells in input
-    integer, intent(in)            :: out_gc !< Number of ghost cells to write
-    !> Origin of each block (incl. ghost cells)
-    real(dp), intent(in)           :: origin(NDIM, n_blocks)
-    real(dp), intent(in)           :: dr(NDIM, n_blocks) !< Grid spacing of each block
+       cc_names, in_gc, out_gc, origin, dr, r_min, r_max, cc_data, get_block_cc_data, &
+       time, viewer)
+    integer, parameter           :: NDIM = ${NDIM}$
+    type(MPI_comm), intent(in)   :: mpicomm            !< MPI communicator
+    character(len=*), intent(in) :: filename           !< File name without extension
+    integer, intent(in)          :: n_blocks           !< Number of blocks
+    integer, intent(in)          :: nx(NDIM)           !< Size of the blocks (excl. ghost cells)
+    integer, intent(in)          :: n_cc               !< Number of variables
+    character(len=*), intent(in) :: cc_names(n_cc)     !< Names of variables
+    integer, intent(in)          :: in_gc              !< Number of ghost cells in input
+    integer, intent(in)          :: out_gc             !< Number of ghost cells to write
+    !> Origin of each block
+    real(dp), intent(in)         :: origin(NDIM, n_blocks)
+    real(dp), intent(in)         :: dr(NDIM, n_blocks) !< Grid spacing of each block
+    real(dp)                     :: r_min(NDIM)        !< Min. coordinate of domain
+    real(dp)                     :: r_max(NDIM)        !< Max. coordinate of domain
     !> Cell-centered data
 #:if NDIM == 2
     real(fp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
@@ -118,6 +121,10 @@ contains
     real(dp), allocatable                :: dr_recvbuf(:), origin_recvbuf(:)
     real(dp), allocatable                :: dr_sendbuf(:), origin_sendbuf(:)
     type(mpi_request)                    :: requests(2)
+    real(dp)                             :: r0(NDIM), r1(NDIM)
+    logical                              :: bnd_lo(NDIM), bnd_hi(NDIM)
+    integer                              :: ix_lo(NDIM), n_cells(NDIM)
+    integer                              :: ghost_lo(NDIM), ghost_hi(NDIM)
 
     for_viewer = "visit"; if (present(viewer)) for_viewer = viewer
 
@@ -157,7 +164,7 @@ contains
        allocate(cc_block(-in_gc+1:nx(1)+in_gc, -in_gc+1:nx(2)+in_gc, n_cc))
 #:elif NDIM == 3
        allocate(cc_block(-in_gc+1:nx(1)+in_gc, -in_gc+1:nx(2)+in_gc, &
-            -in_gc+1:nx(2)+in_gc, n_cc))
+            -in_gc+1:nx(3)+in_gc, n_cc))
 #:endif
 
        do n = 1, n_blocks
@@ -190,10 +197,6 @@ contains
        if (present(time)) then
           write(my_unit, *) '  <Time Value="', time, '" />'
        end if
-
-       ! if (n_gc > 0) then
-       !    write(my_unit, "(a,i0,a)") '  <GhostZones Value="', n_gc, '" />'
-       ! end if
     end if
 
     tag = 0
@@ -227,33 +230,83 @@ contains
           call get_basename(binary_fname, binary_basename)
 
           do n = 1, blocks_per_rank(rank)
+             r0 = origin_recvbuf((n-1)*NDIM+1:n*NDIM)
+             r1 = r0 + dr_recvbuf((n-1)*NDIM+1:n*NDIM) * nx
+             call check_boundary(r0, r1, r_min, r_max, bnd_lo, bnd_hi)
+
+             if (viewer == "visit") then
+                ghost_lo = out_gc
+                ghost_hi = out_gc
+                where (bnd_lo) ghost_lo = 0
+                where (bnd_hi) ghost_hi = 0
+             else
+                ghost_lo = 0
+                ghost_hi = 0
+             end if
+
+             ix_lo = out_gc - ghost_lo
+             ! Number of cells to use for rendering
+             n_cells = nx + ghost_lo + ghost_hi
+
+             ! Adjust origin to include ghost cells
+             r0 = r0 - ghost_lo * dr_recvbuf((n-1)*NDIM+1:n*NDIM)
+
              write(my_unit, "(a,I0,a)") &
                   '  <Grid Name="MeshBlock', n + n_prev_blocks, &
                   '" GridType="Uniform">'
 #:if NDIM == 2
-             write(my_unit, "(a,I0,a,I0,' ',I0,a)") &
-                  '    <Topology TopologyType="', NDIM, 'DCoRectMesh" Dimensions="', &
-                  nx(2)+1, nx(1)+1, '"/>'
-             write(my_unit, "(a)") &
-                  '    <Geometry GeometryType="ORIGIN_DXDY">'
+             if (for_viewer == "visit") then
+                ! Also write 3D mesh in 2D, since Visit otherwise has a bug with
+                ! reading ghost cell data
+                write(my_unit, "(a,I0,' ',I0,' ',I0,a)") &
+                     '    <Topology TopologyType="3DCoRectMesh" Dimensions="', &
+                     2, n_cells(2)+1, n_cells(1)+1, '"/>'
+                write(my_unit, "(a,6(I0,' ')a)") &
+                     '    <Information Name="GhostOffsets" Value="', &
+                     0, 0, ghost_lo(2), ghost_hi(2), ghost_lo(1), ghost_hi(1), '"/>'
+                write(my_unit, "(a)") &
+                     '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
+             else
+                write(my_unit, "(a,I0,' ',I0,a)") &
+                     '    <Topology TopologyType="2DCoRectMesh" Dimensions="', &
+                     n_cells(2)+1, n_cells(1)+1, '"/>'
+                write(my_unit, "(a,4(I0,' ')a)") &
+                     '    <Information Name="GhostOffsets" Value="', &
+                     ghost_lo(2), ghost_hi(2), ghost_lo(1), ghost_hi(1), '"/>'
+                write(my_unit, "(a)") &
+                     '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
+             end if
 #:elif NDIM == 3
              write(my_unit, "(a,I0,a,I0,' ',I0,' ',I0,a)") &
                   '    <Topology TopologyType="', NDIM, 'DCoRectMesh" Dimensions="', &
-                  nx(3)+1, nx(2)+1, nx(1)+1, '"/>'
+                  n_cells(3)+1, n_cells(2)+1, n_cells(1)+1, '"/>'
+             write(my_unit, "(a,6(I0,' ')a)") &
+                  '    <Information Name="GhostOffsets" Value="', &
+                  ghost_lo(3), ghost_hi(3), ghost_lo(2), ghost_hi(2), &
+                  ghost_lo(1), ghost_hi(1), '"/>'
+
              write(my_unit, "(a)") &
                   '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
 #:endif
-             write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', NDIM, '">'
+             write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 3, '">'
 
 #:if NDIM == 2
-             write(my_unit, "(2ES24.17)") origin_recvbuf((n-1)*NDIM + coord_ix)
+             if (viewer == "visit") then
+                write(my_unit, "(3ES24.17)") r0(coord_ix), 0.0_dp
+             else
+                write(my_unit, "(2ES24.17)") r0(coord_ix)
+             end if
 #:elif NDIM == 3
-             write(my_unit, "(3ES24.17)") origin_recvbuf((n-1)*NDIM + coord_ix)
+             write(my_unit, "(3ES24.17)") r0(coord_ix)
 #:endif
              write(my_unit, *) '      </DataItem>'
-             write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', NDIM, '">'
+             write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 3, '">'
 #:if NDIM == 2
-             write(my_unit, "(2ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
+             if (viewer == "visit") then
+                write(my_unit, "(3ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix), 0.0_dp
+             else
+                write(my_unit, "(3ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
+             end if
 #:elif NDIM == 3
              write(my_unit, "(3ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
 #:endif
@@ -267,12 +320,12 @@ contains
 #:if NDIM == 2
                 write(my_unit, "(a,I0,a,I0,a)") &
                      '      <DataItem ItemType="HyperSlab" Dimensions="',&
-                     nx(2), ' ', nx(1), '">'
+                     n_cells(2), ' ', n_cells(1), '">'
                 write(my_unit, "(a, 12(I0,' '),a)") &
                      '        <DataItem Dimensions="3 4"> ', &
-                     n-1, iv-1, out_gc, out_gc, &            ! start
+                     n-1, iv-1, ix_lo(2), ix_lo(1), &            ! start
                      1, 1, 1, 1, &                       ! stride
-                     1, 1, nx(2), nx(1), & ! count
+                     1, 1, n_cells(2), n_cells(1), & ! count
                      '</DataItem>'
                 write(my_unit, "(a, 4(I0,' '),a,I0,a)") &
                      '        <DataItem Dimensions="', n_blocks, n_cc, &
@@ -282,12 +335,12 @@ contains
 #:elif NDIM == 3
                 write(my_unit, "(a,I0,a,I0,a,I0,a)") &
                      '      <DataItem ItemType="HyperSlab" Dimensions="',&
-                     nx(3), ' ', nx(2), ' ', nx(1), '">'
+                     n_cells(3), ' ', n_cells(2), ' ', n_cells(1), '">'
                 write(my_unit, "(a, 15(I0,' '),a)") &
                      '        <DataItem Dimensions="3 5"> ', &
-                     n-1, iv-1, out_gc, out_gc, out_gc, & ! start
+                     n-1, iv-1, ix_lo(3), ix_lo(2), ix_lo(1), & ! start
                      1, 1, 1, 1, 1, &               ! stride
-                     1, 1, nx(3), nx(2), nx(1), & ! count
+                     1, 1, n_cells(3), n_cells(2), n_cells(1), & ! count
                      '</DataItem>'
 
                 write(my_unit, "(a, 5(I0,' '),a,I0,a)") &
@@ -361,5 +414,22 @@ contains
        out_basename = fullpath(last_slash+1:len_path)
     end if
   end subroutine get_basename
+
+  !> Check whether a block face coincides with a domain boundary. This is
+  !> important for rendering ghost cells in Visit.
+  subroutine check_boundary(r0, r1, r0_domain, r1_domain, bnd_lo, bnd_hi)
+    real(dp), intent(in) :: r0(NDIM), r1(NDIM)
+    real(dp), intent(in) :: r0_domain(NDIM), r1_domain(NDIM)
+    logical, intent(out) :: bnd_lo(NDIM), bnd_hi(NDIM)
+    real(dp)             :: dmax
+    integer              :: idim
+
+    dmax = 1e-13_dp * maxval(r1_domain - r0_domain)
+
+    do idim = 1, NDIM
+       bnd_lo(idim) = abs(r0(idim) - r0_domain(idim)) < dmax
+       bnd_hi(idim) = abs(r1(idim) - r1_domain(idim)) < dmax
+    end do
+  end subroutine check_boundary
 
 end module m_io_${NDIM}$d

@@ -397,6 +397,8 @@ contains
     f4%ihi         = bx + n_gc
     f4%max_blocks  = max_blocks
     f4%tree_length = tree_length
+    f4%r_min       = 0.0_dp
+    f4%r_max       = tree_length * trees_per_dim
 
     f4%n_vars = n_vars
     f4%n_temporal_states = n_temporal_states
