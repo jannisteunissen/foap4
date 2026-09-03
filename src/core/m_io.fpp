@@ -154,10 +154,10 @@ contains
     if (present(cc_data)) then
 #:if NDIM == 2
        write(my_unit) cc_data(-out_gc+1:nx(1)+out_gc, &
-         -out_gc+1:nx(2)+out_gc, :, :)
+            -out_gc+1:nx(2)+out_gc, :, :)
 #:elif NDIM == 3
        write(my_unit) cc_data(-out_gc+1:nx(1)+out_gc, &
-         -out_gc+1:nx(2)+out_gc, -out_gc+1:nx(3)+out_gc, :, :)
+            -out_gc+1:nx(2)+out_gc, -out_gc+1:nx(3)+out_gc, :, :)
 #:endif
     else if (present(get_block_cc_data)) then
 #:if NDIM == 2
@@ -255,27 +255,14 @@ contains
                   '  <Grid Name="MeshBlock', n + n_prev_blocks, &
                   '" GridType="Uniform">'
 #:if NDIM == 2
-             if (for_viewer == "visit") then
-                ! Also write 3D mesh in 2D, since Visit otherwise has a bug with
-                ! reading ghost cell data
-                write(my_unit, "(a,I0,' ',I0,' ',I0,a)") &
-                     '    <Topology TopologyType="3DCoRectMesh" Dimensions="', &
-                     2, n_cells(2)+1, n_cells(1)+1, '"/>'
-                write(my_unit, "(a,6(I0,' ')a)") &
-                     '    <Information Name="GhostOffsets" Value="', &
-                     0, 0, ghost_lo(2), ghost_hi(2), ghost_lo(1), ghost_hi(1), '"/>'
-                write(my_unit, "(a)") &
-                     '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
-             else
-                write(my_unit, "(a,I0,' ',I0,a)") &
-                     '    <Topology TopologyType="2DCoRectMesh" Dimensions="', &
-                     n_cells(2)+1, n_cells(1)+1, '"/>'
-                write(my_unit, "(a,4(I0,' ')a)") &
-                     '    <Information Name="GhostOffsets" Value="', &
-                     ghost_lo(2), ghost_hi(2), ghost_lo(1), ghost_hi(1), '"/>'
-                write(my_unit, "(a)") &
-                     '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
-             end if
+             write(my_unit, "(a,I0,' ',I0,a)") &
+                  '    <Topology TopologyType="2DCoRectMesh" Dimensions="', &
+                  n_cells(2)+1, n_cells(1)+1, '"/>'
+             write(my_unit, "(a,4(I0,' ')a)") &
+                  '    <Information Name="GhostOffsets" Value="', &
+                  ghost_lo(2), ghost_hi(2), ghost_lo(1), ghost_hi(1), '"/>'
+             write(my_unit, "(a)") &
+                  '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
 #:elif NDIM == 3
              write(my_unit, "(a,I0,a,I0,' ',I0,' ',I0,a)") &
                   '    <Topology TopologyType="', NDIM, 'DCoRectMesh" Dimensions="', &
@@ -291,22 +278,14 @@ contains
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 3, '">'
 
 #:if NDIM == 2
-             if (viewer == "visit") then
-                write(my_unit, "(3ES24.17)") r0(coord_ix), 0.0_dp
-             else
-                write(my_unit, "(2ES24.17)") r0(coord_ix)
-             end if
+             write(my_unit, "(2ES24.17)") r0(coord_ix)
 #:elif NDIM == 3
              write(my_unit, "(3ES24.17)") r0(coord_ix)
 #:endif
              write(my_unit, *) '      </DataItem>'
              write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 3, '">'
 #:if NDIM == 2
-             if (viewer == "visit") then
-                write(my_unit, "(3ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix), 0.0_dp
-             else
-                write(my_unit, "(3ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
-             end if
+             write(my_unit, "(2ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
 #:elif NDIM == 3
              write(my_unit, "(3ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
 #:endif
@@ -331,7 +310,7 @@ contains
                      '        <DataItem Dimensions="', n_blocks, n_cc, &
                      nx(2) + 2*out_gc, nx(1) + 2*out_gc, &
                      '" Format="Binary" NumberType="Float" Precision="', &
-                storage_size(1.0_fp)/8, '">'
+                     storage_size(1.0_fp)/8, '">'
 #:elif NDIM == 3
                 write(my_unit, "(a,I0,a,I0,a,I0,a)") &
                      '      <DataItem ItemType="HyperSlab" Dimensions="',&
