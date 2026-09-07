@@ -6,6 +6,9 @@ program test_xdmf_writer_${NDIM}$d
   implicit none
   integer :: ierr, mpisize
 
+  real(fp), allocatable :: cc_2d(:, :, :, :)
+  real(fp), allocatable :: cc_3d(:, :, :, :, :)
+
   ! Change this to paraview to view the output in paraview
   character(len=20) :: viewer = "visit"
 
@@ -34,6 +37,18 @@ program test_xdmf_writer_${NDIM}$d
 
 contains
 
+  subroutine get_block_2d(n, cc)
+    integer, intent(in)     :: n !< Index of block
+    real(fp), intent(inout) :: cc(:, :, :)
+    cc = cc_2d(:, :, :, n)
+  end subroutine get_block_2d
+
+  subroutine get_block_3d(n, cc)
+    integer, intent(in)     :: n !< Index of block
+    real(fp), intent(inout) :: cc(:, :, :, :)
+    cc = cc_3d(:, :, :, :, n)
+  end subroutine get_block_3d
+
 #:if NDIM == 2
   subroutine multi_block_test_2d(fname, n_blocks_dim, nx, n_gc_out)
     character(len=*), intent(in) :: fname
@@ -45,7 +60,6 @@ contains
     character(len=10)            :: cc_names(n_cc) = ["rho", "phi"]
     integer, parameter           :: n_gc        = 1
     real(dp), allocatable        :: origin(:, :), dr(:, :)
-    real(fp), allocatable        :: cc_data(:, :, :, :)
     real(dp), parameter          :: time        = 1.0_dp
     integer                      :: i, j, ii, jj, i_block
     integer                      :: lo(2), hi(2)
@@ -59,7 +73,7 @@ contains
 
     n_blocks = product(n_blocks_dim)
     allocate(origin(2, n_blocks), dr(2, n_blocks))
-    allocate(cc_data(lo(1):hi(1), lo(2):hi(2), n_cc, n_blocks))
+    allocate(cc_2d(lo(1):hi(1), lo(2):hi(2), n_cc, n_blocks))
 
     do jj = 1, n_blocks_dim(2)
        do ii = 1, n_blocks_dim(1)
@@ -71,8 +85,8 @@ contains
           do j = lo(2), hi(2)
              do i = lo(1), hi(1)
                 rr = origin(:, i_block) + [i-0.5_dp, j-0.5_dp] * dr(:, i_block)
-                cc_data(i, j, 1, i_block) = real(product(sin(rr * pi)), fp)
-                cc_data(i, j, 2, i_block) = real(product(cos(rr * pi)), fp)
+                cc_2d(i, j, 1, i_block) = real(product(sin(rr * pi)), fp)
+                cc_2d(i, j, 2, i_block) = real(product(cos(rr * pi)), fp)
              end do
           end do
        end do
@@ -80,8 +94,9 @@ contains
 
     call io_xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
          nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, r_min, r_max, &
-         cc_data, time=time, viewer=viewer)
+         get_block_2d, time=time, viewer=viewer)
 
+    deallocate(cc_2d)
   end subroutine multi_block_test_2d
 #:elif NDIM == 3
   subroutine multi_block_test_3d(fname, n_blocks_dim, nx, n_gc_out)
@@ -94,7 +109,6 @@ contains
     character(len=10)            :: cc_names(n_cc) = ["rho", "phi"]
     integer, parameter           :: n_gc        = 1
     real(dp), allocatable        :: origin(:, :), dr(:, :)
-    real(fp), allocatable        :: cc_data(:, :, :, :, :)
     real(dp), parameter          :: time        = 1.0_dp
     integer                      :: i, j, k, ii, jj, kk, i_block
     integer                      :: lo(3), hi(3)
@@ -108,7 +122,7 @@ contains
 
     n_blocks = product(n_blocks_dim)
     allocate(origin(3, n_blocks), dr(3, n_blocks))
-    allocate(cc_data(lo(1):hi(1), lo(2):hi(2), lo(3):hi(3), n_cc, n_blocks))
+    allocate(cc_3d(lo(1):hi(1), lo(2):hi(2), lo(3):hi(3), n_cc, n_blocks))
 
     do kk = 1, n_blocks_dim(3)
        do jj = 1, n_blocks_dim(2)
@@ -124,8 +138,8 @@ contains
                    do i = lo(1), hi(1)
                       rr = origin(:, i_block) + &
                            [i-0.5_dp, j-0.5_dp, k-0.5_dp] * dr(:, i_block)
-                      cc_data(i, j, k, 1, i_block) = real(product(sin(rr * pi)), fp)
-                      cc_data(i, j, k, 2, i_block) = real(product(cos(rr * pi)), fp)
+                      cc_3d(i, j, k, 1, i_block) = real(product(sin(rr * pi)), fp)
+                      cc_3d(i, j, k, 2, i_block) = real(product(cos(rr * pi)), fp)
                    end do
                 end do
              end do
@@ -135,8 +149,7 @@ contains
 
     call io_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
          nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, r_min, r_max, &
-         cc_data, time=time, viewer=viewer)
-
+         get_block_3d, time=time, viewer=viewer)
   end subroutine multi_block_test_3d
 #:endif
 

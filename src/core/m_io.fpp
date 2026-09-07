@@ -76,8 +76,8 @@ contains
 
   !> Write block data to binary files (one per task) and a single .xdmf header file
   subroutine io_xdmf_write_blocks_${NDIM}$DCoRect(mpicomm, filename, n_blocks, nx, n_cc, &
-       cc_names, in_gc, out_gc, origin, dr, r_min, r_max, cc_data, get_block_cc_data, &
-       time, viewer)
+       cc_names, in_gc, out_gc, origin, dr, r_min, r_max, get_block_cc_data, &
+       time, viewer, fill_diagonals)
     integer, parameter           :: NDIM = ${NDIM}$
     type(MPI_comm), intent(in)   :: mpicomm            !< MPI communicator
     character(len=*), intent(in) :: filename           !< File name without extension
@@ -92,20 +92,14 @@ contains
     real(dp), intent(in)         :: dr(NDIM, n_blocks) !< Grid spacing of each block
     real(dp)                     :: r_min(NDIM)        !< Min. coordinate of domain
     real(dp)                     :: r_max(NDIM)        !< Max. coordinate of domain
-    !> Cell-centered data
-#:if NDIM == 2
-    real(fp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
-         -in_gc+1:nx(2)+in_gc, n_cc, n_blocks)
-#:elif NDIM == 3
-    real(fp), intent(in), optional :: cc_data(-in_gc+1:nx(1)+in_gc, &
-         -in_gc+1:nx(2)+in_gc, -in_gc+1:nx(3)+in_gc, n_cc, n_blocks)
-#:endif
     !> Method to get cell-centered data
-    procedure(subr_cc_data_${NDIM}$D), optional :: get_block_cc_data
+    procedure(subr_cc_data_${NDIM}$D) :: get_block_cc_data
     !> Simulation time
     real(dp), intent(in), optional :: time
     !> Which viewer (visit, paraview) will be used
     character(len=*), intent(in), optional :: viewer
+    !> Whether to fill diagional ghost cells through extrapolation (default: true)
+    logical, intent(in), optional :: fill_diagonals
 
     integer                              :: my_unit, n, iv, mpirank, mpisize, ierr
     integer                              :: rank, n_prev_blocks, coord_ix(NDIM)
@@ -117,6 +111,7 @@ contains
 #:endif
     character(len=len_trim(filename)+20) :: binary_fname, binary_basename
     character(len=20)                    :: for_viewer
+    logical                              :: extrap_diag
     integer                              :: i, tag
     real(dp), allocatable                :: dr_recvbuf(:), origin_recvbuf(:)
     real(dp), allocatable                :: dr_sendbuf(:), origin_sendbuf(:)
@@ -127,6 +122,7 @@ contains
     integer                              :: ghost_lo(NDIM), ghost_hi(NDIM)
 
     for_viewer = "visit"; if (present(viewer)) for_viewer = viewer
+    extrap_diag = .true.; if (present(fill_diagonals)) extrap_diag = fill_diagonals
 
     select case (for_viewer)
     case ("visit")
@@ -151,35 +147,24 @@ contains
     open(newunit=my_unit, file=trim(binary_fname), form='unformatted', &
          access='stream', status='replace')
 
-    if (present(cc_data)) then
 #:if NDIM == 2
-       write(my_unit) cc_data(-out_gc+1:nx(1)+out_gc, &
-            -out_gc+1:nx(2)+out_gc, :, :)
+    allocate(cc_block(-in_gc+1:nx(1)+in_gc, -in_gc+1:nx(2)+in_gc, n_cc))
 #:elif NDIM == 3
-       write(my_unit) cc_data(-out_gc+1:nx(1)+out_gc, &
-            -out_gc+1:nx(2)+out_gc, -out_gc+1:nx(3)+out_gc, :, :)
-#:endif
-    else if (present(get_block_cc_data)) then
-#:if NDIM == 2
-       allocate(cc_block(-in_gc+1:nx(1)+in_gc, -in_gc+1:nx(2)+in_gc, n_cc))
-#:elif NDIM == 3
-       allocate(cc_block(-in_gc+1:nx(1)+in_gc, -in_gc+1:nx(2)+in_gc, &
-            -in_gc+1:nx(3)+in_gc, n_cc))
+    allocate(cc_block(-in_gc+1:nx(1)+in_gc, -in_gc+1:nx(2)+in_gc, &
+         -in_gc+1:nx(3)+in_gc, n_cc))
 #:endif
 
-       do n = 1, n_blocks
-          call get_block_cc_data(n, cc_block)
+    do n = 1, n_blocks
+       call get_block_cc_data(n, cc_block)
+       call fill_diagonal_gc(nx, in_gc, out_gc, n_cc, cc_block)
 #:if NDIM == 2
-          write(my_unit) cc_block(-out_gc+1:nx(1)+out_gc, &
-               -out_gc+1:nx(2)+out_gc, :)
+       write(my_unit) cc_block(-out_gc+1:nx(1)+out_gc, &
+            -out_gc+1:nx(2)+out_gc, :)
 #:elif NDIM == 3
-          write(my_unit) cc_block(-out_gc+1:nx(1)+out_gc, &
-               -out_gc+1:nx(2)+out_gc, -out_gc+1:nx(3)+out_gc, :)
+       write(my_unit) cc_block(-out_gc+1:nx(1)+out_gc, &
+            -out_gc+1:nx(2)+out_gc, -out_gc+1:nx(3)+out_gc, :)
 #:endif
-       end do
-    else
-       error stop "Either cc_data or get_block_cc_data should be given"
-    end if
+    end do
 
     close(my_unit)
 
@@ -404,5 +389,103 @@ contains
        bnd_hi(idim) = abs(r1(idim) - r1_domain(idim)) < dmax
     end do
   end subroutine check_boundary
+
+  !> Fill diagonal/edge/corner ghost cells by local linear extrapolation.
+  !> The face (side) ghost cells must already be filled.
+  subroutine fill_diagonal_gc(nx, in_gc, out_gc, n_cc, cc)
+    integer, intent(in)     :: nx(NDIM) !< Number of interior cells per dim
+    integer, intent(in)     :: in_gc    !< Number of ghost layers in input
+    integer, intent(in)     :: out_gc   !< Number of ghost layers to write
+    integer, intent(in)     :: n_cc     !< Number of variables
+#:if NDIM == 2
+    real(dp), intent(inout) :: cc(-in_gc+1:nx(1)+in_gc, &
+         -in_gc+1:nx(2)+in_gc, n_cc)
+    integer                 :: c1, c2
+#:elif NDIM == 3
+    real(dp), intent(inout) :: cc(-in_gc+1:nx(1)+in_gc, &
+         -in_gc+1:nx(2)+in_gc, -in_gc+1:nx(3)+in_gc, n_cc)
+    integer                 :: c1, c2, c3, dim, n, o_dims(2)
+    integer                 :: ia(NDIM), ib(NDIM), ic(NDIM)
+#:endif
+    integer                 :: g, ix(NDIM), di(NDIM)
+
+    do g = 1, out_gc
+
+#:if NDIM == 2
+       ! 2D: fill the four corner ghost regions
+       do c2 = 0, 1
+          do c1 = 0, 1
+             ! Corner index for this ghost layer g
+             ix(1) = merge(1 - g, nx(1) + g, c1 == 0)
+             ix(2) = merge(1 - g, nx(2) + g, c2 == 0)
+             ! Direction pointing back into the domain
+             di(1) = merge(1, -1, c1 == 0)
+             di(2) = merge(1, -1, c2 == 0)
+
+             cc(ix(1), ix(2), :) = &
+                  cc(ix(1)+di(1), ix(2), :) + &
+                  cc(ix(1),       ix(2)+di(2), :) - &
+                  cc(ix(1)+di(1), ix(2)+di(2), :)
+          end do
+       end do
+
+#:elif NDIM == 3
+       ! 3D: first fill the 12 edges, then the 8 corners
+
+       ! Edges parallel to dimension dim
+       do dim = 1, NDIM
+          o_dims = [1 + mod(dim, NDIM), 1 + mod(dim + 1, NDIM)]
+
+          do c2 = 0, 1
+             do c1 = 0, 1
+                di = 0
+                ix = 0
+
+                di(o_dims(1)) = merge(1, -1, c1 == 0)
+                di(o_dims(2)) = merge(1, -1, c2 == 0)
+
+                ix(o_dims(1)) = merge(1 - g, nx(o_dims(1)) + g, c1 == 0)
+                ix(o_dims(2)) = merge(1 - g, nx(o_dims(2)) + g, c2 == 0)
+
+                ia = ix; ia(o_dims(1)) = ia(o_dims(1)) + di(o_dims(1))
+                ib = ix; ib(o_dims(2)) = ib(o_dims(2)) + di(o_dims(2))
+                ic = ix + di
+
+                do n = 1, nx(dim)
+                   ix(dim) = n; ia(dim) = n; ib(dim) = n; ic(dim) = n
+                   cc(ix(1), ix(2), ix(3), :) = &
+                        cc(ia(1), ia(2), ia(3), :) + &
+                        cc(ib(1), ib(2), ib(3), :) - &
+                        cc(ic(1), ic(2), ic(3), :)
+                end do
+             end do
+          end do
+       end do
+
+       ! Corners
+       do c3 = 0, 1
+          do c2 = 0, 1
+             do c1 = 0, 1
+                ! Corner index for this ghost layer g
+                ix(1) = merge(1 - g, nx(1) + g, c1 == 0)
+                ix(2) = merge(1 - g, nx(2) + g, c2 == 0)
+                ix(3) = merge(1 - g, nx(3) + g, c3 == 0)
+                ! Direction pointing back into the domain
+                di(1) = merge(1, -1, c1 == 0)
+                di(2) = merge(1, -1, c2 == 0)
+                di(3) = merge(1, -1, c3 == 0)
+
+                cc(ix(1), ix(2), ix(3), :) = &
+                     cc(ix(1),       ix(2)+di(2), ix(3)+di(3), :) + &
+                     cc(ix(1)+di(1), ix(2),       ix(3)+di(3), :) + &
+                     cc(ix(1)+di(1), ix(2)+di(2), ix(3), :) - &
+                     2 * cc(ix(1)+di(1), ix(2)+di(2), ix(3)+di(3), :)
+             end do
+          end do
+       end do
+#:endif
+    end do
+
+  end subroutine fill_diagonal_gc
 
 end module m_io_${NDIM}$d
