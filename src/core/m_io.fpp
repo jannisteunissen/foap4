@@ -214,6 +214,8 @@ contains
                MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(1), ierr)
           call MPI_Isend(dr_sendbuf, NDIM*n_blocks, &
                MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(2), ierr)
+          call MPI_Waitall(2, requests, MPI_STATUSES_IGNORE, ierr)
+          deallocate(origin_sendbuf, dr_sendbuf)
        end if
 
        if (mpirank == 0) then
@@ -234,7 +236,7 @@ contains
              r1 = r0 + dr_recvbuf((n-1)*NDIM+1:n*NDIM) * nx
              call check_boundary(r0, r1, r_min, r_max, bnd_lo, bnd_hi)
 
-             if (viewer == "visit") then
+             if (for_viewer == "visit") then
                 ghost_lo = out_gc
                 ghost_hi = out_gc
                 where (bnd_lo) ghost_lo = 0
@@ -262,7 +264,7 @@ contains
                   '    <Information Name="GhostOffsets" Value="', &
                   ghost_lo(2), ghost_hi(2), ghost_lo(1), ghost_hi(1), '"/>'
              write(my_unit, "(a)") &
-                  '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
+                  '    <Geometry GeometryType="ORIGIN_DXDY">'
 #:elif NDIM == 3
              write(my_unit, "(a,I0,a,I0,' ',I0,' ',I0,a)") &
                   '    <Topology TopologyType="', NDIM, 'DCoRectMesh" Dimensions="', &
@@ -275,21 +277,13 @@ contains
              write(my_unit, "(a)") &
                   '    <Geometry GeometryType="ORIGIN_DXDYDZ">'
 #:endif
-             write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 3, '">'
+             write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', NDIM, '">'
 
-#:if NDIM == 2
-             write(my_unit, "(2ES24.17)") r0(coord_ix)
-#:elif NDIM == 3
-             write(my_unit, "(3ES24.17)") r0(coord_ix)
-#:endif
-             write(my_unit, *) '      </DataItem>'
-             write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', 3, '">'
-#:if NDIM == 2
-             write(my_unit, "(2ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
-#:elif NDIM == 3
-             write(my_unit, "(3ES24.17)") dr_recvbuf((n-1)*NDIM + coord_ix)
-#:endif
-             write(my_unit, *) '      </DataItem>'
+             write(my_unit, "(*(ES24.17))") r0(coord_ix)
+             write(my_unit, *) '     </DataItem>'
+             write(my_unit, "(a,I0,a)") '      <DataItem Dimensions="', NDIM, '">'
+             write(my_unit, "(*(ES24.17))") dr_recvbuf((n-1)*NDIM + coord_ix)
+             write(my_unit, *) '     </DataItem>'
              write(my_unit, "(a)") '    </Geometry>'
 
              ! Write cell-centered data
