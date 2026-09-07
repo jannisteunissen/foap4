@@ -108,17 +108,18 @@ contains
     integer                              :: rank, n_prev_blocks, coord_ix(NDIM)
     integer, allocatable                 :: blocks_per_rank(:)
 #:if NDIM == 2
-    real(fp), allocatable                :: cc_block(:, :, :)
+    real(fp), allocatable                :: cc_block(:, :, :), cc_super(:, :, :)
 #:elif NDIM == 3
-    real(fp), allocatable                :: cc_block(:, :, :, :)
+    real(fp), allocatable                :: cc_block(:, :, :, :), cc_super(:, :, :, :)
 #:endif
     character(len=len_trim(filename)+20) :: binary_fname, binary_basename
     character(len=20)                    :: for_viewer
     logical                              :: extrap_diag
-    integer                              :: i, tag
-    real(dp), allocatable                :: dr_recvbuf(:), origin_recvbuf(:)
-    real(dp), allocatable                :: dr_sendbuf(:), origin_sendbuf(:)
-    type(mpi_request)                    :: requests(2)
+    integer                              :: tag, status
+    real(dp), allocatable                :: dr_recvbuf(:), dr_sendbuf(:)
+    real(dp), allocatable                :: origin_recvbuf(:), origin_sendbuf(:)
+    integer, allocatable                 :: bx_recvbuf(:), bx_sendbuf(:)
+    type(mpi_request)                    :: requests(3)
     real(dp)                             :: r0(NDIM), r1(NDIM)
     logical                              :: bnd_lo(NDIM), bnd_hi(NDIM)
     integer                              :: ix_lo(NDIM), n_cells(NDIM)
@@ -128,8 +129,8 @@ contains
     integer, allocatable :: super_id(:)    ! super-block id of each block (0 = none)
     integer, allocatable :: super_lo(:, :) ! lower index of super-block (NDIM)
     integer, allocatable :: super_hi(:, :) ! upper index of super-block (NDIM)
-    integer              :: n_super, ix
-    integer              :: lvl, dim, seed
+    integer              :: n_super, ix, ilo(NDIM), ihi(NDIM)
+    integer              :: lvl, dim, seed, bx(NDIM), i_block, ${IJK}$
     integer              :: lo(NDIM), hi(NDIM), test_lo(NDIM), test_hi(NDIM)
     type(ffh_t)          :: h
     type(key_t)          :: key
@@ -157,7 +158,8 @@ contains
     do n = 1, n_blocks
        ! Determine integer index along each dimension
        do dim = 1, NDIM
-          blk_ix(dim, n) = nint((origin(dim, n) - r_min(dim)) / (dr(dim, n) * nx(dim)))
+          blk_ix(dim, n) = nint((origin(dim, n) - r_min(dim)) / &
+               (dr(dim, n) * nx(dim)))
        end do
        key%x = [level(n), blk_ix(:, n)]
        call h%store_value(key, n, ix, existing_key_is_error=.true.)
@@ -200,13 +202,12 @@ contains
        call mark_slab(h, lvl, lo, hi, n_super, n_blocks, super_id)
        super_lo(:, n_super) = lo
        super_hi(:, n_super) = hi
-       print *, seed, lo, hi
     end do
 
     allocate(blocks_per_rank(0:mpisize-1))
 
     blocks_per_rank = 0
-    blocks_per_rank(mpirank) = n_blocks
+    blocks_per_rank(mpirank) = n_super
     call MPI_ALLGATHER(n_blocks, 1, MPI_INTEGER, blocks_per_rank, 1, &
          MPI_INTEGER, mpicomm, ierr)
 
@@ -222,19 +223,41 @@ contains
          -in_gc+1:nx(3)+in_gc, n_cc))
 #:endif
 
-    do n = 1, n_blocks
-       call get_block_cc_data(n, cc_block)
-       call fill_diagonal_gc(nx, in_gc, out_gc, n_cc, cc_block)
+    do n = 1, n_super
+       bx = (super_hi(:, n) - super_lo(:, n) + 1) * nx
 #:if NDIM == 2
-       write(my_unit) cc_block(-out_gc+1:nx(1)+out_gc, &
-            -out_gc+1:nx(2)+out_gc, :)
+       allocate(cc_super(-out_gc+1:bx(1)+out_gc, -out_gc+1:bx(2)+out_gc, n_cc))
 #:elif NDIM == 3
-       write(my_unit) cc_block(-out_gc+1:nx(1)+out_gc, &
-            -out_gc+1:nx(2)+out_gc, -out_gc+1:nx(3)+out_gc, :)
+       allocate(cc_super(-out_gc+1:bx(1)+out_gc, -out_gc+1:bx(2)+out_gc, &
+         -out_gc+1:bx(3)+out_gc, n_cc))
 #:endif
+       print *, n, super_lo(:, n), super_hi(:, n)
+
+       do @{KJI_LOOP_array_to_array(lo, hi)}@
+          key%x = [lvl, ${IJK}$]
+          call h%get_value(key, i_block, status)
+          call get_block_cc_data(i_block, cc_block)
+
+          ilo = ([${IJK}$] - lo) * nx + 1 - out_gc
+          ihi = ilo + nx - 1 + 2 * out_gc
+          print *, ${IJK}$, ilo, ihi
+#:if NDIM == 2
+          cc_super(ilo(1):ihi(1), ilo(2):ihi(2), :) = &
+               cc_block(-out_gc+1:nx(1)+out_gc, -out_gc+1:nx(2)+out_gc, :)
+#:elif NDIM == 3
+          cc_super(ilo(1):ihi(1), ilo(2):ihi(2), ilo(3):ihi(3), :) = &
+               cc_block(-out_gc+1:nx(1)+out_gc, -out_gc+1:nx(2)+out_gc, &
+               -out_gc+1:nx(3)+out_gc, :)
+#:endif
+       end do; ${KJI_CLOSE_LOOP}$
+
+       call fill_diagonal_gc(bx, out_gc, out_gc, n_cc, cc_super)
+       write(my_unit) cc_super
+       deallocate(cc_super)
     end do
 
     close(my_unit)
+    stop
 
     if (mpirank == 0) then
        ! Write header
@@ -258,27 +281,34 @@ contains
     do rank = 0, mpisize-1
 
        if (mpirank == rank) then
-          allocate(origin_sendbuf(NDIM*n_blocks))
-          allocate(dr_sendbuf(NDIM*n_blocks))
-          origin_sendbuf(:) = pack(origin, .true.)
-          dr_sendbuf(:) = pack(dr, .true.)
+          allocate(origin_sendbuf(NDIM*n_super))
+          allocate(dr_sendbuf(NDIM*n_super))
+          allocate(bx_sendbuf(NDIM*n_super))
+          origin_sendbuf(:) = pack(super_origin, .true.)
+          dr_sendbuf(:) = pack(super_dr, .true.)
+          bx_sendbuf(:) = pack((super_hi(:, n) - super_lo(:, n) + 1) * nx, .true.)
 
-          call MPI_Isend(origin_sendbuf, NDIM*n_blocks, &
+          call MPI_Isend(origin_sendbuf, NDIM*n_super, &
                MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(1), ierr)
-          call MPI_Isend(dr_sendbuf, NDIM*n_blocks, &
-               MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(2), ierr)
-          call MPI_Waitall(2, requests, MPI_STATUSES_IGNORE, ierr)
+          call MPI_Isend(dr_sendbuf, NDIM*n_super, &
+               MPI_DOUBLE_PRECISION, 0, tag+1, mpicomm, requests(2), ierr)
+          call MPI_Isend(bx_sendbuf, NDIM*n_super, &
+               MPI_INTEGER, 0, tag+2, mpicomm, requests(3), ierr)
+          call MPI_Waitall(3, requests, MPI_STATUSES_IGNORE, ierr)
           deallocate(origin_sendbuf, dr_sendbuf)
        end if
 
        if (mpirank == 0) then
           allocate(origin_recvbuf(NDIM*blocks_per_rank(rank)))
           allocate(dr_recvbuf(NDIM*blocks_per_rank(rank)))
+          allocate(bx_recvbuf(NDIM*blocks_per_rank(rank)))
 
           call MPI_Recv(origin_recvbuf, NDIM*blocks_per_rank(rank), &
                MPI_DOUBLE_PRECISION, rank, tag, mpicomm, MPI_STATUS_IGNORE, ierr)
           call MPI_Recv(dr_recvbuf, NDIM*blocks_per_rank(rank), &
-               MPI_DOUBLE_PRECISION, rank, tag, mpicomm, MPI_STATUS_IGNORE, ierr)
+               MPI_DOUBLE_PRECISION, rank, tag+1, mpicomm, MPI_STATUS_IGNORE, ierr)
+          call MPI_Recv(bx_recvbuf, NDIM*blocks_per_rank(rank), &
+               MPI_INTEGER, rank, tag+2, mpicomm, MPI_STATUS_IGNORE, ierr)
 
           ! Get name corresponding to this rank
           call get_fname_rank(trim(filename), '.bin', rank, binary_fname)
@@ -567,18 +597,17 @@ contains
     integer                    :: ${IJK}$, i_block, status
     type(key_t)                :: key
 
+    slab_available = .false.
     do @{KJI_LOOP_array_to_array(lo, hi)}@
        key%x = [lvl, ${IJK}$]
        call h%get_value(key, i_block, status)
-
-       if (status /= 0) then
-          slab_available = .false.
+       if (status == -1) then
           return
        else if (ids(i_block) /= 0) then
-          slab_available = .false.
           return
        end if
     end do; ${KJI_CLOSE_LOOP}$
+    slab_available = .true.
   end function slab_available
 
   !> Mark all blocks in the slab as belonging to the current super-block.
