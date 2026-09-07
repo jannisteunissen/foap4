@@ -7,6 +7,7 @@
 #:include 'definitions_parallel.fpp'
 module m_io_${NDIM}$d
   use mpi_f08
+  use m_io_hash_${NDIM}$d
   use, intrinsic :: iso_c_binding
   use m_foap4_types_${NDIM}$d
 
@@ -59,7 +60,8 @@ contains
     call io_xdmf_write_blocks_${NDIM}$DCoRect(f4%mpicomm, trim(full_fname), &
          f4%n_blocks, f4%bx, f4%n_vars, &
          f4%var_names(1:f4%n_vars), f4%n_gc, out_gc, &
-         f4%block_origin(:, 1:f4%n_blocks), dr, f4%r_min, f4%r_max, &
+         f4%block_origin(:, 1:f4%n_blocks), dr, f4%block_level(1:f4%n_blocks),&
+         f4%r_min, f4%r_max, &
          get_block_cc_data=get_block_data, time=f4%time, viewer=viewer)
     t1 = MPI_Wtime()
     f4%wtime_write_grid = f4%wtime_write_grid + t1 - t0
@@ -76,7 +78,7 @@ contains
 
   !> Write block data to binary files (one per task) and a single .xdmf header file
   subroutine io_xdmf_write_blocks_${NDIM}$DCoRect(mpicomm, filename, n_blocks, nx, n_cc, &
-       cc_names, in_gc, out_gc, origin, dr, r_min, r_max, get_block_cc_data, &
+       cc_names, in_gc, out_gc, origin, dr, level, r_min, r_max, get_block_cc_data, &
        time, viewer, fill_diagonals)
     integer, parameter           :: NDIM = ${NDIM}$
     type(MPI_comm), intent(in)   :: mpicomm            !< MPI communicator
@@ -90,6 +92,7 @@ contains
     !> Origin of each block
     real(dp), intent(in)         :: origin(NDIM, n_blocks)
     real(dp), intent(in)         :: dr(NDIM, n_blocks) !< Grid spacing of each block
+    integer, intent(in)          :: level(n_blocks)    !< Level of each block
     real(dp)                     :: r_min(NDIM)        !< Min. coordinate of domain
     real(dp)                     :: r_max(NDIM)        !< Max. coordinate of domain
     !> Method to get cell-centered data
@@ -121,6 +124,16 @@ contains
     integer                              :: ix_lo(NDIM), n_cells(NDIM)
     integer                              :: ghost_lo(NDIM), ghost_hi(NDIM)
 
+    integer, allocatable :: blk_ix(:, :)   ! integer index (NDIM) of each block
+    integer, allocatable :: super_id(:)    ! super-block id of each block (0 = none)
+    integer, allocatable :: super_lo(:, :) ! lower index of super-block (NDIM)
+    integer, allocatable :: super_hi(:, :) ! upper index of super-block (NDIM)
+    integer              :: n_super, ix
+    integer              :: lvl, dim, seed
+    integer              :: lo(NDIM), hi(NDIM), test_lo(NDIM), test_hi(NDIM)
+    type(ffh_t)          :: h
+    type(key_t)          :: key
+
     for_viewer = "visit"; if (present(viewer)) for_viewer = viewer
     extrap_diag = .true.; if (present(fill_diagonals)) extrap_diag = fill_diagonals
 
@@ -135,6 +148,61 @@ contains
 
     call MPI_COMM_RANK(mpicomm, mpirank, ierr)
     call MPI_COMM_SIZE(mpicomm, mpisize, ierr)
+
+    allocate(super_id(n_blocks))
+    allocate(super_lo(NDIM, n_blocks), super_hi(NDIM, n_blocks))
+    allocate(blk_ix(NDIM, n_blocks))
+    super_id = 0
+
+    do n = 1, n_blocks
+       ! Determine integer index along each dimension
+       do dim = 1, NDIM
+          blk_ix(dim, n) = nint((origin(dim, n) - r_min(dim)) / (dr(dim, n) * nx(dim)))
+       end do
+       key%x = [level(n), blk_ix(:, n)]
+       call h%store_value(key, n, ix, existing_key_is_error=.true.)
+    end do
+
+    ! Grow super-blocks (rectangles of same-level blocks)
+    n_super = 0
+    do seed = 1, n_blocks
+       if (super_id(seed) /= 0) cycle
+
+       n_super = n_super + 1
+       lvl = level(seed)
+       lo  = blk_ix(:, seed)
+       hi  = blk_ix(:, seed)
+
+       ! Try to extend the rectangle one dimension at a time
+       do dim = 1, NDIM
+          test_lo = lo
+          test_hi = hi
+
+          ! Extend in +dim direction
+          do
+             test_lo(dim) = hi(dim) + 1
+             test_hi(dim) = hi(dim) + 1
+             if (.not. slab_available(h, lvl, test_lo, test_hi, &
+                  n_blocks, super_id)) exit
+             hi(dim) = test_hi(dim)
+          end do
+
+          ! Extend in -dim direction
+          do
+             test_lo(dim) = lo(dim) - 1
+             test_hi(dim) = lo(dim) - 1
+             if (.not. slab_available(h, lvl, test_lo, test_hi, &
+                  n_blocks, super_id)) exit
+             lo(dim) = test_lo(dim)
+          end do
+       end do
+
+       call mark_slab(h, lvl, lo, hi, n_super, n_blocks, super_id)
+       super_lo(:, n_super) = lo
+       super_hi(:, n_super) = hi
+       print *, seed, lo, hi
+    end do
+
     allocate(blocks_per_rank(0:mpisize-1))
 
     blocks_per_rank = 0
@@ -487,5 +555,47 @@ contains
     end do
 
   end subroutine fill_diagonal_gc
+
+
+  !> Check that the whole slab at position pos (perpendicular to dim,
+  !> spanning lo:hi in the other dims) exists and is unassigned.
+  logical function slab_available(h, lvl, lo, hi, n_blocks, ids)
+    type(ffh_t), intent(inout) :: h
+    integer, intent(in)        :: lvl, lo(NDIM), hi(NDIM)
+    integer, intent(in)        :: n_blocks
+    integer, intent(in)        :: ids(n_blocks)
+    integer                    :: ${IJK}$, i_block, status
+    type(key_t)                :: key
+
+    do @{KJI_LOOP_array_to_array(lo, hi)}@
+       key%x = [lvl, ${IJK}$]
+       call h%get_value(key, i_block, status)
+
+       if (status /= 0) then
+          slab_available = .false.
+          return
+       else if (ids(i_block) /= 0) then
+          slab_available = .false.
+          return
+       end if
+    end do; ${KJI_CLOSE_LOOP}$
+  end function slab_available
+
+  !> Mark all blocks in the slab as belonging to the current super-block.
+  subroutine mark_slab(h, lvl, lo, hi, n_super, n_blocks, ids)
+    type(ffh_t), intent(inout) :: h
+    integer, intent(in)        :: lvl, lo(NDIM), hi(NDIM)
+    integer, intent(in)        :: n_super
+    integer, intent(in)        :: n_blocks
+    integer, intent(inout)     :: ids(n_blocks)
+    integer                    :: ${IJK}$, i_block, status
+    type(key_t)                :: key
+
+    do @{KJI_LOOP_array_to_array(lo, hi)}@
+       key%x = [lvl, ${IJK}$]
+       call h%get_value(key, i_block, status)
+       ids(i_block) = n_super
+    end do; ${KJI_CLOSE_LOOP}$
+  end subroutine mark_slab
 
 end module m_io_${NDIM}$d

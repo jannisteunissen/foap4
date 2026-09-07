@@ -155,6 +155,7 @@ COMMON_OBJS := \
     m_foap4_types \
     p4est_wrapper \
     m_io \
+    m_io_hash \
     m_rk \
     m_amr_flags \
     m_physics_advection \
@@ -319,20 +320,23 @@ $(OBJDIR)/m_foap4_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 $(OBJDIR)/m_rk_2d.o: $(OBJDIR)/m_foap4_types_2d.o
 $(OBJDIR)/m_rk_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
-$(OBJDIR)/m_io_2d.o: $(OBJDIR)/m_foap4_types_2d.o
-$(OBJDIR)/m_io_3d.o: $(OBJDIR)/m_foap4_types_3d.o
+$(OBJDIR)/m_io_2d.o: $(OBJDIR)/m_foap4_types_2d.o $(OBJDIR)/m_io_hash_2d.o
+$(OBJDIR)/m_io_3d.o: $(OBJDIR)/m_foap4_types_3d.o $(OBJDIR)/m_io_hash_3d.o
+
+$(OBJDIR)/m_io_hash_2d.o: $(GENDIR)/ffhash_inc.f90
+$(OBJDIR)/m_io_hash_3d.o: $(GENDIR)/ffhash_inc.f90
 
 $(OBJDIR)/m_amr_flags_2d.o: $(OBJDIR)/m_foap4_2d.o
 $(OBJDIR)/m_amr_flags_3d.o: $(OBJDIR)/m_foap4_3d.o
 
 $(OBJDIR)/m_physics_advection_2d.o: $(OBJDIR)/m_foap4_types_2d.o
-$(OBJDIR)/m_physics_advection_3d.o: $(OBJDIR)/m_foap4_types_2d.o
+$(OBJDIR)/m_physics_advection_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
 $(OBJDIR)/m_physics_euler_2d.o: $(OBJDIR)/m_foap4_types_2d.o
-$(OBJDIR)/m_physics_euler_3d.o: $(OBJDIR)/m_foap4_types_2d.o
+$(OBJDIR)/m_physics_euler_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
 $(OBJDIR)/m_physics_shallow_water_2d.o: $(OBJDIR)/m_foap4_types_2d.o
-$(OBJDIR)/m_physics_shallow_water_3d.o: $(OBJDIR)/m_foap4_types_2d.o
+$(OBJDIR)/m_physics_shallow_water_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
 # ==============================================================================
 # Dependencies for the targets

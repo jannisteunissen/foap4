@@ -60,6 +60,7 @@ contains
     character(len=10)            :: cc_names(n_cc) = ["rho", "phi"]
     integer, parameter           :: n_gc        = 1
     real(dp), allocatable        :: origin(:, :), dr(:, :)
+    integer, allocatable         :: levels(:)
     real(dp), parameter          :: time        = 1.0_dp
     integer                      :: i, j, ii, jj, i_block
     integer                      :: lo(2), hi(2)
@@ -72,8 +73,9 @@ contains
     hi = nx + n_gc
 
     n_blocks = product(n_blocks_dim)
-    allocate(origin(2, n_blocks), dr(2, n_blocks))
+    allocate(origin(2, n_blocks), dr(2, n_blocks), levels(n_blocks))
     allocate(cc_2d(lo(1):hi(1), lo(2):hi(2), n_cc, n_blocks))
+    levels(:) = 1
 
     do jj = 1, n_blocks_dim(2)
        do ii = 1, n_blocks_dim(1)
@@ -93,7 +95,7 @@ contains
     end do
 
     call io_xdmf_write_blocks_2DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, r_min, r_max, &
+         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, levels, r_min, r_max, &
          get_block_2d, time=time, viewer=viewer)
 
     deallocate(cc_2d)
@@ -109,6 +111,7 @@ contains
     character(len=10)            :: cc_names(n_cc) = ["rho", "phi"]
     integer, parameter           :: n_gc        = 1
     real(dp), allocatable        :: origin(:, :), dr(:, :)
+    integer, allocatable         :: levels(:)
     real(dp), parameter          :: time        = 1.0_dp
     integer                      :: i, j, k, ii, jj, kk, i_block
     integer                      :: lo(3), hi(3)
@@ -121,8 +124,9 @@ contains
     hi = nx + n_gc
 
     n_blocks = product(n_blocks_dim)
-    allocate(origin(3, n_blocks), dr(3, n_blocks))
+    allocate(origin(3, n_blocks), dr(3, n_blocks), levels(n_blocks))
     allocate(cc_3d(lo(1):hi(1), lo(2):hi(2), lo(3):hi(3), n_cc, n_blocks))
+    levels(:) = 1
 
     do kk = 1, n_blocks_dim(3)
        do jj = 1, n_blocks_dim(2)
@@ -148,7 +152,7 @@ contains
     end do
 
     call io_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
-         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, r_min, r_max, &
+         nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, levels, r_min, r_max, &
          get_block_3d, time=time, viewer=viewer)
   end subroutine multi_block_test_3d
 #:endif
