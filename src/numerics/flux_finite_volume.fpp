@@ -142,7 +142,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
        MPI_MIN, f4%mpicomm, ierr)
 
   t1 = MPI_Wtime()
-  f4%wtime_finite_volume = f4%wtime_finite_volume + t1 - t0
+  f4%wtimes(f4_timer_finite_volume) = f4%wtimes(f4_timer_finite_volume) + t1 - t0
 
   call f4_fix_c2f_flux(f4, n_tvars, i_tvars, s_out)
 

@@ -194,63 +194,38 @@ contains
     type(foap4_t), intent(inout) :: f4
 
     f4%wtime_t0 = MPI_Wtime()
-    f4%wtime_gc_fill_round1 = 0.0_dp
-    f4%wtime_gc_fill_round2 = 0.0_dp
-    f4%wtime_gc_fill_buff_round1 = 0.0_dp
-    f4%wtime_gc_fill_buff_round2 = 0.0_dp
-    f4%wtime_adjust_ref_p4est = 0.0_dp
-    f4%wtime_adjust_ref_foap4 = 0.0_dp
-    f4%wtime_partition = 0.0_dp
-    f4%wtime_write_grid = 0.0_dp
-    f4%wtime_update_gc_pattern = 0.0_dp
-    f4%wtime_exchange_buffers = 0.0_dp
-    f4%wtime_flux_fix = 0.0_dp
-    f4%wtime_finite_volume = 0.0_dp
+    f4%wtimes(f4_timer_gc_fill_round1) = 0.0_dp
+    f4%wtimes(f4_timer_gc_fill_round2) = 0.0_dp
+    f4%wtimes(f4_timer_gc_fill_buff_round1) = 0.0_dp
+    f4%wtimes(f4_timer_gc_fill_buff_round2) = 0.0_dp
+    f4%wtimes(f4_timer_adjust_ref_p4est) = 0.0_dp
+    f4%wtimes(f4_timer_adjust_ref_foap4) = 0.0_dp
+    f4%wtimes(f4_timer_partition) = 0.0_dp
+    f4%wtimes(f4_timer_write_grid) = 0.0_dp
+    f4%wtimes(f4_timer_update_gc_pattern) = 0.0_dp
+    f4%wtimes(f4_timer_exchange_buffers) = 0.0_dp
+    f4%wtimes(f4_timer_flux_fix) = 0.0_dp
+    f4%wtimes(f4_timer_finite_volume) = 0.0_dp
+    f4%wtimes(f4_timer_construct_mesh) = 0.0_dp
   end subroutine f4_reset_wtime
 
   !> Print wall clock time measurements
   subroutine f4_print_wtime(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: ierr
-    integer, parameter           :: n_timers = 12
-    real(dp)                     :: local_times(n_timers)
+
+    real(dp)                     :: local_times(f4_n_timers)
     real(dp)                     :: local_total
-    real(dp)                     :: local_fracs(n_timers)
-    real(dp)                     :: sum_fracs(n_timers), min_fracs(n_timers)
-    real(dp)                     :: max_fracs(n_timers)
+    real(dp)                     :: local_fracs(f4_n_timers)
+    real(dp)                     :: sum_fracs(f4_n_timers), min_fracs(f4_n_timers)
+    real(dp)                     :: max_fracs(f4_n_timers)
     real(dp)                     :: avg_frac
     real(dp)                     :: send_total(1), recv_total(1)
     real(dp)                     :: local_sum_frac(1)
-    character(len=25)            :: timer_names(n_timers)
     integer                      :: i
 
-    timer_names(1)  = "gc_fill_round1"
-    timer_names(2)  = "gc_fill_round2"
-    timer_names(3)  = "gc_fill_buff_round1"
-    timer_names(4)  = "gc_fill_buff_round2"
-    timer_names(5)  = "adjust_ref_p4est"
-    timer_names(6)  = "adjust_ref_foap4"
-    timer_names(7)  = "partition"
-    timer_names(8)  = "write_grid"
-    timer_names(9)  = "update_gc_pattern"
-    timer_names(10) = "exchange_buffers"
-    timer_names(11) = "flux_fix"
-    timer_names(12) = "finite_volume"
-
     local_total = MPI_Wtime() - f4%wtime_t0
-
-    local_times(1)  = f4%wtime_gc_fill_round1
-    local_times(2)  = f4%wtime_gc_fill_round2
-    local_times(3)  = f4%wtime_gc_fill_buff_round1
-    local_times(4)  = f4%wtime_gc_fill_buff_round2
-    local_times(5)  = f4%wtime_adjust_ref_p4est
-    local_times(6)  = f4%wtime_adjust_ref_foap4
-    local_times(7)  = f4%wtime_partition
-    local_times(8)  = f4%wtime_write_grid
-    local_times(9)  = f4%wtime_update_gc_pattern
-    local_times(10) = f4%wtime_exchange_buffers
-    local_times(11) = f4%wtime_flux_fix
-    local_times(12) = f4%wtime_finite_volume
+    local_times = f4%wtimes
 
     if (local_total > 0.0_dp) then
        local_fracs = local_times * (1e2_dp / local_total)
@@ -261,11 +236,11 @@ contains
     local_sum_frac(1) = sum(local_fracs)
     send_total(1) = local_total
 
-    call MPI_Reduce(local_fracs,   sum_fracs,      n_timers, &
+    call MPI_Reduce(local_fracs,   sum_fracs,      f4_n_timers, &
          MPI_DOUBLE_PRECISION, MPI_SUM, 0, f4%mpicomm, ierr)
-    call MPI_Reduce(local_fracs,   min_fracs,      n_timers, &
+    call MPI_Reduce(local_fracs,   min_fracs,      f4_n_timers, &
          MPI_DOUBLE_PRECISION, MPI_MIN, 0, f4%mpicomm, ierr)
-    call MPI_Reduce(local_fracs,   max_fracs,      n_timers, &
+    call MPI_Reduce(local_fracs,   max_fracs,      f4_n_timers, &
          MPI_DOUBLE_PRECISION, MPI_MAX, 0, f4%mpicomm, ierr)
     call MPI_Reduce(send_total,    recv_total,  1, &
          MPI_DOUBLE_PRECISION, MPI_MAX, 0, f4%mpicomm, ierr)
@@ -275,9 +250,9 @@ contains
        write(*, "(A,E15.6,A)") "total_runtime ", recv_total(1), " s"
        write(*, "(A25,3A11)") "timer                    ", "avg %", "min %", "max %"
        write(*, "(A25,3A11)") repeat("-", 25), ("-----------", i=1,3)
-       do i = 1, n_timers
+       do i = 1, f4_n_timers
           avg_frac = sum_fracs(i) / f4%mpisize
-          write(*, "(A25,3F11.3)") timer_names(i), avg_frac, min_fracs(i), max_fracs(i)
+          write(*, "(A25,3F11.3)") f4_timer_names(i), avg_frac, min_fracs(i), max_fracs(i)
        end do
        write(*, "(A25,3F11.3)") "sum_of_above             ", &
             sum(sum_fracs) / f4%mpisize, sum(min_fracs), sum(max_fracs)
@@ -300,6 +275,9 @@ contains
     ${EXIT_DATA_DELETE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
     ${EXIT_DATA_DELETE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
     ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
+    ${EXIT_DATA_DELETE('f4%gc_recv_offset, f4%gc_send_offset')}$
+    ${EXIT_DATA_DELETE('f4%gc_recv_offset_c2f, f4%gc_send_offset_c2f')}$
+    ${EXIT_DATA_DELETE('f4%gc_recv_offset_fluxfix, f4%gc_send_offset_fluxfix')}$
 
     ${EXIT_DATA_DELETE('f4%gc_phys_iface')}$
     ${EXIT_DATA_DELETE('f4%gc_srl_local')}$
@@ -347,6 +325,13 @@ contains
     deallocate(f4%gc_phys)
     deallocate(f4%gc_f2c_to_buf_fluxfix)
     deallocate(f4%gc_c2f_from_buf_fluxfix)
+
+    deallocate(f4%gc_recv_offset)
+    deallocate(f4%gc_send_offset)
+    deallocate(f4%gc_recv_offset_c2f)
+    deallocate(f4%gc_send_offset_c2f)
+    deallocate(f4%gc_recv_offset_fluxfix)
+    deallocate(f4%gc_send_offset_fluxfix)
 
     f4%gc_mesh_revision = -1
   end subroutine f4_destroy
@@ -495,6 +480,7 @@ contains
     if (associated(f4%bc_callback)) call f4%bc_callback(f4)
 
     t1 = MPI_Wtime()
+    f4%wtimes(f4_timer_construct_mesh) = f4%wtimes(f4_timer_construct_mesh) + t1 - t0
 
   end subroutine f4_construct_brick
 
@@ -821,7 +807,8 @@ contains
          f4%mpirank, f4%mpisize)
     f4%gc_mesh_revision = mesh_revision
     t1 = MPI_Wtime()
-    f4%wtime_update_gc_pattern = f4%wtime_update_gc_pattern + t1 - t0
+    f4%wtimes(f4_timer_update_gc_pattern) = &
+         f4%wtimes(f4_timer_update_gc_pattern) + t1 - t0
   end subroutine update_ghostcell_pattern
 
   !> Store the information required to update ghost cells
@@ -1862,8 +1849,6 @@ contains
           end do
        end do
     end do
-
-    i_buf0 = i_buf0 + 8 * n_vars * ${klim}$ * ${jlim}$ * ${ilim}$
 
     if (odd_n_gc) then
        ${LOOP_FLAT('collapse(4) private(ivar, k_c, j_c, i_c, i_buf, fine, iq, offset, i_buf0)')}$
@@ -3389,33 +3374,39 @@ contains
     t1 = MPI_Wtime()
     call fill_ghostcell_buffers_round_one(f4, n_vars, i_vars, block_offset)
     t0 = MPI_Wtime()
-    f4%wtime_gc_fill_buff_round1 = f4%wtime_gc_fill_buff_round1 + t0 - t1
+    f4%wtimes(f4_timer_gc_fill_buff_round1) = &
+         f4%wtimes(f4_timer_gc_fill_buff_round1) + t0 - t1
 
     call f4_exchange_buffers(f4)
     t1 = MPI_Wtime()
-    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t1 - t0
+    f4%wtimes(f4_timer_exchange_buffers) = &
+         f4%wtimes(f4_timer_exchange_buffers) + t1 - t0
 
     call fill_ghostcells_round_one(f4, n_vars, i_vars, block_offset)
 
     t0 = MPI_Wtime()
-    f4%wtime_gc_fill_round1 = f4%wtime_gc_fill_round1 + t0 - t1
+    f4%wtimes(f4_timer_gc_fill_round1) = &
+         f4%wtimes(f4_timer_gc_fill_round1) + t0 - t1
 
     ! Do coarse-to-fine refinement boundaries last, so that ghost cells
     ! required for interpolation have been filled
     call fill_ghostcell_buffers_round_two(f4, n_vars, i_vars, block_offset)
 
     t1 = MPI_Wtime()
-    f4%wtime_gc_fill_buff_round2 = f4%wtime_gc_fill_buff_round2 + t1 - t0
+    f4%wtimes(f4_timer_gc_fill_buff_round2) = &
+         f4%wtimes(f4_timer_gc_fill_buff_round2) + t1 - t0
 
     call f4_exchange_buffers(f4)
 
     t0 = MPI_Wtime()
-    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
+    f4%wtimes(f4_timer_exchange_buffers) = &
+         f4%wtimes(f4_timer_exchange_buffers) + t0 - t1
 
     call fill_ghostcells_round_two(f4, n_vars, i_vars, block_offset)
 
     t1 = MPI_Wtime()
-    f4%wtime_gc_fill_round2 = f4%wtime_gc_fill_round2 + t1 - t0
+    f4%wtimes(f4_timer_gc_fill_round2) = &
+         f4%wtimes(f4_timer_gc_fill_round2) + t1 - t0
 
   end subroutine f4_update_ghostcells
 
@@ -3443,7 +3434,8 @@ contains
          f4%refinement_flags(1:f4%n_blocks), has_changed)
 
     t1 = MPI_Wtime()
-    f4%wtime_adjust_ref_p4est = f4%wtime_adjust_ref_p4est + t1 - t0
+    f4%wtimes(f4_timer_adjust_ref_p4est) = &
+         f4%wtimes(f4_timer_adjust_ref_p4est) + t1 - t0
 
     if (has_changed == 0) return
 
@@ -3636,7 +3628,8 @@ contains
 #:endif
 
     t0 = MPI_Wtime()
-    f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t0 - t1
+    f4%wtimes(f4_timer_adjust_ref_foap4) = &
+         f4%wtimes(f4_timer_adjust_ref_foap4) + t0 - t1
 
     call f4_get_load_imbalance(f4, load_imbalance)
 
@@ -3647,7 +3640,8 @@ contains
     call set_face_data_storage(f4)
     if (associated(f4%bc_callback)) call f4%bc_callback(f4)
     t1 = MPI_Wtime()
-    f4%wtime_adjust_ref_foap4 = f4%wtime_adjust_ref_foap4 + t1 - t0
+    f4%wtimes(f4_timer_adjust_ref_foap4) = &
+         f4%wtimes(f4_timer_adjust_ref_foap4) + t1 - t0
 
   end subroutine f4_adjust_refinement
 
@@ -3742,19 +3736,6 @@ contains
        phi = 0.0_fp
     end if
   end function limiter_gminmod
-
-  !> Minmod limiter
-  elemental function limiter_minmod(a, b) result(phi)
-    @{ROUTINE_SEQ()}@
-    real(fp), intent(in) :: a, b
-    real(fp)             :: phi
-
-    if (a * b > 0) then
-       phi = sign(min(abs(a), abs(b)), a)
-    else
-       phi = 0.0_fp
-    end if
-  end function limiter_minmod
 
   !> Get load imbalance, defined as the ratio of max_blocks/avg_blocks,
   !> normalized by the minimum achievable imbalance for the given block count
@@ -3888,7 +3869,7 @@ contains
     call f4_set_quadrants(f4)
 
     t1 = MPI_Wtime()
-    f4%wtime_partition = f4%wtime_partition + t1 - t0
+    f4%wtimes(f4_timer_partition) = f4%wtimes(f4_timer_partition) + t1 - t0
   end subroutine f4_partition
 
   !> Performs a binary search for the index ix such that:
@@ -3896,9 +3877,6 @@ contains
   !>
   !> Returns:
   !>   ix    : the bracketing index (1 <= ix < n-1)
-  !>   ix = 0  if key <  array(1)
-  !>   ix = -1 if key >  array(n)
-  !>   ix = -2 if no valid bracketing index was found (shouldn't happen if key in bounds)
   pure function find_bracket(n, array, key) result(ix)
     integer, intent(in) :: n
     integer, intent(in) :: array(n)
@@ -4220,7 +4198,7 @@ contains
     call fixflux_to_buf(f4, n_vars, i_vars)
 
     t1 = MPI_Wtime()
-    f4%wtime_flux_fix = f4%wtime_flux_fix + t1 - t0
+    f4%wtimes(f4_timer_flux_fix) = f4%wtimes(f4_timer_flux_fix) + t1 - t0
 
     ! Update send/recv offsets
     f4%recv_offset(:) = f4%gc_recv_offset_fluxfix * n_vars
@@ -4228,12 +4206,13 @@ contains
     call f4_exchange_buffers(f4)
 
     t0 = MPI_Wtime()
-    f4%wtime_exchange_buffers = f4%wtime_exchange_buffers + t0 - t1
+    f4%wtimes(f4_timer_exchange_buffers) = &
+         f4%wtimes(f4_timer_exchange_buffers) + t0 - t1
 
     call fixflux_correct(f4, n_vars, i_vars, s_out)
 
     t1 = MPI_Wtime()
-    f4%wtime_flux_fix = f4%wtime_flux_fix + t1 - t0
+    f4%wtimes(f4_timer_flux_fix) = f4%wtimes(f4_timer_flux_fix) + t1 - t0
 
   end subroutine f4_fix_c2f_flux
 

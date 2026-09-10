@@ -105,6 +105,39 @@ module m_foap4_types_${NDIM}$d
      integer, allocatable :: i(:)
   end type int_array_t
 
+  ! For measuring wall clock time
+  integer, parameter, public :: &
+       f4_timer_gc_fill_round1 = 1, &
+       f4_timer_gc_fill_round2 = 2, &
+       f4_timer_gc_fill_buff_round1 = 3, &
+       f4_timer_gc_fill_buff_round2 = 4, &
+       f4_timer_adjust_ref_p4est = 5, &
+       f4_timer_adjust_ref_foap4 = 6, &
+       f4_timer_partition = 7, &
+       f4_timer_write_grid = 8, &
+       f4_timer_update_gc_pattern = 9, &
+       f4_timer_exchange_buffers = 10, &
+       f4_timer_flux_fix = 11, &
+       f4_timer_finite_volume = 12, &
+       f4_timer_construct_mesh = 13, &
+       f4_n_timers = 13
+
+  character(len=25), parameter, public :: f4_timer_names(f4_n_timers) = &
+       [character(len=25) :: &
+       "gc_fill_round1", &
+       "gc_fill_round2", &
+       "gc_fill_buff_round1", &
+       "gc_fill_buff_round2", &
+       "adjust_ref_p4est", &
+       "adjust_ref_foap4", &
+       "partition", &
+       "write_grid", &
+       "update_gc_pattern", &
+       "exchange_buffers", &
+       "flux_fix", &
+       "finite_volume", &
+       "construct_mesh"]
+
   !> Type to describe a face boundary. The same data structure is defined in
   !> p4est_wrapper.c
   type, bind(c), public :: bnd_face_t
@@ -248,18 +281,7 @@ module m_foap4_types_${NDIM}$d
 
      ! Performance information
      real(dp) :: wtime_t0 = 0.0_dp
-     real(dp) :: wtime_gc_fill_round1 = 0.0_dp
-     real(dp) :: wtime_gc_fill_round2 = 0.0_dp
-     real(dp) :: wtime_gc_fill_buff_round1 = 0.0_dp
-     real(dp) :: wtime_gc_fill_buff_round2 = 0.0_dp
-     real(dp) :: wtime_adjust_ref_p4est = 0.0_dp
-     real(dp) :: wtime_adjust_ref_foap4 = 0.0_dp
-     real(dp) :: wtime_partition = 0.0_dp
-     real(dp) :: wtime_write_grid = 0.0_dp
-     real(dp) :: wtime_update_gc_pattern = 0.0_dp
-     real(dp) :: wtime_exchange_buffers = 0.0_dp
-     real(dp) :: wtime_flux_fix = 0.0_dp
-     real(dp) :: wtime_finite_volume = 0.0_dp
+     real(dp) :: wtimes(f4_n_timers) = 0.0_dp
 
      !> Optional procedure to set boundary conditions after changing the mesh.
      !> Should be set before the mesh is created.

@@ -93,7 +93,7 @@ contains
          f4%r_min, f4%r_max, &
          get_block_cc_data=get_block_data, time=f4%time, viewer=viewer)
     t1 = MPI_Wtime()
-    f4%wtime_write_grid = f4%wtime_write_grid + t1 - t0
+    f4%wtimes(f4_timer_write_grid) = f4%wtimes(f4_timer_write_grid) + t1 - t0
 
   contains
 
