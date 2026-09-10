@@ -9,6 +9,7 @@ module m_io_${NDIM}$d
   use mpi_f08
   use m_io_hash_${NDIM}$d
   use, intrinsic :: iso_c_binding
+  use iso_fortran_env, only: int64
   use m_foap4_types_${NDIM}$d
 
   implicit none
@@ -104,7 +105,7 @@ contains
     !> Whether to fill diagional ghost cells through extrapolation (default: true)
     logical, intent(in), optional :: fill_diagonals
 
-    integer                              :: my_unit, n, iv, mpirank, mpisize, ierr
+    integer                              :: my_unit, n, m, iv, mpirank, mpisize, ierr
     integer                              :: rank, n_prev_blocks, coord_ix(NDIM)
     integer, allocatable                 :: blocks_per_rank(:)
 #:if NDIM == 2
@@ -119,7 +120,10 @@ contains
     real(dp), allocatable                :: dr_recvbuf(:), dr_sendbuf(:)
     real(dp), allocatable                :: origin_recvbuf(:), origin_sendbuf(:)
     integer, allocatable                 :: bx_recvbuf(:), bx_sendbuf(:)
-    type(mpi_request)                    :: requests(3)
+    integer, allocatable                 :: ghost_recvbuf(:), ghost_sendbuf(:)
+    integer(int64), allocatable          :: offset_sendbuf(:), offset_recvbuf(:)
+    integer(int64)                       :: byte_off
+    type(mpi_request)                    :: requests(5)
     real(dp)                             :: r0(NDIM), r1(NDIM)
     logical                              :: bnd_lo(NDIM), bnd_hi(NDIM)
     integer                              :: ix_lo(NDIM), n_cells(NDIM)
@@ -127,9 +131,17 @@ contains
 
     integer, allocatable :: blk_ix(:, :)   ! integer index (NDIM) of each block
     integer, allocatable :: super_id(:)    ! super-block id of each block (0 = none)
-    integer, allocatable :: super_lo(:, :) ! lower index of super-block (NDIM)
-    integer, allocatable :: super_hi(:, :) ! upper index of super-block (NDIM)
+    integer, allocatable :: super_lvl(:)   ! level of super-block
+    integer, allocatable :: super_lo(:, :) ! lower index of super-block
+    integer, allocatable :: super_hi(:, :) ! upper index of super-block
+    integer, allocatable :: super_ghost_lo(:, :) ! Num. ghost cells on lower side
+    integer, allocatable :: super_ghost_hi(:, :) ! Num. ghost cells on upper side
+    real(dp), allocatable :: super_dr(:, :) ! grid spacing of super-block
+    real(dp), allocatable :: super_origin(:, :) ! origin of super-block
+    integer(int64), allocatable :: super_offset(:)  ! byte offset per super-block
+    integer(int64) :: cur_offset
     integer              :: n_super, ix, ilo(NDIM), ihi(NDIM)
+    integer              :: jlo(NDIM), jhi(NDIM)
     integer              :: lvl, dim, seed, bx(NDIM), i_block, ${IJK}$
     integer              :: lo(NDIM), hi(NDIM), test_lo(NDIM), test_hi(NDIM)
     type(ffh_t)          :: h
@@ -151,8 +163,15 @@ contains
     call MPI_COMM_SIZE(mpicomm, mpisize, ierr)
 
     allocate(super_id(n_blocks))
-    allocate(super_lo(NDIM, n_blocks), super_hi(NDIM, n_blocks))
+    allocate(super_lvl(n_blocks))
+    allocate(super_origin(NDIM, n_blocks))
+    allocate(super_lo(NDIM, n_blocks))
+    allocate(super_hi(NDIM, n_blocks))
+    allocate(super_ghost_lo(NDIM, n_blocks))
+    allocate(super_ghost_hi(NDIM, n_blocks))
+    allocate(super_dr(NDIM, n_blocks))
     allocate(blk_ix(NDIM, n_blocks))
+    cur_offset = 0
     super_id = 0
 
     do n = 1, n_blocks
@@ -202,13 +221,36 @@ contains
        call mark_slab(h, lvl, lo, hi, n_super, n_blocks, super_id)
        super_lo(:, n_super) = lo
        super_hi(:, n_super) = hi
+       super_dr(:, n_super) = dr(:, seed)
+       super_lvl(n_super) = level(seed)
+
+       ! Get origin
+       key%x = [lvl, lo]
+       call h%get_value(key, i_block, status)
+       super_origin(:, n_super) = origin(:, i_block)
+
+       ! Determine number of ghost cells on each side
+       bx = (super_hi(:, n_super) - super_lo(:, n_super) + 1) * nx
+       r0 = super_origin(:, n_super)
+       r1 = r0 + super_dr(:, n_super) * bx
+       call check_boundary(r0, r1, r_min, r_max, bnd_lo, bnd_hi)
+
+       if (for_viewer == "visit") then
+          ghost_lo = out_gc
+          ghost_hi = out_gc
+          where (bnd_lo) ghost_lo = 0
+          where (bnd_hi) ghost_hi = 0
+       else
+          ghost_lo = 0
+          ghost_hi = 0
+       end if
+       super_ghost_lo(:, n_super) = ghost_lo
+       super_ghost_hi(:, n_super) = ghost_hi
     end do
 
     allocate(blocks_per_rank(0:mpisize-1))
 
-    blocks_per_rank = 0
-    blocks_per_rank(mpirank) = n_super
-    call MPI_ALLGATHER(n_blocks, 1, MPI_INTEGER, blocks_per_rank, 1, &
+    call MPI_ALLGATHER(n_super, 1, MPI_INTEGER, blocks_per_rank, 1, &
          MPI_INTEGER, mpicomm, ierr)
 
     ! Write binary file
@@ -223,41 +265,65 @@ contains
          -in_gc+1:nx(3)+in_gc, n_cc))
 #:endif
 
+    allocate(super_offset(n_super))
+
     do n = 1, n_super
+       ghost_lo = super_ghost_lo(:, n)
+       ghost_hi = super_ghost_hi(:, n)
        bx = (super_hi(:, n) - super_lo(:, n) + 1) * nx
+
 #:if NDIM == 2
-       allocate(cc_super(-out_gc+1:bx(1)+out_gc, -out_gc+1:bx(2)+out_gc, n_cc))
+       allocate(cc_super(-ghost_lo(1)+1:bx(1)+ghost_hi(1), &
+            -ghost_lo(2)+1:bx(2)+ghost_hi(2), n_cc))
 #:elif NDIM == 3
-       allocate(cc_super(-out_gc+1:bx(1)+out_gc, -out_gc+1:bx(2)+out_gc, &
-         -out_gc+1:bx(3)+out_gc, n_cc))
+       allocate(cc_super(-ghost_lo(1)+1:bx(1)+ghost_hi(1), &
+            -ghost_lo(2)+1:bx(2)+ghost_hi(2), &
+            -ghost_lo(3)+1:bx(3)+ghost_hi(3), n_cc))
 #:endif
-       print *, n, super_lo(:, n), super_hi(:, n)
+       lo = super_lo(:, n)
+       hi = super_hi(:, n)
 
        do @{KJI_LOOP_array_to_array(lo, hi)}@
-          key%x = [lvl, ${IJK}$]
+          key%x = [super_lvl(n), ${IJK}$]
           call h%get_value(key, i_block, status)
           call get_block_cc_data(i_block, cc_block)
+          call fill_diagonal_gc(nx, in_gc, out_gc, n_cc, cc_block)
 
-          ilo = ([${IJK}$] - lo) * nx + 1 - out_gc
-          ihi = ilo + nx - 1 + 2 * out_gc
-          print *, ${IJK}$, ilo, ihi
+          ! Index on super-block
+          ilo = ([${IJK}$] - lo) * nx + 1
+          ihi = ilo + nx - 1
+
+          ! Index on block
+          jlo = 1
+          jhi = nx
+
+          where ([${IJK}$] == lo)
+             ilo = ilo - ghost_lo
+             jlo = jlo - ghost_lo
+          end where
+
+          where ([${IJK}$] == hi)
+             ihi = ihi + ghost_hi
+             jhi = jhi + ghost_hi
+          end where
+
 #:if NDIM == 2
           cc_super(ilo(1):ihi(1), ilo(2):ihi(2), :) = &
-               cc_block(-out_gc+1:nx(1)+out_gc, -out_gc+1:nx(2)+out_gc, :)
+               cc_block(jlo(1):jhi(1), jlo(2):jhi(2), :)
 #:elif NDIM == 3
           cc_super(ilo(1):ihi(1), ilo(2):ihi(2), ilo(3):ihi(3), :) = &
-               cc_block(-out_gc+1:nx(1)+out_gc, -out_gc+1:nx(2)+out_gc, &
-               -out_gc+1:nx(3)+out_gc, :)
+               cc_block(jlo(1):jhi(1), jlo(2):jhi(2), jlo(3):jhi(3), :)
 #:endif
        end do; ${KJI_CLOSE_LOOP}$
 
-       call fill_diagonal_gc(bx, out_gc, out_gc, n_cc, cc_super)
+       super_offset(n) = cur_offset
        write(my_unit) cc_super
+       cur_offset = cur_offset + size(cc_super, kind=int64) * &
+            (storage_size(1.0_fp)/8)
        deallocate(cc_super)
     end do
 
     close(my_unit)
-    stop
 
     if (mpirank == 0) then
        ! Write header
@@ -284,9 +350,15 @@ contains
           allocate(origin_sendbuf(NDIM*n_super))
           allocate(dr_sendbuf(NDIM*n_super))
           allocate(bx_sendbuf(NDIM*n_super))
-          origin_sendbuf(:) = pack(super_origin, .true.)
-          dr_sendbuf(:) = pack(super_dr, .true.)
-          bx_sendbuf(:) = pack((super_hi(:, n) - super_lo(:, n) + 1) * nx, .true.)
+          allocate(ghost_sendbuf(2*NDIM*n_super))
+          allocate(offset_sendbuf(n_super))
+          origin_sendbuf(:) = pack(super_origin(:, 1:n_super), .true.)
+          dr_sendbuf(:) = pack(super_dr(:, 1:n_super), .true.)
+          bx_sendbuf(:) = pack((super_hi(:, 1:n_super) - &
+               super_lo(:, 1:n_super) + 1), .true.)
+          ghost_sendbuf(1:NDIM*n_super) = pack(super_ghost_lo(:, 1:n_super), .true.)
+          ghost_sendbuf(NDIM*n_super+1:) = pack(super_ghost_hi(:, 1:n_super), .true.)
+          offset_sendbuf = super_offset(1:n_super)
 
           call MPI_Isend(origin_sendbuf, NDIM*n_super, &
                MPI_DOUBLE_PRECISION, 0, tag, mpicomm, requests(1), ierr)
@@ -294,14 +366,21 @@ contains
                MPI_DOUBLE_PRECISION, 0, tag+1, mpicomm, requests(2), ierr)
           call MPI_Isend(bx_sendbuf, NDIM*n_super, &
                MPI_INTEGER, 0, tag+2, mpicomm, requests(3), ierr)
-          call MPI_Waitall(3, requests, MPI_STATUSES_IGNORE, ierr)
-          deallocate(origin_sendbuf, dr_sendbuf)
+          call MPI_Isend(ghost_sendbuf, 2*NDIM*n_super, &
+               MPI_INTEGER, 0, tag+3, mpicomm, requests(4), ierr)
+          call MPI_Isend(offset_sendbuf, n_super, &
+               MPI_INTEGER8, 0, tag+4, mpicomm, requests(5), ierr)
+          call MPI_Waitall(5, requests, MPI_STATUSES_IGNORE, ierr)
+          deallocate(origin_sendbuf, dr_sendbuf, bx_sendbuf, &
+               ghost_sendbuf, offset_sendbuf)
        end if
 
        if (mpirank == 0) then
           allocate(origin_recvbuf(NDIM*blocks_per_rank(rank)))
           allocate(dr_recvbuf(NDIM*blocks_per_rank(rank)))
           allocate(bx_recvbuf(NDIM*blocks_per_rank(rank)))
+          allocate(ghost_recvbuf(2*NDIM*blocks_per_rank(rank)))
+          allocate(offset_recvbuf(blocks_per_rank(rank)))
 
           call MPI_Recv(origin_recvbuf, NDIM*blocks_per_rank(rank), &
                MPI_DOUBLE_PRECISION, rank, tag, mpicomm, MPI_STATUS_IGNORE, ierr)
@@ -309,31 +388,27 @@ contains
                MPI_DOUBLE_PRECISION, rank, tag+1, mpicomm, MPI_STATUS_IGNORE, ierr)
           call MPI_Recv(bx_recvbuf, NDIM*blocks_per_rank(rank), &
                MPI_INTEGER, rank, tag+2, mpicomm, MPI_STATUS_IGNORE, ierr)
+          call MPI_Recv(ghost_recvbuf, 2*NDIM*blocks_per_rank(rank), &
+               MPI_INTEGER, rank, tag+3, mpicomm, MPI_STATUS_IGNORE, ierr)
+          call MPI_Recv(offset_recvbuf, blocks_per_rank(rank), &
+               MPI_INTEGER8, rank, tag+4, mpicomm, MPI_STATUS_IGNORE, ierr)
 
           ! Get name corresponding to this rank
           call get_fname_rank(trim(filename), '.bin', rank, binary_fname)
           call get_basename(binary_fname, binary_basename)
 
           do n = 1, blocks_per_rank(rank)
-             r0 = origin_recvbuf((n-1)*NDIM+1:n*NDIM)
-             r1 = r0 + dr_recvbuf((n-1)*NDIM+1:n*NDIM) * nx
-             call check_boundary(r0, r1, r_min, r_max, bnd_lo, bnd_hi)
+             ghost_lo = ghost_recvbuf((n-1)*NDIM+1:n*NDIM)
+             m = n + blocks_per_rank(rank)
+             ghost_hi = ghost_recvbuf((m-1)*NDIM+1:m*NDIM)
 
-             if (for_viewer == "visit") then
-                ghost_lo = out_gc
-                ghost_hi = out_gc
-                where (bnd_lo) ghost_lo = 0
-                where (bnd_hi) ghost_hi = 0
-             else
-                ghost_lo = 0
-                ghost_hi = 0
-             end if
-
-             ix_lo = out_gc - ghost_lo
+             ix_lo = 0
              ! Number of cells to use for rendering
-             n_cells = nx + ghost_lo + ghost_hi
+             n_cells = nx * bx_recvbuf((n-1)*NDIM+1:n*NDIM) + &
+                  ghost_lo + ghost_hi
 
              ! Adjust origin to include ghost cells
+             r0 = origin_recvbuf((n-1)*NDIM+1:n*NDIM)
              r0 = r0 - ghost_lo * dr_recvbuf((n-1)*NDIM+1:n*NDIM)
 
              write(my_unit, "(a,I0,a)") &
@@ -371,51 +446,37 @@ contains
 
              ! Write cell-centered data
              do iv = 1, n_cc
+                ! byte offset of variable iv within this super-block
+                byte_off = offset_recvbuf(n) + int(iv-1, int64) * &
+                     product(int(n_cells, int64)) * (storage_size(1.0_fp)/8)
+
                 write(my_unit, "(a,a,a)") '    <Attribute Name="', &
                      trim(cc_names(iv)), '" Center="Cell">'
 #:if NDIM == 2
-                write(my_unit, "(a,I0,a,I0,a)") &
-                     '      <DataItem ItemType="HyperSlab" Dimensions="',&
-                     n_cells(2), ' ', n_cells(1), '">'
-                write(my_unit, "(a, 12(I0,' '),a)") &
-                     '        <DataItem Dimensions="3 4"> ', &
-                     n-1, iv-1, ix_lo(2), ix_lo(1), &            ! start
-                     1, 1, 1, 1, &                       ! stride
-                     1, 1, n_cells(2), n_cells(1), & ! count
-                     '</DataItem>'
-                write(my_unit, "(a, 4(I0,' '),a,I0,a)") &
-                     '        <DataItem Dimensions="', n_blocks, n_cc, &
-                     nx(2) + 2*out_gc, nx(1) + 2*out_gc, &
+                write(my_unit, "(a,I0,' ',I0,a,I0,a,I0,a)") &
+                     '      <DataItem Dimensions="', n_cells(2), n_cells(1), &
                      '" Format="Binary" NumberType="Float" Precision="', &
-                     storage_size(1.0_fp)/8, '">'
+                     storage_size(1.0_fp)/8, '" Seek="', byte_off, '">'
 #:elif NDIM == 3
-                write(my_unit, "(a,I0,a,I0,a,I0,a)") &
-                     '      <DataItem ItemType="HyperSlab" Dimensions="',&
-                     n_cells(3), ' ', n_cells(2), ' ', n_cells(1), '">'
-                write(my_unit, "(a, 15(I0,' '),a)") &
-                     '        <DataItem Dimensions="3 5"> ', &
-                     n-1, iv-1, ix_lo(3), ix_lo(2), ix_lo(1), & ! start
-                     1, 1, 1, 1, 1, &               ! stride
-                     1, 1, n_cells(3), n_cells(2), n_cells(1), & ! count
-                     '</DataItem>'
-
-                write(my_unit, "(a, 5(I0,' '),a,I0,a)") &
-                     '        <DataItem Dimensions="', n_blocks, n_cc, &
-                     nx(3) + 2*out_gc, nx(2) + 2*out_gc, nx(1) + 2*out_gc, &
+                write(my_unit, "(a,I0,' ',I0,' ',I0,a,I0,a,I0,a)") &
+                     '      <DataItem Dimensions="', n_cells(3), n_cells(2), n_cells(1), &
                      '" Format="Binary" NumberType="Float" Precision="', &
-                     storage_size(1.0_fp)/8, '">'
+                     storage_size(1.0_fp)/8, '" Seek="', byte_off, '">'
 #:endif
                 write(my_unit, "(a)") trim(binary_basename)
-                write(my_unit, "(a)") '        </DataItem>'
                 write(my_unit, "(a)") '      </DataItem>'
                 write(my_unit, "(a)") '    </Attribute>'
              end do
+
              write(my_unit, "(a)") '  </Grid>'
           end do
 
           n_prev_blocks = n_prev_blocks + blocks_per_rank(rank)
           deallocate(origin_recvbuf)
           deallocate(dr_recvbuf)
+          deallocate(bx_recvbuf)
+          deallocate(ghost_recvbuf)
+          deallocate(offset_recvbuf)
        end if
     end do
 
@@ -496,11 +557,11 @@ contains
     integer, intent(in)     :: out_gc   !< Number of ghost layers to write
     integer, intent(in)     :: n_cc     !< Number of variables
 #:if NDIM == 2
-    real(dp), intent(inout) :: cc(-in_gc+1:nx(1)+in_gc, &
+    real(fp), intent(inout) :: cc(-in_gc+1:nx(1)+in_gc, &
          -in_gc+1:nx(2)+in_gc, n_cc)
     integer                 :: c1, c2
 #:elif NDIM == 3
-    real(dp), intent(inout) :: cc(-in_gc+1:nx(1)+in_gc, &
+    real(fp), intent(inout) :: cc(-in_gc+1:nx(1)+in_gc, &
          -in_gc+1:nx(2)+in_gc, -in_gc+1:nx(3)+in_gc, n_cc)
     integer                 :: c1, c2, c3, dim, n, o_dims(2)
     integer                 :: ia(NDIM), ib(NDIM), ic(NDIM)
