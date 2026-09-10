@@ -6,8 +6,11 @@ program test_xdmf_writer_${NDIM}$d
   implicit none
   integer :: ierr, mpisize
 
+#:if NDIM == 2
   real(fp), allocatable :: cc_2d(:, :, :, :)
+#:elif NDIM == 3
   real(fp), allocatable :: cc_3d(:, :, :, :, :)
+#:endif
 
   ! Change this to paraview to view the output in paraview
   character(len=20) :: viewer = "visit"
@@ -37,19 +40,13 @@ program test_xdmf_writer_${NDIM}$d
 
 contains
 
+#:if NDIM == 2
   subroutine get_block_2d(n, cc)
     integer, intent(in)     :: n !< Index of block
     real(fp), intent(inout) :: cc(:, :, :)
     cc = cc_2d(:, :, :, n)
   end subroutine get_block_2d
 
-  subroutine get_block_3d(n, cc)
-    integer, intent(in)     :: n !< Index of block
-    real(fp), intent(inout) :: cc(:, :, :, :)
-    cc = cc_3d(:, :, :, :, n)
-  end subroutine get_block_3d
-
-#:if NDIM == 2
   subroutine multi_block_test_2d(fname, n_blocks_dim, nx, n_gc_out)
     character(len=*), intent(in) :: fname
     integer, intent(in)          :: n_blocks_dim(2)
@@ -101,6 +98,12 @@ contains
     deallocate(cc_2d)
   end subroutine multi_block_test_2d
 #:elif NDIM == 3
+  subroutine get_block_3d(n, cc)
+    integer, intent(in)     :: n !< Index of block
+    real(fp), intent(inout) :: cc(:, :, :, :)
+    cc = cc_3d(:, :, :, :, n)
+  end subroutine get_block_3d
+
   subroutine multi_block_test_3d(fname, n_blocks_dim, nx, n_gc_out)
     character(len=*), intent(in) :: fname
     integer, intent(in)          :: n_blocks_dim(3)

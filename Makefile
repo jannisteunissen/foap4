@@ -150,23 +150,26 @@ FFLAGS += $(FFLAGS_USER)
 LIB_2D := $(LIBDIR)/libfoap4_2d.a
 LIB_3D := $(LIBDIR)/libfoap4_3d.a
 
+BASE_OBJS := m_foap4_types
+BASE_OBJS_2D := $(addprefix $(OBJDIR)/,$(addsuffix _2d.o,$(BASE_OBJS)))
+BASE_OBJS_3D := $(addprefix $(OBJDIR)/,$(addsuffix _3d.o,$(BASE_OBJS)))
+
 COMMON_OBJS := \
     m_foap4 \
-    m_foap4_types \
     p4est_wrapper \
     m_io \
-    m_io_hash \
     m_rk \
     m_amr_flags \
     m_physics_advection \
     m_physics_euler
+COMMON_OBJS_2D := $(addprefix $(OBJDIR)/,$(addsuffix _2d.o,$(COMMON_OBJS)))
+COMMON_OBJS_3D := $(addprefix $(OBJDIR)/,$(addsuffix _3d.o,$(COMMON_OBJS)))
 
-LIB_OBJS_2D := $(addprefix $(OBJDIR)/,$(addsuffix _2d.o,$(COMMON_OBJS))) \
+LIB_OBJS_2D := $(BASE_OBJS_2D) $(COMMON_OBJS_2D) \
                $(OBJDIR)/m_physics_shallow_water_2d.o \
                $(OBJDIR)/m_config.o
 
-LIB_OBJS_3D := $(addprefix $(OBJDIR)/,$(addsuffix _3d.o,$(COMMON_OBJS))) \
-               $(OBJDIR)/m_config.o
+LIB_OBJS_3D := $(BASE_OBJS_3D) $(COMMON_OBJS_3D) $(OBJDIR)/m_config.o
 
 # ==============================================================================
 # Target definitions
@@ -320,12 +323,6 @@ $(OBJDIR)/m_foap4_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 $(OBJDIR)/m_rk_2d.o: $(OBJDIR)/m_foap4_types_2d.o
 $(OBJDIR)/m_rk_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
-$(OBJDIR)/m_io_2d.o: $(OBJDIR)/m_foap4_types_2d.o $(OBJDIR)/m_io_hash_2d.o
-$(OBJDIR)/m_io_3d.o: $(OBJDIR)/m_foap4_types_3d.o $(OBJDIR)/m_io_hash_3d.o
-
-$(OBJDIR)/m_io_hash_2d.o: $(GENDIR)/ffhash_inc.f90
-$(OBJDIR)/m_io_hash_3d.o: $(GENDIR)/ffhash_inc.f90
-
 $(OBJDIR)/m_amr_flags_2d.o: $(OBJDIR)/m_foap4_2d.o
 $(OBJDIR)/m_amr_flags_3d.o: $(OBJDIR)/m_foap4_3d.o
 
@@ -337,6 +334,9 @@ $(OBJDIR)/m_physics_euler_3d.o: $(OBJDIR)/m_foap4_types_3d.o
 
 $(OBJDIR)/m_physics_shallow_water_2d.o: $(OBJDIR)/m_foap4_types_2d.o
 $(OBJDIR)/m_physics_shallow_water_3d.o: $(OBJDIR)/m_foap4_types_3d.o
+
+$(COMMON_OBJS_2D): $(BASE_OBJS_2D)
+$(COMMON_OBJS_3D): $(BASE_OBJS_3D)
 
 # ==============================================================================
 # Dependencies for the targets
