@@ -6,4 +6,6 @@
 *.o
 *.mod
 *.emacsbackup
-/build/
+/build-*
+
+
