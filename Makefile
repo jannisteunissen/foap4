@@ -10,9 +10,68 @@ AR := ar
 ARFLAGS := rcs
 
 # ==============================================================================
+# External libraries (paths not depending on build dirs)
+# ==============================================================================
+LIBDIRS := p4est/build/local/lib
+LIBS := p4est sc z m
+
+# ==============================================================================
+# Floating point type for block data
+# ==============================================================================
+FLOAT_BITS ?= 64
+
+# ==============================================================================
+# GPU / offloading configuration
+# One canonical variable OFFLOAD_KIND drives everything: acc | omp | ompcpu | none
+# By default, use OpenACC (unless OpenMP or OPENMP_CPU is explicitly requested)
+# ==============================================================================
+ifeq ($(OPENMP),1)
+    OFFLOAD_KIND := omp
+else ifeq ($(OPENMP_CPU),1)
+    OFFLOAD_KIND := ompcpu
+else ifeq ($(OPENACC),0)
+    OFFLOAD_KIND := none
+else
+    OFFLOAD_KIND := acc
+endif
+
+ifeq ($(OFFLOAD_KIND),acc)
+    OFFLOAD_FYPP  := -D USE_OPENACC
+    OFFLOAD_MODEL := "OpenACC GPU"
+    OFFLOAD_TAG   := -acc
+else ifeq ($(OFFLOAD_KIND),omp)
+    OFFLOAD_FYPP  := -D USE_OPENMP
+    OFFLOAD_MODEL := "OpenMP GPU"
+    OFFLOAD_TAG   := -omp
+else ifeq ($(OFFLOAD_KIND),ompcpu)
+    OFFLOAD_FYPP  := -D USE_OPENMP_CPU
+    OFFLOAD_MODEL := "OpenMP CPU"
+    OFFLOAD_TAG   := -ompcpu
+else
+    OFFLOAD_FYPP  :=
+    OFFLOAD_MODEL := "None"
+    OFFLOAD_TAG   := -cpu
+endif
+
+# ==============================================================================
+# Compiler detection
+# ==============================================================================
+compiler_version := $(shell $(F90C) --version 2>/dev/null)
+compiler_brand ?= $(word 1, $(compiler_version))
+
+# ==============================================================================
+# Build configuration tag and build directory
+# ==============================================================================
+CONFIG_TAG := $(compiler_brand)-f$(FLOAT_BITS)$(OFFLOAD_TAG)
+ifeq ($(DEBUG),1)
+  CONFIG_TAG := $(CONFIG_TAG)-dbg
+endif
+
+BUILDDIR ?= build-$(CONFIG_TAG)
+
+# ==============================================================================
 # Directory structure
 # ==============================================================================
-BUILDDIR := build
 OBJDIR := $(BUILDDIR)/obj
 BINDIR := $(BUILDDIR)/bin
 LIBDIR := $(BUILDDIR)/lib
@@ -29,44 +88,11 @@ vpath %.fpp $(COREDIR) $(PHYSICSDIR) $(NUMERICSDIR) $(TESTSDIR) $(UTILSDIR)
 vpath %.f90 $(COREDIR) $(PHYSICSDIR) $(NUMERICSDIR) $(TESTSDIR) $(UTILSDIR)
 
 # ==============================================================================
-# External libraries
+# Include directories and flags (depend on directory structure)
 # ==============================================================================
 INCDIRS := p4est/build/local/include
 INCDIRS += $(COREDIR) $(PHYSICSDIR) $(UTILSDIR) $(NUMERICSDIR) $(GENDIR)
 INCFLAGS := $(addprefix -I,$(INCDIRS))
-LIBDIRS := p4est/build/local/lib
-LIBS := p4est sc z m
-
-# ==============================================================================
-# Floating point type for block data
-# ==============================================================================
-FLOAT_BITS ?= 64
-
-# ==============================================================================
-# GPU / offloading configuration
-# By default, use OpenACC (unless OpenMP or OPENMP_CPU is explicitly requested)
-# ==============================================================================
-ifeq ($(OPENMP),1)
-    OPENACC := 0
-else ifeq ($(OPENMP_CPU),1)
-    OPENACC := 0
-else
-    OPENACC ?= 1
-endif
-
-ifeq ($(OPENACC),1)
-    OFFLOAD_FYPP := -D USE_OPENACC
-    OFFLOAD_MODEL := "OpenACC GPU"
-else ifeq ($(OPENMP),1)
-    OFFLOAD_FYPP := -D USE_OPENMP
-    OFFLOAD_MODEL := "OpenMP GPU"
-else ifeq ($(OPENMP_CPU),1)
-    OFFLOAD_FYPP := -D USE_OPENMP_CPU
-    OFFLOAD_MODEL := "OpenMP CPU"
-else
-    OFFLOAD_FYPP :=
-    OFFLOAD_MODEL := "None"
-endif
 
 # ==============================================================================
 # Preprocessor flags
@@ -79,11 +105,8 @@ FYPPFLAGS := -n $(INCFLAGS) -D FLOAT_BITS=$(FLOAT_BITS) $(OFFLOAD_FYPP)
 CFLAGS := -Wall -O2 -g
 
 # ==============================================================================
-# Compiler detection and Fortran flags
+# Fortran flags (depend on compiler_brand and OBJDIR)
 # ==============================================================================
-compiler_version := $(shell $(F90C) --version 2>/dev/null)
-compiler_brand ?= $(word 1, $(compiler_version))
-
 ifeq ($(compiler_brand),GNU)
     FFLAGS ?= -Wall -g -J$(OBJDIR) -cpp -Wno-unused-dummy-argument -Wl,--no-warn-execstack
     ifeq ($(DEBUG),1)
@@ -95,50 +118,39 @@ ifeq ($(compiler_brand),GNU)
     else
         FFLAGS += -Ofast -march=native
     endif
-    ifeq ($(OPENACC),1)
+    ifeq ($(OFFLOAD_KIND),acc)
         FFLAGS += -fopenacc -foffload=nvptx-none
         CFLAGS += -fopenacc -foffload=nvptx-none
-    else ifeq ($(OPENMP),1)
-        FFLAGS += -fopenmp
-        CFLAGS += -fopenmp
-    else ifeq ($(OPENMP_CPU),1)
+    else ifneq (,$(filter $(OFFLOAD_KIND),omp ompcpu))
         FFLAGS += -fopenmp
         CFLAGS += -fopenmp
     endif
 
 else ifneq (,$(filter $(compiler_brand),nvfortran pgfortran))
-    ifeq ($(OPENACC),1)
-        FFLAGS ?= -Minform=warn -acc=gpu,strict -fast -gpu=ccnative -Mpreprocess \
-            -static-nvidia -g -module $(OBJDIR)
-    else ifeq ($(OPENMP),1)
-        FFLAGS ?= -Minform=warn -mp=gpu -fast -gpu=ccnative -Mpreprocess \
-            -static-nvidia -g -module $(OBJDIR)
-    else ifeq ($(OPENMP_CPU),1)
-        FFLAGS ?= -Minform=warn -mp -fast -Mpreprocess \
-            -static-nvidia -g -module $(OBJDIR)
+    NV_COMMON := -Minform=warn -fast -Mpreprocess -static-nvidia -g -module $(OBJDIR)
+    ifeq ($(OFFLOAD_KIND),acc)
+        FFLAGS ?= $(NV_COMMON) -acc=gpu,strict -gpu=ccnative
+    else ifeq ($(OFFLOAD_KIND),omp)
+        FFLAGS ?= $(NV_COMMON) -mp=gpu -gpu=ccnative
+    else ifeq ($(OFFLOAD_KIND),ompcpu)
+        FFLAGS ?= $(NV_COMMON) -mp
     else
-        FFLAGS ?= -Minform=warn -fast -Mpreprocess -static-nvidia -g -module $(OBJDIR)
+        FFLAGS ?= $(NV_COMMON)
     endif
 
 else ifeq ($(compiler_brand),Cray)
     FFLAGS ?= -M878 -O2 -eT -ea -ef -ffree -J$(OBJDIR)
-    ifeq ($(OPENACC),1)
+    ifeq ($(OFFLOAD_KIND),acc)
         FFLAGS += -h acc -h acc_model=auto_async_none:fast_addr:no_deep_copy
-    else ifeq ($(OPENMP),1)
-        FFLAGS += -h omp
-    else ifeq ($(OPENMP_CPU),1)
+    else ifneq (,$(filter $(OFFLOAD_KIND),omp ompcpu))
         FFLAGS += -h omp
     endif
 
 else
     $(warning Unknown compiler "$(compiler_brand)", using default flags)
     FFLAGS ?= -O2 -g -J$(OBJDIR)
-    ifeq ($(OPENACC),1)
-        $(warning OpenACC flags unknown for this compiler; add manually via FFLAGS_USER)
-    else ifeq ($(OPENMP),1)
-        $(warning OpenMP flags unknown for this compiler; add manually via FFLAGS_USER)
-    else ifeq ($(OPENMP_CPU),1)
-        $(warning OpenMP CPU flags unknown for this compiler; add manually via FFLAGS_USER)
+    ifneq ($(OFFLOAD_KIND),none)
+        $(warning $(OFFLOAD_MODEL) flags unknown for this compiler; add manually via FFLAGS_USER)
     endif
 endif
 
@@ -201,13 +213,26 @@ NUMERICS_GEN := $(patsubst $(NUMERICSDIR)/%.fpp,$(GENDIR)/%.f90,$(NUMERICS_FPP))
 # ==============================================================================
 # Phony targets
 # ==============================================================================
-.PHONY: all clean 2d 3d libs lib2d lib3d help
+.PHONY: all clean 2d 3d libs lib2d lib3d help build-summary
 
 all: libs $(TARGETS_2D) $(TARGETS_3D)
+	@$(MAKE) --no-print-directory build-summary
 
 2d: lib2d $(TARGETS_2D)
+	@$(MAKE) --no-print-directory build-summary
 
 3d: lib3d $(TARGETS_3D)
+	@$(MAKE) --no-print-directory build-summary
+
+build-summary:
+	@echo "=============================================="
+	@echo "Build complete."
+	@echo "  Build directory : $(BUILDDIR)"
+	@echo "  Compiler        : $(compiler_brand)"
+	@echo "  Offload model   : $(OFFLOAD_MODEL)"
+	@echo "  Float bits      : $(FLOAT_BITS)"
+	@echo "  Binaries in     : $(BINDIR)"
+	@echo "=============================================="
 
 libs: lib2d lib3d
 
