@@ -278,9 +278,6 @@ contains
     ${EXIT_DATA_DELETE('f4%gc_srl_to_buf_iface, f4%gc_f2c_local_iface')}$
     ${EXIT_DATA_DELETE('f4%gc_f2c_from_buf_iface, f4%gc_f2c_to_buf_iface')}$
     ${EXIT_DATA_DELETE('f4%gc_c2f_from_buf_iface, f4%gc_c2f_to_buf_iface')}$
-    ${EXIT_DATA_DELETE('f4%gc_recv_offset, f4%gc_send_offset')}$
-    ${EXIT_DATA_DELETE('f4%gc_recv_offset_c2f, f4%gc_send_offset_c2f')}$
-    ${EXIT_DATA_DELETE('f4%gc_recv_offset_fluxfix, f4%gc_send_offset_fluxfix')}$
 
     ${EXIT_DATA_DELETE('f4%gc_phys_iface')}$
     ${EXIT_DATA_DELETE('f4%gc_srl_local')}$
@@ -331,12 +328,14 @@ contains
     deallocate(f4%gc_f2c_to_buf_fluxfix)
     deallocate(f4%gc_c2f_from_buf_fluxfix)
 
-    deallocate(f4%gc_recv_offset)
-    deallocate(f4%gc_send_offset)
-    deallocate(f4%gc_recv_offset_c2f)
-    deallocate(f4%gc_send_offset_c2f)
-    deallocate(f4%gc_recv_offset_fluxfix)
-    deallocate(f4%gc_send_offset_fluxfix)
+    if (allocated(f4%gc_recv_offset)) then
+       deallocate(f4%gc_recv_offset)
+       deallocate(f4%gc_send_offset)
+       deallocate(f4%gc_recv_offset_c2f)
+       deallocate(f4%gc_send_offset_c2f)
+       deallocate(f4%gc_recv_offset_fluxfix)
+       deallocate(f4%gc_send_offset_fluxfix)
+    end if
 
     f4%gc_mesh_revision = -1
   end subroutine f4_destroy
