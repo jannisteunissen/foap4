@@ -118,7 +118,7 @@ contains
 
     call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
          n_vars_all, var_names, var_temporal, n_time_states, periodic, &
-         min_level, max_blocks, f4_bc_neumann, 0.0_dp)
+         min_level, max_blocks, f4_bc_neumann, 0.0_dp, .true.)
 
     ! Set no-flow conditions on domain boundaries
     call f4_set_bc_scalar(f4, i_mom0+1, f4_face_xlo, f4_bc_dirichlet, 0.0_dp)

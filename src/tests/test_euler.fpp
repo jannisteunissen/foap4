@@ -121,7 +121,7 @@ contains
 
        call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
             n_vars_all, var_names, var_temporal, n_time_states, periodic, &
-            min_level, max_blocks, f4_bc_neumann, 0.0_dp)
+            min_level, max_blocks, f4_bc_neumann, 0.0_dp, .true.)
 
        call f4_set_bc_scalar(f4, i_mom0+NDIM, 2*(NDIM-1), &
             f4_bc_dirichlet, 0.0_dp)
@@ -136,7 +136,7 @@ contains
 
        call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
             n_vars_all, var_names, var_temporal, n_time_states, periodic, &
-            min_level, max_blocks, f4_bc_neumann, 0.0_dp)
+            min_level, max_blocks, f4_bc_neumann, 0.0_dp, .true.)
 
        call euler_initialize(5/3.0_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
     case ("vortex")
@@ -148,7 +148,7 @@ contains
 
        call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
             n_vars_all, var_names, var_temporal, n_time_states, periodic, &
-            min_level, max_blocks, f4_bc_neumann, 0.0_dp)
+            min_level, max_blocks, f4_bc_neumann, 0.0_dp, .true.)
 
        call euler_initialize(1.4_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
     case default

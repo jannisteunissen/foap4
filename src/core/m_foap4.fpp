@@ -268,7 +268,10 @@ contains
 
     ${EXIT_DATA_DELETE('f4%bc_simple_type, f4%bc_simple')}$
     ${EXIT_DATA_DELETE('f4%block_level, f4%block_origin')}$
-    ${EXIT_DATA_DELETE('f4%uu, f4%uu_prim, f4%refinement_flags')}$
+    ${EXIT_DATA_DELETE('f4%uu, f4%refinement_flags')}$
+    if (allocated(f4%uu_prim)) then
+       ${EXIT_DATA_DELETE('f4%uu_prim')}$
+    end if
     ${EXIT_DATA_DELETE('f4%bc_data_ix, f4%bc_data, f4%bc_data_type, f4%bflux_ix, f4%bflux')}$
     ${EXIT_DATA_DELETE('f4%recv_buffer, f4%send_buffer')}$
     ${EXIT_DATA_DELETE('f4%gc_srl_local_iface, f4%gc_srl_from_buf_iface')}$
@@ -303,7 +306,9 @@ contains
     deallocate(f4%block_level)
     deallocate(f4%refinement_flags)
     deallocate(f4%uu)
-    deallocate(f4%uu_prim)
+    if (allocated(f4%uu_prim)) then
+       deallocate(f4%uu_prim)
+    end if
     deallocate(f4%bflux_ix)
     deallocate(f4%bflux)
     deallocate(f4%bc_data_ix)
@@ -345,7 +350,7 @@ contains
   !> Construct a brick of blocks
   subroutine f4_construct_brick(f4, trees_per_dim, tree_length, bx, n_gc, &
        n_vars, var_names, var_temporal, n_temporal_states, periodic, &
-       min_level, max_blocks, bc_type, bc_value)
+       min_level, max_blocks, bc_type, bc_value, use_prim)
     type(foap4_t), intent(inout) :: f4
     integer, intent(in)          :: trees_per_dim(ndim) !< How many trees per dimension
     real(dp), intent(in)         :: tree_length(ndim)   !< Length of each tree
@@ -363,6 +368,8 @@ contains
     integer, intent(in)          :: max_blocks  !< Maximum number of blocks
     integer, intent(in)          :: bc_type !< Default physical boundary type
     real(dp), intent(in)         :: bc_value !< Default physical boundary value
+    !< Whether to allocate a copy of the state for primitive variables
+    logical, intent(in)          :: use_prim
     integer                      :: i, periodic_as_int(ndim)
     real(dp)                     :: t0, t1
 
@@ -423,8 +430,10 @@ contains
 #:if NDIM == 2
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
          f4%n_vars, max_blocks * n_temporal_states))
-    allocate(f4%uu_prim(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
-         f4%n_vars, max_blocks))
+    if (use_prim) then
+       allocate(f4%uu_prim(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
+            f4%n_vars, max_blocks))
+    end if
     allocate(f4%bflux(bx(1), n_vars, f4_min_array_size))
     allocate(f4%bc_data(bx(1), n_vars, f4_min_array_size))
     allocate(f4%bc_data_type(bx(1), n_vars, f4_min_array_size))
@@ -434,8 +443,10 @@ contains
 #:elif NDIM == 3
     allocate(f4%uu(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, 1-n_gc:bx(3)+n_gc, &
          f4%n_vars, max_blocks * n_temporal_states))
-    allocate(f4%uu_prim(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, 1-n_gc:bx(3)+n_gc, &
-         f4%n_vars, max_blocks))
+    if (use_prim) then
+       allocate(f4%uu_prim(1-n_gc:bx(1)+n_gc, 1-n_gc:bx(2)+n_gc, &
+            1-n_gc:bx(3)+n_gc, f4%n_vars, max_blocks))
+    end if
     allocate(f4%bflux(bx(1), bx(1), n_vars, f4_min_array_size))
     allocate(f4%bc_data(bx(1), bx(1), n_vars, f4_min_array_size))
     allocate(f4%bc_data_type(bx(1), bx(1), n_vars, f4_min_array_size))
@@ -491,7 +502,10 @@ contains
     ${ENTER_DATA_COPYIN('f4')}$
     ${ENTER_DATA_COPYIN('f4%bc_simple_type, f4%bc_simple')}$
     ${ENTER_DATA_CREATE('f4%block_level, f4%block_origin')}$
-    ${ENTER_DATA_CREATE('f4%uu, f4%uu_prim, f4%refinement_flags')}$
+    ${ENTER_DATA_CREATE('f4%uu, f4%refinement_flags')}$
+    if (allocated(f4%uu_prim)) then
+       ${ENTER_DATA_CREATE('f4%uu_prim')}$
+    end if
     ${ENTER_DATA_CREATE('f4%bc_data, f4%bc_data_type')}$
     ${ENTER_DATA_CREATE('f4%bc_data_ix, f4%bflux_ix, f4%bflux')}$
     ${ENTER_DATA_CREATE('f4%recv_buffer, f4%send_buffer')}$
