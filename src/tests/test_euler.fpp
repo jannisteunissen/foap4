@@ -34,13 +34,22 @@ program euler
   real(dp)          :: c_eps              = 0.01_dp
   real(dp)          :: c_abs              = 1e-10_dp
   integer           :: n_steps_refinement = 4
+  integer           :: i_amr_var
   real(dp)          :: cfl_number         = 0.5_dp
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=10) :: test_case          = "sod"
   character(len=40) :: integrator_name    = "heuns_method"
+  character(len=40) :: amr_variable       = "rho"
   character(len=40) :: viewer             = "visit"
   character(len=200) :: output_prefix     = "output/test_euler_${NDIM}$d"
   logical           :: write_vtu          = .false.
+
+  ! For Sedov blast wave test
+  real(dp) :: sedov_energy = 1.0_dp
+  real(dp) :: sedov_rho0   = 1.0_dp
+  real(dp) :: sedov_p0     = 1.0e-3_dp
+  real(dp) :: sedov_radius = 0.01_dp
+  real(dp) :: sedov_center(NDIM) = 0.5_dp
 
   call f4_initialize(f4, "error")
 
@@ -51,6 +60,8 @@ program euler
   call CFG_add_get(cfg, 'min_level', min_level, 'Minimum refinement level')
   call CFG_add_get(cfg, 'max_level', max_level, 'Maximum refinement level')
   call CFG_add_get(cfg, 'do_refinement', do_refinement, 'Perform refinement')
+  call CFG_add_get(cfg, 'amr_variable', amr_variable, &
+       'Variable to use for refinement (rho, energy)')
   call CFG_add_get(cfg, 'load_imbalance_threshold', load_imbalance_threshold, &
        'Threshold for partitioning')
   call CFG_add_get(cfg, 'c_refine', c_refine, 'Coefficient for refinement')
@@ -69,7 +80,29 @@ program euler
   call CFG_add_get(cfg, 'cfl_number', cfl_number, 'CFL number')
   call CFG_add_get(cfg, 'viewer', viewer, &
        'Write XDMF output for this viewer (visit or paraview)')
+
+  ! Sedov test case
+  call CFG_add_get(cfg, 'sedov_energy', sedov_energy, &
+       'Total Sedov explosion energy')
+  call CFG_add_get(cfg, 'sedov_rho0', sedov_rho0, &
+       'Ambient Sedov density')
+  call CFG_add_get(cfg, 'sedov_p0', sedov_p0, &
+       'Ambient Sedov pressure')
+  call CFG_add_get(cfg, 'sedov_radius', sedov_radius, &
+       'Initial energy deposition radius')
+  call CFG_add_get(cfg, 'sedov_center', sedov_center, &
+       'Center of Sedov explosion')
+
   call CFG_check(cfg)
+
+  select case (amr_variable)
+  case ("rho")
+     i_amr_var = i_rho
+  case ("energy")
+     i_amr_var = i_e
+  case default
+     error stop "Invalid value for amr_variable (options: rho, energy)"
+  end select
 
   call test_euler(f4, bx, min_level, max_blocks, &
        num_outputs, trim(output_prefix), test_case, &
@@ -101,6 +134,7 @@ contains
     integer                       :: highest_level, prev_highest_level
     real(dp)                      :: dt, dt_lim, dt_output
     real(dp)                      :: t0, t1, rho_sum, rho_initial_sum
+    real(dp)                      :: energy_sum, energy_initial_sum
 
     f4%time = 0.0_dp
     dt_output = end_time / max(real(num_outputs, dp), 1e-100_dp)
@@ -151,8 +185,19 @@ contains
             min_level, max_blocks, f4_bc_neumann, 0.0_dp, .true.)
 
        call euler_initialize(1.4_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
+    case ("sedov")
+       if (ndim /= 3) error stop "The Sedov test case is 3D only"
+       periodic = .false.
+       domain_length = 1.0_dp
+       block_length = domain_length / blocks_per_dim
+
+       call f4_construct_brick(f4, blocks_per_dim, block_length, bx, n_gc, &
+            n_vars_all, var_names, var_temporal, n_time_states, periodic, &
+            min_level, max_blocks, f4_bc_neumann, 0.0_dp, .true.)
+
+       call euler_initialize(5/3.0_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
     case default
-       error stop "Unknown test case, options: rt, sod, vortex"
+       error stop "Unknown test case, options: rt, sod, vortex, sedov"
     end select
 
     call set_initial_conditions(f4, test_case)
@@ -162,7 +207,7 @@ contains
           prev_mesh_revision = f4_get_mesh_revision(f4)
           call f4_update_ghostcells(f4, n_tvars, i_tvars, 0)
           call amr_flags_diff2(f4, min_level, max_level, &
-               i_rho, c_refine, c_derefine, c_eps, c_abs)
+               i_amr_var, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, load_imbalance_threshold)
           call set_initial_conditions(f4, test_case)
 
@@ -171,6 +216,7 @@ contains
     end if
 
     call f4_compute_sum(f4, i_rho, rho_initial_sum)
+    call f4_compute_sum(f4, i_e, energy_initial_sum)
 
     if (dt_output <= end_time) then
        call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu, &
@@ -195,9 +241,10 @@ contains
           call io_write_grid(f4, base_name, n_output, write_p4vtu=write_vtu, &
                viewer=viewer)
           call f4_compute_sum(f4, i_rho, rho_sum)
+          call f4_compute_sum(f4, i_e, energy_sum)
           if (f4%mpirank == 0) then
-             write(*, "(A,E12.4)") " Conservation error: ", &
-                  rho_sum - rho_initial_sum
+             write(*, "(A,2E12.4)") " Conservation errors: ", &
+                  rho_sum - rho_initial_sum, energy_sum - energy_initial_sum
           end if
           n_output = n_output + 1
        end if
@@ -207,7 +254,7 @@ contains
           call f4_get_global_highest_level(f4, prev_highest_level)
           call f4_update_ghostcells(f4, n_tvars, i_tvars, 0)
           call amr_flags_diff2(f4, min_level, max_level, &
-               i_rho, c_refine, c_derefine, c_eps, c_abs)
+               i_amr_var, c_refine, c_derefine, c_eps, c_abs)
           call f4_adjust_refinement(f4, load_imbalance_threshold)
 
           call f4_get_global_highest_level(f4, highest_level)
@@ -247,8 +294,10 @@ contains
        call set_initial_conditions_rt(f4)
     case ("vortex")
        call set_initial_conditions_vortex(f4)
+    case ("sedov")
+       call set_initial_conditions_sedov(f4)
     case default
-       error stop "Unknown test case, options: rt, sod, vortex"
+       error stop "Unknown test case, options: rt, sod, vortex, sedov"
     end select
   end subroutine set_initial_conditions
 
@@ -387,6 +436,60 @@ contains
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_initial_conditions_vortex
+
+  subroutine set_initial_conditions_sedov(f4)
+    type(foap4_t), intent(inout) :: f4
+    integer                      :: n, ${IJK}$
+    real(dp)                     :: scale, e_background, total_energy
+    real(dp)                     :: weight_integral
+    real(dp)                     :: rr(ndim), r, weight
+    real(dp)                     :: V_sphere, e_bg_inside, use_radius
+    real(dp), parameter          :: pi = acos(-1.0_dp)
+    integer                      :: max_level
+
+    call f4_get_global_highest_level(f4, max_level)
+
+    ! Ensure Sedov radius is resolved on the mesh, so that refinement can be triggered
+    use_radius = max(sedov_radius, norm2(f4%dr_level(:, max_level)))
+
+    ! First pass
+    V_sphere = 4.0_dp/3.0_dp * pi * sedov_radius**3
+    e_background = sedov_p0 * euler_inv_gamma_m1
+    e_bg_inside = e_background * V_sphere
+    ! Estimate scale factor for energy
+    scale = (sedov_energy - e_bg_inside) / V_sphere
+
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, r, weight)')}$ ${COPYIN('sedov_center')}$ ${DEFAULT_PRESENT()}$
+    do n = 1, f4%n_blocks
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          rr = f4_cell_coord(f4, n, ${IJK}$)
+          r  = sqrt(sum((rr - sedov_center)**2))
+          weight = merge(1.0_fp, 0.0_fp, r < use_radius)
+
+          f4%uu(${IJK}$, i_rho, n) = real(sedov_rho0, fp)
+          f4%uu(${IJK}$, i_mom0+1:i_mom0+NDIM, n) = 0.0_fp
+          f4%uu(${IJK}$, i_e, n) = real(e_background + scale * weight, fp)
+       end do; ${KJI_CLOSE_LOOP}$
+    end do
+
+    call f4_compute_sum(f4, i_e, total_energy)
+    weight_integral = total_energy - e_background * product(f4%r_max - f4%r_min)
+    scale = scale * sedov_energy / weight_integral
+
+    ! Second pass
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, r, weight)')}$ ${COPYIN('sedov_center')}$ ${DEFAULT_PRESENT()}$
+    do n = 1, f4%n_blocks
+       do @{KJI_LOOP_1_to_array(f4%bx)}@
+          rr = f4_cell_coord(f4, n, ${IJK}$)
+          r  = sqrt(sum((rr - sedov_center)**2))
+          weight = merge(1.0_fp, 0.0_fp, r < use_radius)
+
+          f4%uu(${IJK}$, i_rho, n) = real(sedov_rho0, fp)
+          f4%uu(${IJK}$, i_mom0+1:i_mom0+NDIM, n) = 0.0_fp
+          f4%uu(${IJK}$, i_e, n) = real(e_background + scale * weight, fp)
+       end do; ${KJI_CLOSE_LOOP}$
+    end do
+  end subroutine set_initial_conditions_sedov
 
   subroutine source_term(u_prim, source)
     real(fp), intent(in)    :: u_prim(n_tvars)
