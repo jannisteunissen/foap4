@@ -23,11 +23,13 @@ pure subroutine to_conservative(u)
 end subroutine to_conservative
 
 !> Compute flux (in conservative variables) from primitive variables
-subroutine get_flux(flux_dim, u, flux)
+subroutine get_flux(flux_dim, u, flux, i0, n, ${IJK}$, f4)
   ${ROUTINE_SEQ()}$
   integer, intent(in)   :: flux_dim
   real(fp), intent(in)  :: u(n_tvars)  !< Primitive variables (h, u, v)
   real(fp), intent(out) :: flux(n_tvars)
+  integer, intent(in)   :: i0, n, ${IJK}$
+  type(foap4_t), intent(in) :: f4
   integer               :: idim
 
   ! Mass flux: h * u_flux_dim
@@ -45,13 +47,17 @@ end subroutine get_flux
 
 !> Estimate for minimum and maximum wavespeeds for HLL-type solvers
 !> Wavespeeds are u ± sqrt(g*h)
-pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
+pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax, i0, n, ${IJK}$, f4)
   ${ROUTINE_SEQ()}$
-  integer, intent(in)   :: flux_dim
-  real(fp), intent(in)  :: u_LR(n_tvars, 2) !< Primitive variables (L and R states)
-  real(fp), intent(out) :: cmin
-  real(fp), intent(out) :: cmax
-  real(fp)              :: h_sqrt(2), fac, umean, cmean, cwave(2)
+  integer, intent(in)       :: flux_dim
+  real(fp), intent(in)      :: u_LR(n_tvars, 2) !< Primitive variables (L and R states)
+  real(fp), intent(out)     :: cmin
+  real(fp), intent(out)     :: cmax
+  integer, intent(in)       :: i0               ! 0 if lower face, 1 if upper face
+  integer, intent(in)       :: n                ! block index
+  integer, intent(in)       :: ${IJK}$          ! i, j, k
+  type(foap4_t), intent(in) :: f4
+  real(fp)                  :: h_sqrt(2), fac, umean, cmean, cwave(2)
 
   ! Gravity wave speed for each state
   cwave = sqrt(gravity_constant * u_LR(i_h, :))

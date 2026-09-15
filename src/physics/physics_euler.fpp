@@ -42,11 +42,13 @@ pure subroutine to_conservative(u)
 end subroutine to_conservative
 
 !> Compute flux (in conservative variables) from primitive variables
-subroutine get_flux(flux_dim, u, flux)
+subroutine get_flux(flux_dim, u, flux, i0, n, ${IJK}$, f4)
   ${ROUTINE_SEQ()}$
   integer, intent(in)   :: flux_dim
   real(fp), intent(in)  :: u(n_tvars)
   real(fp), intent(out) :: flux(n_tvars)
+  integer, intent(in)   :: i0, n, ${IJK}$
+  type(foap4_t), intent(in) :: f4
   integer               :: idim
   real(fp)              :: sum_v2
 
@@ -70,13 +72,17 @@ end subroutine get_flux
 
 !> This implements formula (10.52) from "Riemann Solvers and Numerical Methods
 !> for Fluid Dynamics" by Toro.
-pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax)
+pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax, i0, n, ${IJK}$, f4)
   ${ROUTINE_SEQ()}$
-  integer, intent(in)   :: flux_dim
-  real(fp), intent(in)  :: u_LR(n_tvars, 2) !< Primitive variables
-  real(fp), intent(out) :: cmin
-  real(fp), intent(out) :: cmax
-  real(fp)              :: rho_sqrt(2), fac, eta2, umean, csound2(2), dmean
+  integer, intent(in)       :: flux_dim
+  real(fp), intent(in)      :: u_LR(n_tvars, 2) !< Primitive variables
+  real(fp), intent(out)     :: cmin
+  real(fp), intent(out)     :: cmax
+  integer, intent(in)       :: i0           ! 0 if lower face, 1 if upper face
+  integer, intent(in)       :: n            ! block index
+  integer, intent(in)       :: ${IJK}$      ! i, j, k
+  type(foap4_t), intent(in) :: f4
+  real(fp)                  :: rho_sqrt(2), fac, eta2, umean, csound2(2), dmean
 
   rho_sqrt = sqrt(max(u_LR(i_rho, :), euler_rho_floor))
   fac = 1/(rho_sqrt(1) + rho_sqrt(2))

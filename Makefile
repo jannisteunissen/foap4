@@ -206,9 +206,13 @@ TARGETS_3D := $(addprefix $(BINDIR)/,\
 # ==============================================================================
 # Ensure limiter and flux schemes in NUMERICSDIR are preprocessed
 # ==============================================================================
-NUMERICS_FPP := $(wildcard $(NUMERICSDIR)/limiter_*.fpp) \
-	$(wildcard $(NUMERICSDIR)/flux_scheme_*.fpp)
-NUMERICS_GEN := $(patsubst $(NUMERICSDIR)/%.fpp,$(GENDIR)/%.f90,$(NUMERICS_FPP))
+FLUX_FPP := $(wildcard $(NUMERICSDIR)/flux_scheme_*.fpp)
+LIMITER_FPP := $(wildcard $(NUMERICSDIR)/limiter_*.fpp)
+
+NUMERICS_GEN_2D := $(patsubst $(NUMERICSDIR)/%.fpp,$(GENDIR)/%_2d.f90,$(FLUX_FPP)) \
+                   $(patsubst $(NUMERICSDIR)/%.fpp,$(GENDIR)/%.f90,$(LIMITER_FPP))
+NUMERICS_GEN_3D := $(patsubst $(NUMERICSDIR)/%.fpp,$(GENDIR)/%_3d.f90,$(FLUX_FPP)) \
+                   $(patsubst $(NUMERICSDIR)/%.fpp,$(GENDIR)/%.f90,$(LIMITER_FPP))
 
 # ==============================================================================
 # Phony targets
@@ -368,7 +372,7 @@ $(COMMON_OBJS_3D): $(BASE_OBJS_3D)
 # ==============================================================================
 
 # All 2D target objects depend on 2D library
-$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_2D)): $(LIB_2D) $(NUMERICS_GEN)
+$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_2D)): $(LIB_2D) $(NUMERICS_GEN_2D)
 
 # All 3D target objects depend on 3D library
-$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_3D)): $(LIB_3D) $(NUMERICS_GEN)
+$(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_3D)): $(LIB_3D) $(NUMERICS_GEN_3D)

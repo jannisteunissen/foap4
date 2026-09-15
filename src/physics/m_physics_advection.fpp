@@ -28,28 +28,44 @@ module m_physics_advection_${NDIM}$d
   character(len=10), parameter :: var_names(n_vars_all) = &
        [character(len=10)      :: "error", "rho"]
 
-  ! Velocity
+  ! Velocity (in case of uniform velocity)
   real(fp)                     :: advection_velocity(${NDIM}$) = 1.0_fp
   ${DECLARE_DEVICE('advection_velocity')}$
+
+  ! Initial location of solution
+  real(dp)                     :: advection_r0(NDIM) = 0.5_dp
+  ${DECLARE_DEVICE('advection_r0')}$
 
   ! Whether to use a Gaussian solution
   logical                      :: advection_use_gaussian = .false.
   ${DECLARE_DEVICE('advection_use_gaussian')}$
+
+  ! Type of velocity - 1: constant, 2: rotation, 3: swirl
+  integer :: advection_velocity_type = 1
+  ${DECLARE_DEVICE('advection_velocity_type')}$
 
   ! Which variables are temporal
   logical, parameter           :: var_temporal(n_vars_all) = [.false., .true.]
 
 contains
 
-  subroutine advection_initialize(velocity, use_gaussian)
+  subroutine advection_initialize(velocity, use_gaussian, vtype, r0)
     real(dp), intent(in) :: velocity(${NDIM}$)
     logical, intent(in)  :: use_gaussian
+    integer, intent(in)  :: vtype
+    real(dp), intent(in) :: r0(${NDIM}$)
 
     advection_velocity = real(velocity, fp)
     ${UPDATE_DEVICE('advection_velocity')}$
 
     advection_use_gaussian = use_gaussian
     ${UPDATE_DEVICE('advection_use_gaussian')}$
+
+    advection_velocity_type = vtype
+    ${UPDATE_DEVICE('advection_velocity_type')}$
+
+    advection_r0 = r0
+    ${UPDATE_DEVICE('advection_r0')}$
   end subroutine advection_initialize
 
 end module m_physics_advection_${NDIM}$d

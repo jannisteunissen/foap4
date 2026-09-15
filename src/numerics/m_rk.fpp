@@ -127,33 +127,40 @@ contains
        call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
             1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + 0.5_dp*dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, dt, dt_lim, offset, &
             1, [0], [1.0_dp], 0, 2, n_steps)
     case (rk_heuns_method)
        call forward_euler(f4, dt, dt_lim, 0, &
             1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, 0.5_dp*dt, dt_lim, offset, &
             2, [0, offset], [0.5_dp, 0.5_dp], 0, 2, n_steps)
     case (rk_ssprk33_method)
        call forward_euler(f4, dt, dt_lim, 0, &
             1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, 0.25_dp*dt, dt_lim, offset, &
             2, [0, offset], [0.75_dp, 0.25_dp], 2*offset, 2, n_steps)
        f4%time = time_in + 0.5_dp*dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, 2*third*dt, dt_lim, 2*offset, &
             2, [0, 2*offset], [third, 2*third], 0, 3, n_steps)
     case (rk_ssprk43_method)
        call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
             1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + 0.5_dp * dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, 0.5_dp*dt, dt_lim, offset, &
             1, [offset], [1.0_dp], 2*offset, 2, n_steps)
        f4%time = time_in + dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, sixth*dt, dt_lim, 2*offset, &
             2, [0, 2*offset], [2*third, third], 3*offset, 3, n_steps)
        f4%time = time_in + 0.5_dp * dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, 0.5_dp*dt, dt_lim, 3*offset, &
             1, [3*offset], [1.0_dp], 0, 4, n_steps)
     case (rk_rk4_method)
@@ -164,12 +171,15 @@ contains
        call forward_euler(f4, 0.5_dp*dt, dt_lim, 0, &
             1, [0], [1.0_dp], offset, 1, n_steps)
        f4%time = time_in + 0.5_dp * dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, 0.5_dp*dt, dt_lim, offset, &
             1, [0], [1.0_dp], 2*offset, 2, n_steps)
        f4%time = time_in + 0.5_dp * dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, dt, dt_lim, 2*offset, &
             1, [0], [1.0_dp], 3*offset, 3, n_steps)
        f4%time = time_in + dt
+       ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, sixth*dt, dt_lim, 3*offset, &
             4, [0, offset, 2*offset, 3*offset], &
             [-third, third, 2*third, third], 0, 4, n_steps)

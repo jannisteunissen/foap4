@@ -66,7 +66,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
 #:if NDIM == 2
         ! Compute x-flux
         tmp = f4%uu_prim(i-n_gc:i+n_gc, j, i_tvars0+1:i_tvars0+n_tvars, n)
-        call flux_cell_faces(1, tmp, flux, cmax)
+        call flux_cell_faces(1, tmp, flux, cmax, n, ${IJK}$, f4)
         dvar = dvar + dt * inv_dr(1) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cmax * inv_dr(1)
 
@@ -78,7 +78,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
 
         ! Compute y-flux
         tmp = f4%uu_prim(i, j-n_gc:j+n_gc, i_tvars0+1:i_tvars0+n_tvars, n)
-        call flux_cell_faces(2, tmp, flux, cmax)
+        call flux_cell_faces(2, tmp, flux, cmax, n, ${IJK}$, f4)
         dvar = dvar + dt * inv_dr(2) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cfl_sum + cmax * inv_dr(2)
 
@@ -90,7 +90,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
 #:elif NDIM == 3
         ! Compute fluxes
         tmp = f4%uu_prim(i-n_gc:i+n_gc, j, k, i_tvars0+1:i_tvars0+n_tvars, n)
-        call flux_cell_faces(1, tmp, flux, cmax)
+        call flux_cell_faces(1, tmp, flux, cmax, n, ${IJK}$, f4)
         dvar = dvar + dt * inv_dr(1) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cmax * inv_dr(1)
 
@@ -101,7 +101,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
              f4%bflux(j, k, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(1, n)) = dt * flux(:, 2)
 
         tmp = f4%uu_prim(i, j-n_gc:j+n_gc, k, i_tvars0+1:i_tvars0+n_tvars, n)
-        call flux_cell_faces(2, tmp, flux, cmax)
+        call flux_cell_faces(2, tmp, flux, cmax, n, ${IJK}$, f4)
         dvar = dvar + dt * inv_dr(2) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cfl_sum + cmax * inv_dr(2)
 
@@ -112,7 +112,7 @@ subroutine feuler_finite_volume(f4, dt_in, dt_lim, s_deriv, &
              f4%bflux(i, k, i_tvars0+1:i_tvars0+n_tvars, f4%bflux_ix(3, n)) = dt * flux(:, 2)
 
         tmp = f4%uu_prim(i, j, k-n_gc:k+n_gc, i_tvars0+1:i_tvars0+n_tvars, n)
-        call flux_cell_faces(3, tmp, flux, cmax)
+        call flux_cell_faces(3, tmp, flux, cmax, n, ${IJK}$, f4)
         dvar = dvar + dt * inv_dr(3) * (flux(:, 1) - flux(:, 2))
         cfl_sum = cfl_sum + cmax * inv_dr(3)
 

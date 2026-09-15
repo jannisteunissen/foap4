@@ -320,7 +320,7 @@ contains
 
   #:include 'flux_finite_volume.fpp'
 
-  include 'flux_scheme_${FLUX_SCHEME}$.f90'
+  include 'flux_scheme_${FLUX_SCHEME}$_${NDIM}$d.f90'
 
   include 'limiter_${LIMITER}$.f90'
 

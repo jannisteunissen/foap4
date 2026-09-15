@@ -19,27 +19,30 @@ program test_adv
   integer, parameter :: n_gc = limiter_num_ghostcells
 
   real(dp) :: velocity(NDIM) = 1.0_dp
+  real(dp) :: r0(NDIM)       = 0.5_dp
   real(dp) :: cfl_number     = 0.5_dp
+  real(dp) :: dt_max         = 5e-2_dp
   real(dp) :: end_time       = 1.0_dp
   real(dp) :: c_refine       = 0.1_dp
   real(dp) :: c_derefine     = 0.0125_dp
   real(dp) :: c_eps          = 0.01_dp
   real(dp) :: c_abs          = 1e-6_dp
 
-  logical           :: do_refinement        = .true.
-  integer           :: max_refinement_level = 3
-  integer           :: min_refinement_level = 1
-  integer           :: n_steps_refinement   = 4
-  integer           :: max_blocks           = 2000
-  integer           :: blocks_per_dim(NDIM) = 1
-  integer           :: bx(NDIM)             = 32
-  integer           :: num_outputs          = 40
-  integer           :: n_gc_out = 1
+  logical           :: do_refinement            = .true.
+  integer           :: max_refinement_level     = 3
+  integer           :: min_refinement_level     = 1
+  integer           :: n_steps_refinement       = 4
+  integer           :: max_blocks               = 2000
+  integer           :: blocks_per_dim(NDIM)     = 1
+  integer           :: bx(NDIM)                 = 32
+  integer           :: num_outputs              = 40
+  integer           :: n_gc_out                 = 1
+  integer           :: velocity_type            = 1
   real(dp)          :: load_imbalance_threshold = 1.1_dp
-  character(len=40) :: integrator_name      = "heuns_method"
-  character(len=40) :: viewer               = "visit"
-  logical           :: write_vtu = .false.
-  logical           :: use_gaussian = .false.
+  character(len=40) :: integrator_name          = "heuns_method"
+  character(len=40) :: viewer                   = "visit"
+  logical           :: write_vtu                = .false.
+  logical           :: use_gaussian             = .false.
 
   type(foap4_t) :: f4
   type(CFG_t) :: cfg
@@ -67,10 +70,14 @@ program test_adv
   call CFG_add_get(cfg, 'blocks_per_dim', blocks_per_dim, &
        'Number of blocks (per dimension) on coarse grid')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
-  call CFG_add_get(cfg, 'velocity', velocity, 'Velocity')
+  call CFG_add_get(cfg, 'velocity_type', velocity_type, &
+       'Velocity type (1: uniform, 2: rotation, 3: swirl)')
+  call CFG_add_get(cfg, 'velocity', velocity, 'Velocity (for uniform profile)')
+  call CFG_add_get(cfg, 'r0', r0, 'Center of initial solution')
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
   call CFG_add_get(cfg, 'cfl_number', cfl_number, 'CFL number')
+  call CFG_add_get(cfg, 'dt_max', dt_max, 'Max. dt (important for swirl)')
   call CFG_add_get(cfg, 'viewer', viewer, &
        'Write XDMF output for this viewer (visit or paraview)')
   call CFG_check(cfg)
@@ -98,7 +105,6 @@ contains
     character(len=40), intent(in) :: integrator_name
     real(dp), parameter          :: block_length(NDIM) = 1.0_dp
     logical, parameter           :: periodic(NDIM) = .true.
-    real(dp), parameter          :: cfl_number = 0.5_dp
     integer                      :: n, prev_mesh_revision, n_output
     integer                      :: highest_level, prev_highest_level, n_iterations, ierr
     integer(int64)               :: sum_local_blocks, sum_global_blocks
@@ -108,7 +114,7 @@ contains
     real(dp)                     :: t0, t1
     real(dp)                     :: rho_initial_sum, rho_sum, l1_err, l2_err
 
-    call advection_initialize(velocity, use_gaussian)
+    call advection_initialize(velocity, use_gaussian, velocity_type, r0)
 
     f4%time = 0.0_dp
     dt_lim = 0.0_dp
@@ -152,8 +158,7 @@ contains
 
     do while (f4%time <= end_time)
        n_iterations = n_iterations + 1
-       dt = cfl_number * dt_lim
-
+       dt = min(cfl_number * dt_lim, dt_max)
        write_this_step = (f4%time + dt >= n_output * dt_output)
        if (write_this_step) dt = n_output * dt_output - f4%time
 
@@ -286,22 +291,39 @@ contains
     real(dp)             :: distance, q
     real(dp), parameter  :: radius = 0.1_dp
     real(dp), parameter  :: border = 0.05_dp
-#:if NDIM == 2
-    real(dp) :: x0, y0
-#:elif NDIM == 3
-    real(dp) :: x0, y0, z0
+    real(dp)             :: x0(NDIM), dx(NDIM), cos_t, sin_t
+
+    x0(1) = x
+    x0(2) = y
+#:if NDIM == 3
+    x0(3) = z
 #:endif
 
-#:if NDIM == 2
-    x0 = modulo(x - advection_velocity(1) * t, 1.0_dp)
-    y0 = modulo(y - advection_velocity(2) * t, 1.0_dp)
-    distance = sqrt((x0 - 0.5_dp)**2 + (y0 - 0.5_dp)**2)
-#:elif NDIM == 3
-    x0 = modulo(x - advection_velocity(1) * t, 1.0_dp)
-    y0 = modulo(y - advection_velocity(2) * t, 1.0_dp)
-    z0 = modulo(z - advection_velocity(3) * t, 1.0_dp)
-    distance = sqrt((x - 0.5_dp)**2 + (y - 0.5_dp)**2 + (z - 0.5_dp)**2)
-#:endif
+    select case (advection_velocity_type)
+    case (1)
+       ! Uniform velocity field with periodic boundaries
+       x0 = x0 - advection_velocity * t
+
+    case (2)
+       ! Angular rotation around domain center with 1 rad/s
+       dx = x0 - 0.5_dp
+       cos_t = cos(t)
+       sin_t = sin(t)
+
+       x0(1) = 0.5_dp + cos_t * dx(1) - sin_t * dx(2)
+       x0(2) = 0.5_dp + sin_t * dx(1) + cos_t * dx(2)
+    case (3)
+       ! No simple analytic solution is available, except for t = 2*k where k
+       ! is an integer.
+    case default
+    end select
+
+    ! Keep the point inside the periodic domain
+    x0 = modulo(x0, 1.0_dp)
+
+    ! Avoid temporary array
+    dx = x0 - advection_r0
+    distance = sqrt(dot_product(dx, dx))
 
     if (advection_use_gaussian) then
        rho_solution = exp(-(distance/radius)**2)
@@ -318,11 +340,52 @@ contains
     end if
   end function rho_solution
 
+  pure subroutine get_velocity(flux_dim, v, i0, n, ${IJK}$, f4)
+    ${ROUTINE_SEQ()}$
+    integer, intent(in)       :: flux_dim
+    real(fp), intent(out)     :: v
+    integer, intent(in)       :: i0      ! 0 if lower face, 1 if upper face
+    integer, intent(in)       :: n       ! block index
+    integer, intent(in)       :: ${IJK}$ ! i, j, k
+    type(foap4_t), intent(in) :: f4
+    real(dp)                  :: rr(ndim), dr(ndim)
+    real(fp)                  :: vel(ndim)
+    real(dp), parameter       :: pi = acos(-1.0_fp)
+
+    select case (advection_velocity_type)
+    case (1)
+       v = advection_velocity(flux_dim)
+    case (2, 3)
+       dr = f4%dr_level(:, f4%block_level(n))
+       rr(1) = f4%block_origin(1, n) + dr(1) * (i - 0.5_dp)
+       rr(2) = f4%block_origin(2, n) + dr(2) * (j - 0.5_dp)
+#:if NDIM == 3
+       rr(3) = f4%block_origin(3, n) + dr(3) * (k - 0.5_dp)
+#:endif
+       rr(flux_dim) = rr(flux_dim) + (i0 - 0.5_dp) * dr(flux_dim)
+
+       if (advection_velocity_type == 2) then
+          ! Clockwise solid-body rotation
+          vel(1) =  rr(2) - 0.5_dp
+          vel(2) = -(rr(1) - 0.5_dp)
+       else
+          ! u = -d psi/dy, v = d psi/dx
+          vel(1) = -sin(pi * rr(1))**2 * sin(2.0_dp * pi * rr(2)) * &
+               cos(0.5_dp * pi * f4%time)
+          vel(2) =  sin(2.0_dp * pi * rr(1)) * sin(pi * rr(2))**2 * &
+               cos(0.5_dp * pi * f4%time)
+       end if
+       v = vel(flux_dim)
+    case default
+       v = 0.0_fp
+    end select
+  end subroutine get_velocity
+
 #:include 'physics_advection.fpp'
 
 #:include 'flux_finite_volume.fpp'
 
-  include 'flux_scheme_${FLUX_SCHEME}$.f90'
+  include 'flux_scheme_${FLUX_SCHEME}$_${NDIM}$d.f90'
 
   include 'limiter_${LIMITER}$.f90'
 
