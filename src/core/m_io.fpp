@@ -66,7 +66,7 @@ contains
 
     t0 = MPI_Wtime()
 
-    out_gc = 0; if (present(n_gc_out)) out_gc = n_gc_out
+    out_gc = 1; if (present(n_gc_out)) out_gc = n_gc_out
     if (out_gc < 0 .or. out_gc > f4%n_gc) error stop "Invalid n_gc_out"
 
     ! Get the block data from the device
