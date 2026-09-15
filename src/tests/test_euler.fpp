@@ -186,7 +186,7 @@ contains
 
        call euler_initialize(1.4_dp, 0.0_dp, 1e-12_dp, 1e-12_dp)
     case ("sedov")
-       if (ndim /= 3) error stop "The Sedov test case is 3D only"
+       if (ndim < 2) error stop "The Sedov test case is 2D/3D only"
        periodic = .false.
        domain_length = 1.0_dp
        block_length = domain_length / blocks_per_dim
@@ -443,7 +443,7 @@ contains
     real(dp)                     :: scale, e_background, total_energy
     real(dp)                     :: weight_integral
     real(dp)                     :: rr(ndim), r, weight
-    real(dp)                     :: V_sphere, e_bg_inside, use_radius
+    real(dp)                     :: V_initial, e_bg_inside, use_radius
     real(dp), parameter          :: pi = acos(-1.0_dp)
     integer                      :: max_level
 
@@ -453,17 +453,23 @@ contains
     use_radius = max(sedov_radius, norm2(f4%dr_level(:, max_level)))
 
     ! First pass
-    V_sphere = 4.0_dp/3.0_dp * pi * sedov_radius**3
+    if (ndim == 2) then
+       V_initial = pi * sedov_radius**2
+    else
+       ! 3D case
+       V_initial = 4.0_dp/3.0_dp * pi * sedov_radius**3
+    end if
     e_background = sedov_p0 * euler_inv_gamma_m1
-    e_bg_inside = e_background * V_sphere
+    e_bg_inside = e_background * V_initial
     ! Estimate scale factor for energy
-    scale = (sedov_energy - e_bg_inside) / V_sphere
+    scale = (sedov_energy - e_bg_inside) / V_initial
 
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, r, weight)')}$ ${COPYIN('sedov_center')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
-          r  = sqrt(sum((rr - sedov_center)**2))
+          rr = rr - sedov_center
+          r  = sqrt(sum(rr**2))
           weight = merge(1.0_fp, 0.0_fp, r < use_radius)
 
           f4%uu(${IJK}$, i_rho, n) = real(sedov_rho0, fp)
@@ -481,7 +487,8 @@ contains
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           rr = f4_cell_coord(f4, n, ${IJK}$)
-          r  = sqrt(sum((rr - sedov_center)**2))
+          rr = rr - sedov_center
+          r  = sqrt(sum(rr**2))
           weight = merge(1.0_fp, 0.0_fp, r < use_radius)
 
           f4%uu(${IJK}$, i_rho, n) = real(sedov_rho0, fp)
