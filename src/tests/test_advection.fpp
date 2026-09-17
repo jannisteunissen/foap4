@@ -254,12 +254,12 @@ contains
     integer, intent(in)       :: i_err
     real(dp), intent(out)     :: l1_err, l2_err
     integer                   :: level, ${IJK}$, n, ierror
-    real(dp)                  :: dvol
+    real(dp)                  :: dvol, my_l1, my_l2
 
-    l1_err = 0.0_dp
-    l2_err = 0.0_dp
+    my_l1 = 0.0_dp
+    my_l2 = 0.0_dp
 
-    ${PARALLEL_LOOP_FLAT('collapse(ndim+1) private(level, dvol) reduction(+:l1_err, l2_err)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(ndim+1) private(level, dvol) reduction(+:my_l1, my_l2)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           level = f4%block_level(n)
@@ -270,18 +270,18 @@ contains
                f4%dr_level(3, level)
 #:endif
 
-          l1_err = l1_err + abs(f4%uu(${IJK}$, i_err, n)) * dvol
-          l2_err = l2_err + f4%uu(${IJK}$, i_err, n)**2 * dvol
+          my_l1 = my_l1 + abs(f4%uu(${IJK}$, i_err, n)) * dvol
+          my_l2 = my_l2 + f4%uu(${IJK}$, i_err, n)**2 * dvol
        end do; ${KJI_CLOSE_LOOP}$
     end do
 
-    call MPI_Allreduce(MPI_IN_PLACE, l1_err, 1, MPI_DOUBLE_PRECISION, &
+    call MPI_Allreduce(MPI_IN_PLACE, my_l1, 1, MPI_DOUBLE_PRECISION, &
          MPI_SUM, f4%mpicomm, ierror)
-    call MPI_Allreduce(MPI_IN_PLACE, l2_err, 1, MPI_DOUBLE_PRECISION, &
+    call MPI_Allreduce(MPI_IN_PLACE, my_l2, 1, MPI_DOUBLE_PRECISION, &
          MPI_SUM, f4%mpicomm, ierror)
 
-    l2_err = sqrt(l2_err)
-
+    l1_err = my_l1
+    l2_err = sqrt(my_l2)
   end subroutine compute_error_norms
 
   pure real(dp) function rho_solution(${XYZ}$, t)

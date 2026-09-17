@@ -4235,11 +4235,11 @@ contains
     integer, intent(in)       :: i_var
     real(dp), intent(out)     :: var_sum
     integer                   :: level, ${IJK}$, n, ierror
-    real(dp)                  :: dvol
+    real(dp)                  :: dvol, my_sum
 
-    var_sum = 0.0_dp
+    my_sum = 0.0_dp
 
-    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(level, dvol) reduction(+:var_sum)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(level, dvol) reduction(+:my_sum)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
           level = f4%block_level(n)
@@ -4249,12 +4249,13 @@ contains
           dvol = f4%dr_level(1, level) * f4%dr_level(2, level) * &
                f4%dr_level(3, level)
 #:endif
-          var_sum = var_sum + f4%uu(${IJK}$, i_var, n) * dvol
+          my_sum = my_sum + f4%uu(${IJK}$, i_var, n) * dvol
        end do; ${KJI_CLOSE_LOOP}$
     end do
 
-    call MPI_Allreduce(MPI_IN_PLACE, var_sum, 1, MPI_DOUBLE_PRECISION, &
+    call MPI_Allreduce(MPI_IN_PLACE, my_sum, 1, MPI_DOUBLE_PRECISION, &
          MPI_SUM, f4%mpicomm, ierror)
+    var_sum = my_sum
 
   end subroutine f4_compute_sum
 
@@ -4263,20 +4264,21 @@ contains
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_var
     real(dp), intent(out)     :: var_max
+    real(dp)                  :: my_max
     integer                   :: ${IJK}$, n, ierror
 
-    var_max = -huge(1.0_dp)
+    my_max = -huge(1.0_dp)
 
-    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) reduction(max:var_max)')}$ ${DEFAULT_PRESENT()}$
+    ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) reduction(max:my_max)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-            var_max = max(var_max, f4%uu(${IJK}$, i_var, n))
+            my_max = max(my_max, f4%uu(${IJK}$, i_var, n))
        end do; ${KJI_CLOSE_LOOP}$
     end do
 
-    call MPI_Allreduce(MPI_IN_PLACE, var_max, 1, MPI_DOUBLE_PRECISION, &
+    call MPI_Allreduce(MPI_IN_PLACE, my_max, 1, MPI_DOUBLE_PRECISION, &
          MPI_MAX, f4%mpicomm, ierror)
-
+    var_max = my_max
   end subroutine f4_compute_max
 
   !> Compute index offset for indexing in 4D array shaped (*, n2, n3, n4)
