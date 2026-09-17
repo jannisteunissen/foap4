@@ -21,33 +21,33 @@ LIBS := p4est sc z m
 FLOAT_BITS ?= 64
 
 # ==============================================================================
-# GPU / offloading configuration
-# One canonical variable OFFLOAD_KIND drives everything: acc | omp | ompcpu | none
-# By default, use OpenACC (unless OpenMP or OPENMP_CPU is explicitly requested)
+# GPU / offloading configuration through OFFLOAD variable:
+#    acc      - OpenACC GPU
+#    omp      - OpenMP GPU
+#    ompcpu   - OpenMP CPU threading
+#    none     - No offloading
+# By default, use OpenACC
 # ==============================================================================
-ifeq ($(OPENMP),1)
-    OFFLOAD_KIND := omp
-else ifeq ($(OPENMP_CPU),1)
-    OFFLOAD_KIND := ompcpu
-else ifeq ($(OPENACC),0)
-    OFFLOAD_KIND := none
-else
-    OFFLOAD_KIND := acc
-endif
+OFFLOAD ?= acc
 
-ifeq ($(OFFLOAD_KIND),acc)
+ifeq ($(OFFLOAD),acc)
     OFFLOAD_FYPP  := -D USE_OPENACC
     OFFLOAD_MODEL := "OpenACC GPU"
     OFFLOAD_TAG   := -acc
-else ifeq ($(OFFLOAD_KIND),omp)
+else ifeq ($(OFFLOAD),omp)
     OFFLOAD_FYPP  := -D USE_OPENMP
     OFFLOAD_MODEL := "OpenMP GPU"
     OFFLOAD_TAG   := -omp
-else ifeq ($(OFFLOAD_KIND),ompcpu)
+else ifeq ($(OFFLOAD),ompcpu)
     OFFLOAD_FYPP  := -D USE_OPENMP_CPU
     OFFLOAD_MODEL := "OpenMP CPU"
     OFFLOAD_TAG   := -ompcpu
+else ifeq ($(OFFLOAD),none)
+    OFFLOAD_FYPP  :=
+    OFFLOAD_MODEL := "None"
+    OFFLOAD_TAG   := -cpu
 else
+    $(warning Unknown OFFLOAD="$(OFFLOAD)", defaulting to none)
     OFFLOAD_FYPP  :=
     OFFLOAD_MODEL := "None"
     OFFLOAD_TAG   := -cpu
@@ -118,21 +118,21 @@ ifeq ($(compiler_brand),GNU)
     else
         FFLAGS += -Ofast -march=native
     endif
-    ifeq ($(OFFLOAD_KIND),acc)
+    ifeq ($(OFFLOAD),acc)
         FFLAGS += -fopenacc -foffload=nvptx-none
         CFLAGS += -fopenacc -foffload=nvptx-none
-    else ifneq (,$(filter $(OFFLOAD_KIND),omp ompcpu))
+    else ifneq (,$(filter $(OFFLOAD),omp ompcpu))
         FFLAGS += -fopenmp
         CFLAGS += -fopenmp
     endif
 
 else ifneq (,$(filter $(compiler_brand),nvfortran pgfortran))
     NV_COMMON := -Minform=warn -fast -Mpreprocess -static-nvidia -g -module $(OBJDIR)
-    ifeq ($(OFFLOAD_KIND),acc)
+    ifeq ($(OFFLOAD),acc)
         FFLAGS ?= $(NV_COMMON) -acc=gpu,strict -gpu=ccnative
-    else ifeq ($(OFFLOAD_KIND),omp)
+    else ifeq ($(OFFLOAD),omp)
         FFLAGS ?= $(NV_COMMON) -mp=gpu -gpu=ccnative
-    else ifeq ($(OFFLOAD_KIND),ompcpu)
+    else ifeq ($(OFFLOAD),ompcpu)
         FFLAGS ?= $(NV_COMMON) -mp
     else
         FFLAGS ?= $(NV_COMMON)
@@ -140,16 +140,16 @@ else ifneq (,$(filter $(compiler_brand),nvfortran pgfortran))
 
 else ifeq ($(compiler_brand),Cray)
     FFLAGS ?= -M878 -O2 -eT -ea -ef -ffree -J$(OBJDIR)
-    ifeq ($(OFFLOAD_KIND),acc)
+    ifeq ($(OFFLOAD),acc)
         FFLAGS += -h acc -h acc_model=auto_async_none:fast_addr:no_deep_copy
-    else ifneq (,$(filter $(OFFLOAD_KIND),omp ompcpu))
+    else ifneq (,$(filter $(OFFLOAD),omp ompcpu))
         FFLAGS += -h omp
     endif
 
 else
     $(warning Unknown compiler "$(compiler_brand)", using default flags)
     FFLAGS ?= -O2 -g -J$(OBJDIR)
-    ifneq ($(OFFLOAD_KIND),none)
+    ifneq ($(OFFLOAD),none)
         $(warning $(OFFLOAD_MODEL) flags unknown for this compiler; add manually via FFLAGS_USER)
     endif
 endif
@@ -258,12 +258,11 @@ help:
 	@echo "  help     - Show this help message"
 	@echo ""
 	@echo "Options:"
-	@echo "  BUILDDIR=<dir>  - Set build directory (default: build)"
+	@echo "  BUILDDIR=<dir>  - Set build directory (default: build-$(CONFIG_TAG))"
 	@echo "  DEBUG=1         - Enable debug flags"
 	@echo "  SAFE=1          - Use -O2 instead of -Ofast"
-	@echo "  OPENACC=1       - Enable OpenACC GPU offloading (default; disabled with OPENMP)"
-	@echo "  OPENMP=1        - Enable OpenMP target GPU offloading (disables OPENACC)"
-	@echo "  OPENMP_CPU=1    - Enable OpenMP CPU threading (disables OPENACC)"
+	@echo "  OFFLOAD=acc|omp|ompcpu|none"
+	@echo "                  - Choose offloading model (default: acc)"
 	@echo "  FLOAT_BITS=N    - Floating point precision for block data; 32 or 64"
 	@echo "  F90C=<comp>     - Set Fortran compiler (default: mpif90)"
 	@echo "  FFLAGS_USER=... - Additional Fortran flags appended to FFLAGS"
@@ -271,8 +270,8 @@ help:
 	@echo "Examples:"
 	@echo "  make 2d FLOAT_BITS=32"
 	@echo "  make all DEBUG=1"
-	@echo "  make 3d F90C=nvfortran OPENACC=1"
-	@echo "  make 3d F90C=nvfortran OPENMP=1"
+	@echo "  make 3d F90C=nvfortran OFFLOAD=acc"
+	@echo "  make 3d F90C=nvfortran OFFLOAD=omp"
 	@echo "  make BUILDDIR=build_debug DEBUG=1"
 	@echo ""
 	@echo "Detected compiler: $(compiler_brand)"
@@ -280,7 +279,6 @@ help:
 	@echo "Current FLOAT_BITS: $(FLOAT_BITS)"
 	@echo "Offload model: $(OFFLOAD_MODEL)"
 	@echo "Current FFLAGS: $(FFLAGS)"
-
 
 clean:
 	$(RM) -r $(BUILDDIR)
@@ -376,3 +374,4 @@ $(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_2D)): $(LIB_2D) $(NUMERICS_GEN_2D
 
 # All 3D target objects depend on 3D library
 $(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGETS_3D)): $(LIB_3D) $(NUMERICS_GEN_3D)
+
