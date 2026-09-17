@@ -379,11 +379,11 @@ contains
                cos(inv_T * pi * f4%time)
 #:elif NDIM == 3
           ! Deforming deformation in 3D, see eq. (11.2) in doi:10.1137/0733033
-          vel(1) = -sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * &
+          vel(1) = 2 * sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * &
                sin(2*pi*rr(3)) * cos(inv_T * pi * f4%time)
-          vel(2) =  sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * &
+          vel(2) = -sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * &
                sin(2*pi*rr(3)) * cos(inv_T * pi * f4%time)
-          vel(3) = -sin(2 * pi * rr(1)) * sin(2 * pi * rr(2))**2 * &
+          vel(3) = -sin(2 * pi * rr(1)) * sin(2 * pi * rr(2)) * &
                sin(pi*rr(3))**2 * cos(inv_T * pi * f4%time)
 #:endif
        end if
