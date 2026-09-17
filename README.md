@@ -1,55 +1,49 @@
-# foap4 - Fortran OpenAcc p4est
+# foap4 - Fortran OpenAcc/OpenMP p4est
 
-This project aims to combine [p4est](https://www.p4est.org/) with OpenAcc and Fortran. The goal is to build a simple and compact code for numerical simulations on quadtrees/octrees, using multiple GPUs.
+This Fortran code combines the MPI-parallel adaptive mesh refinement (AMR) library [p4est](https://www.p4est.org/) with OpenAcc or OpenMP offloading to GPUs. The goal is to provide a performance reference so that informed decisions can be made about adding GPU support to existing (Fortran) AMR codes.
+
+More information about the code can be found in this [paper](https://arxiv.org/abs/2605.07612).
 
 # Installation
 
 ## Prerequisites
 
 * [fypp](https://fypp.readthedocs.io/en/stable/)
-* An MPI-compatible C and Fortran compiler
-* [NVHPC](https://developer.nvidia.com/hpc-sdk-downloads) or another OpenACC-compatible compiler for GPU support
+* An MPI-compatible C and Fortran compiler (e.g. `gfortran` or [nvfortran](https://developer.nvidia.com/hpc-sdk-downloads))
 
 ## Compiling p4est
 
 The `p4est` library is included as a git submodule. It seems most robust to compile this library using a GCC toolchain. To compile it into `p4est/build`, the following steps can be used:
 
-1. Get the `p4est` source code:
-
-        git submodule init
-        git submodule update
-
-2. Get the `sc` source code required for `p4est`:
-
-        cd p4est
-        git submodule init
-        git submodule update
-
-3. Go back to the top folder and execute the `build_p4est.sh` script with:
-
+        git submodule update --init --recursive
+        git submodule update --recursive
         bash build_p4est.sh
 
 It is also possible to install `p4est` in a different location (or through a different method), but then the main Makefile has to be updated accordingly.
 
 ## Compiling foap4 with NVHPC
 
-Load the NVHPC compilers, so that `mpif90` points to `nvfortran` etc. Then simply execute
-
-    make
-
 To see a list of compilation options, use
 
     make help
 
+Compilation examples:
+
+    make
+    make OFFLOAD=omp
+    make FLOAT_BITS=32 OFFLOAD=ompcpu
+    make DEBUG=1 OFFLOAD=none
+
+The `BUILDDIR` will automatically be set based on the compiler and main compilation options.
+
 ## Included examples
 
-These are compiled under `build/bin/`, typically as both a 2D and 3D variant. Some notable tests/examples are:
+These are compiled under `$BUILDDIR/bin/`, typically as both a 2D and 3D variant. Some notable tests/examples are:
 
 * `test_refinement_2/3d`: tests mesh refinement, prolongation and restriction
 * `test_xdmf_writer_2/3d`: tests XDMF output
 * `test_advection_2/3d`: simple scalar advection test
 * `test_euler_2/3d`: solves Euler's equations of gas dynamics
-
 
 ## Viewing results
 
