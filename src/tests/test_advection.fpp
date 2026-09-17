@@ -71,13 +71,13 @@ program test_adv
        'Number of blocks (per dimension) on coarse grid')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
   call CFG_add_get(cfg, 'velocity_type', velocity_type, &
-       'Velocity type (1: uniform, 2: rotation, 3: swirl)')
+       'Velocity type (1: uniform, 2: rotation, 3: deform)')
   call CFG_add_get(cfg, 'velocity', velocity, 'Velocity (for uniform profile)')
   call CFG_add_get(cfg, 'r0', r0, 'Center of initial solution')
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
   call CFG_add_get(cfg, 'time_integrator', integrator_name, 'Time integrator')
   call CFG_add_get(cfg, 'cfl_number', cfl_number, 'CFL number')
-  call CFG_add_get(cfg, 'dt_max', dt_max, 'Max. dt (important for swirl)')
+  call CFG_add_get(cfg, 'dt_max', dt_max, 'Max. dt (important for deform)')
   call CFG_add_get(cfg, 'viewer', viewer, &
        'Write XDMF output for this viewer (visit or paraview)')
   call CFG_check(cfg)
@@ -313,8 +313,8 @@ contains
        x0(1) = 0.5_dp + cos_t * dx(1) - sin_t * dx(2)
        x0(2) = 0.5_dp + sin_t * dx(1) + cos_t * dx(2)
     case (3)
-       ! No simple analytic solution is available, except for t = 2*k where k
-       ! is an integer.
+       ! No simple analytic solution is available, except for t = T, where T is
+       ! the period of the deformation
     case default
     end select
 
@@ -351,6 +351,7 @@ contains
     real(dp)                  :: rr(ndim), dr(ndim)
     real(fp)                  :: vel(ndim)
     real(dp), parameter       :: pi = acos(-1.0_fp)
+    real(dp), parameter       :: inv_T = 1/2.0_dp ! Inverse period
 
     select case (advection_velocity_type)
     case (1)
@@ -366,14 +367,25 @@ contains
 
        if (advection_velocity_type == 2) then
           ! Clockwise solid-body rotation
-          vel(1) =  rr(2) - 0.5_dp
+          vel(1) = rr(2) - 0.5_dp
           vel(2) = -(rr(1) - 0.5_dp)
+          vel(3) = 0.0_fp
        else
-          ! u = -d psi/dy, v = d psi/dx
-          vel(1) = -sin(pi * rr(1))**2 * sin(2.0_dp * pi * rr(2)) * &
-               cos(0.5_dp * pi * f4%time)
-          vel(2) =  sin(2.0_dp * pi * rr(1)) * sin(pi * rr(2))**2 * &
-               cos(0.5_dp * pi * f4%time)
+#:if NDIM == 2
+          ! Deforming deformation, see eq. (9.5) in doi:10.1137/0733033
+          vel(1) = -sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * &
+               cos(inv_T * pi * f4%time)
+          vel(2) =  sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * &
+               cos(inv_T * pi * f4%time)
+#:elif NDIM == 3
+          ! Deforming deformation in 3D, see eq. (11.2) in doi:10.1137/0733033
+          vel(1) = -sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * &
+               sin(2*pi*rr(3)) * cos(inv_T * pi * f4%time)
+          vel(2) =  sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * &
+               sin(2*pi*rr(3)) * cos(inv_T * pi * f4%time)
+          vel(3) = -sin(2 * pi * rr(1)) * sin(2 * pi * rr(2))**2 * &
+               sin(pi*rr(3))**2 * cos(inv_T * pi * f4%time)
+#:endif
        end if
        v = vel(flux_dim)
     case default
