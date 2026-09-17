@@ -1,6 +1,29 @@
 #:mute
-
+! Central macro definitions for GPU/CPU parallelism.
+! Provides OpenACC, OpenMP target, and OpenMP CPU variants.
+! Macro overview:
+!   GPU_IFDEF / GPU_ENDIF           - Conditional compilation guards for GPU code.
+!   DEFAULT_PRESENT                 - Sets default data mapping (present/defaultmap).
+!   COPYIN(varlist)                 - Maps variables to device with copy-in semantics.
+!   DECLARE_DEVICE(varlist)         - Declares device-resident variables.
+!   ENTER_DATA_COPYIN(varlist)      - Explicit data region: copyin.
+!   ENTER_DATA_CREATE(varlist)      - Explicit data region: allocate on device.
+!   EXIT_DATA_DELETE(varlist)       - Remove device data.
+!   UPDATE_DEVICE(varlist)          - Copy host -> device.
+!   UPDATE_SELF(varlist)            - Copy device -> host.
+!   PARALLEL(clauses='')            - Begin a parallel region.
+!   END_PARALLEL()                  - End a parallel region.
+!   LOOP_INNER(clauses='')          - Inner loop parallelism.
+!   LOOP_FLAT(clauses='')           - Flat loop parallelism.
+!   LOOP_OUTER(clauses='')          - Outer loop parallelism.
+!   PARALLEL_LOOP_FLAT(clauses='')  - Combined parallel+flat loop.
+!   PARALLEL_LOOP_OUTER(clauses='') - Combined parallel+outer loop.
+!   ATOMIC()                        - Atomic operation directive.
+!   ROUTINE_SEQ()                   - Marks routine as sequential on device.
+!   HOST_DATA_USE_DEVICE(varlist)   - Host-data region using device memory.
+!   END_HOST_DATA()                 - End of host-data region.
 #:if defined('USE_OPENACC')
+
 #:def GPU_IFDEF()
 #ifdef _OPENACC
 #:enddef
@@ -93,7 +116,7 @@ copyin(${varlist}$)
 #:enddef
 
 #:def DEFAULT_PRESENT()
-#! TODO: check if defaultmap(present) works
+defaultmap(present)
 #:enddef
 
 #:def COPYIN(varlist)
