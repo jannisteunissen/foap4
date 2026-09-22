@@ -84,6 +84,8 @@ program test_adv
 
   if (max_refinement_level < min_refinement_level) &
        error stop "max_refinement_level < min_refinement_level"
+  if (velocity_type < 1 .or. velocity_type > 3) &
+       error stop "velocity type should be between 1 and 3"
 
   call test_advection(f4, bx, do_refinement, max_blocks, &
        num_outputs, "output/test_adv_${NDIM}$d", end_time, integrator_name)
@@ -156,7 +158,7 @@ contains
 
     t0 = MPI_Wtime()
 
-    do while (f4%time <= end_time)
+    do while (f4%time < end_time)
        n_iterations = n_iterations + 1
        dt = min(cfl_number * dt_lim, dt_max)
        write_this_step = (f4%time + dt >= n_output * dt_output)
@@ -369,7 +371,9 @@ contains
           ! Clockwise solid-body rotation
           vel(1) = rr(2) - 0.5_dp
           vel(2) = -(rr(1) - 0.5_dp)
+#:if NDIM == 3
           vel(3) = 0.0_fp
+#:endif
        else
 #:if NDIM == 2
           ! Deforming deformation, see eq. (9.5) in doi:10.1137/0733033

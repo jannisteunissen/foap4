@@ -45,6 +45,12 @@ These are compiled under `$BUILDDIR/bin/`, typically as both a 2D and 3D variant
 * `test_advection_2/3d`: simple scalar advection test
 * `test_euler_2/3d`: solves Euler's equations of gas dynamics
 
+Run the examples with mpirun, like:
+
+    mpirun -np 1 <builddir>/bin/test_euler_2d
+
+When using OpenMP, it can be important to specify `--bind-to none` so that the OpenMP threads can run on any available core.
+
 ## Viewing results
 
 There is currently an inconsistency between Visit and Paraview regarding the order of XDMF data. To write output that can be viewed from Paraview, add `viewer="paraview"` to `io_write_grid` calls, like:
@@ -54,4 +60,4 @@ There is currently an inconsistency between Visit and Paraview regarding the ord
 Then use the legacy `XDMF Reader`. For visit no `viewer="visit"` argument is required, since it is the default.
 For most of the included test cases, the type of output is controlled by an optional argument, like:
 
-    mpirun -np 1 ./build/bin/test_euler_2d -viewer=paraview
+    mpirun -np 1 <builddir>/bin/test_euler_2d -viewer=paraview
