@@ -6,7 +6,7 @@ pure subroutine to_primitive(u)
   integer                 :: idim
 
   ! Apply density floor
-  u(i_rho) = max(u(i_rho), euler_rho_floor)
+  u(i_rho) = max(u(i_rho), euler_par%rho_floor)
 
   inv_rho = 1/u(i_rho)
   sum_v2 = 0.0_fp
@@ -15,11 +15,11 @@ pure subroutine to_primitive(u)
      sum_v2 = sum_v2 + u(i_mom0+idim)**2
   end do
 
-  u(i_e) = (euler_gamma - 1.0_fp) * &
+  u(i_e) = (euler_par%gamma - 1.0_fp) * &
        (u(i_e) - 0.5_fp * u(i_rho) * sum_v2)
 
   ! Apply pressure floor
-  u(i_e) = max(u(i_e), euler_p_floor)
+  u(i_e) = max(u(i_e), euler_par%p_floor)
 end subroutine to_primitive
 
 !> Convert primitive variables in-place to conservative ones
@@ -38,7 +38,7 @@ pure subroutine to_conservative(u)
   end do
 
   ! Compute energy from pressure and kinetic energy
-  u(i_e) = u(i_e) * euler_inv_gamma_m1 + 0.5_fp * u(i_rho) * sum_v2
+  u(i_e) = u(i_e) * euler_par%inv_gamma_m1 + 0.5_fp * u(i_rho) * sum_v2
 end subroutine to_conservative
 
 !> Compute flux (in conservative variables) from primitive variables
@@ -66,7 +66,7 @@ subroutine get_flux(flux_dim, u, flux, i0, n, ${IJK}$, f4)
   flux(i_mom0+flux_dim) = flux(i_mom0+flux_dim) + u(i_e)
 
   ! Energy flux
-  flux(i_e) = u(i_mom0+flux_dim) * (u(i_e) * euler_inv_gamma_m1 + &
+  flux(i_e) = u(i_mom0+flux_dim) * (u(i_e) * euler_par%inv_gamma_m1 + &
        0.5_fp * u(i_rho) * sum_v2 + u(i_e))
 end subroutine get_flux
 
@@ -84,7 +84,7 @@ pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax, i0, n, ${IJK}$
   type(foap4_t), intent(in) :: f4
   real(fp)                  :: rho_sqrt(2), fac, eta2, umean, csound2(2), dmean
 
-  rho_sqrt = sqrt(max(u_LR(i_rho, :), euler_rho_floor))
+  rho_sqrt = sqrt(max(u_LR(i_rho, :), euler_par%rho_floor))
   fac = 1/(rho_sqrt(1) + rho_sqrt(2))
 
   umean = fac * (&
@@ -112,8 +112,8 @@ pure function get_csound2_from_prim(u) result(csound2)
   real(fp)             :: rho_safe, p_safe
 
   ! Apply floors for robustness
-  rho_safe = max(u(i_rho), euler_rho_floor)
-  p_safe = max(u(i_e), euler_p_floor)
+  rho_safe = max(u(i_rho), euler_par%rho_floor)
+  p_safe = max(u(i_e), euler_par%p_floor)
 
-  csound2 = euler_gamma * p_safe / rho_safe
+  csound2 = euler_par%gamma * p_safe / rho_safe
 end function get_csound2_from_prim

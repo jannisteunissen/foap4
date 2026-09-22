@@ -7,12 +7,6 @@ module m_physics_euler_${NDIM}$d
   implicit none
   public
 
-  real(fp), protected :: euler_gamma = 5/3.0_fp
-  ${DECLARE_DEVICE('euler_gamma')}$
-
-  real(fp), protected :: euler_inv_gamma_m1 = 1/(5/3.0_fp - 1)
-  ${DECLARE_DEVICE('euler_inv_gamma_m1')}$
-
   ! Number of temporal variables
   integer, parameter :: n_tvars = 2 + ${NDIM}$
 
@@ -52,14 +46,16 @@ module m_physics_euler_${NDIM}$d
   ! Which variables are temporal
   logical, parameter :: var_temporal(n_vars_all) = .true.
 
-  real(fp) :: euler_gravity = 0.0_dp
-  ${DECLARE_DEVICE('euler_gravity')}$
+  type euler_par_t
+     real(fp) :: gamma        = 5/3.0_fp
+     real(fp) :: inv_gamma_m1 = 1/(5/3.0_fp - 1)
+     real(fp) :: gravity      = 0.0_dp
+     real(fp) :: rho_floor    = 0.0_dp
+     real(fp) :: p_floor      = 0.0_dp
+  end type euler_par_t
 
-  real(fp) :: euler_rho_floor = 0.0_dp
-  ${DECLARE_DEVICE('euler_rho_floor')}$
-
-  real(fp) :: euler_p_floor = 0.0_dp
-  ${DECLARE_DEVICE('euler_p_floor')}$
+  type(euler_par_t) :: euler_par
+  ${DECLARE_DEVICE('euler_par')}$
 
 contains
 
@@ -69,17 +65,17 @@ contains
     real(dp), intent(in) :: rho_floor
     real(dp), intent(in) :: p_floor
 
-    euler_gamma = real(gamma, fp)
-    euler_inv_gamma_m1 = 1/(euler_gamma-1)
+    euler_par%gamma = real(gamma, fp)
+    euler_par%inv_gamma_m1 = real(1/(gamma-1), fp)
 
-    euler_gravity = real(gravity, fp)
+    euler_par%gravity = real(gravity, fp)
 
-    euler_rho_floor = real(rho_floor, fp)
-    euler_p_floor = real(p_floor, fp)
+    euler_par%rho_floor = real(rho_floor, fp)
+    euler_par%p_floor = real(p_floor, fp)
 
-    ${UPDATE_DEVICE('euler_gamma, euler_inv_gamma_m1')}$
-    ${UPDATE_DEVICE('euler_gravity')}$
-    ${UPDATE_DEVICE('euler_rho_floor, euler_p_floor')}$
+    ${UPDATE_DEVICE('euler_par%gamma, euler_par%inv_gamma_m1')}$
+    ${UPDATE_DEVICE('euler_par%gravity')}$
+    ${UPDATE_DEVICE('euler_par%rho_floor, euler_par%p_floor')}$
   end subroutine euler_initialize
 
 end module m_physics_euler_${NDIM}$d

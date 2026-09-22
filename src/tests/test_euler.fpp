@@ -369,8 +369,8 @@ contains
              f4%uu(${IJK}$, i_rho, n) = rho_low
           end if
 
-          f4%uu(${IJK}$, i_e, n) = real(euler_inv_gamma_m1 * (p_interface + &
-               f4%uu(${IJK}$, i_rho, n) * euler_gravity * (rr(NDIM) - h0)), fp)
+          f4%uu(${IJK}$, i_e, n) = real(euler_par%inv_gamma_m1 * (p_interface + &
+               f4%uu(${IJK}$, i_rho, n) * euler_par%gravity * (rr(NDIM) - h0)), fp)
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_initial_conditions_rt
@@ -392,7 +392,7 @@ contains
     real(fp)            :: v_inf(NDIM), T_inf, c_inf
 
     T_inf      = p_inf / rho_inf
-    c_inf      = sqrt(euler_gamma * p_inf / rho_inf)
+    c_inf      = sqrt(euler_par%gamma * p_inf / rho_inf)
     v_inf(:)   = 0.0_fp
     v_inf(1:2) = 1.0_fp
 
@@ -416,12 +416,12 @@ contains
 #:endif
 
           ! Temperature perturbation
-          dT = -(euler_gamma - 1.0_fp) * beta**2 / &
-               (8.0_fp * euler_gamma * pi**2) * exp(1.0_fp - r2)
+          dT = -(euler_par%gamma - 1.0_fp) * beta**2 / &
+               (8.0_fp * euler_par%gamma * pi**2) * exp(1.0_fp - r2)
 
           ! Primitive variables
           T   = T_inf + dT
-          rho = rho_inf * (T / T_inf)**euler_inv_gamma_m1
+          rho = rho_inf * (T / T_inf)**euler_par%inv_gamma_m1
           p   = rho * T
           v  = v_inf + dv
 
@@ -433,7 +433,7 @@ contains
           f4%uu(${IJK}$, i_mom0+3, n) = rho * v(3)
 #:endif
           ! Total energy: e = p/(gamma-1) + 0.5*rho*v^2
-          f4%uu(${IJK}$, i_e, n) = p * euler_inv_gamma_m1 + &
+          f4%uu(${IJK}$, i_e, n) = p * euler_par%inv_gamma_m1 + &
                0.5_fp * rho * (v(1)**2 + v(2)**2)
        end do; ${KJI_CLOSE_LOOP}$
     end do
@@ -461,7 +461,7 @@ contains
        ! 3D case
        V_initial = 4.0_dp/3.0_dp * pi * sedov_radius**3
     end if
-    e_background = sedov_p0 * euler_inv_gamma_m1
+    e_background = sedov_p0 * euler_par%inv_gamma_m1
     e_bg_inside = e_background * V_initial
     ! Estimate scale factor for energy
     scale = (sedov_energy - e_bg_inside) / V_initial
@@ -503,8 +503,8 @@ contains
   subroutine source_term(u_prim, source)
     real(fp), intent(in)    :: u_prim(n_tvars)
     real(fp), intent(inout) :: source(n_tvars)
-    source(i_mom0+NDIM) = euler_gravity * u_prim(i_rho)
-    source(i_e)         = euler_gravity * u_prim(i_rho) * u_prim(i_mom0+NDIM)
+    source(i_mom0+NDIM) = euler_par%gravity * u_prim(i_rho)
+    source(i_e)         = euler_par%gravity * u_prim(i_rho) * u_prim(i_mom0+NDIM)
   end subroutine source_term
 
   #:include 'physics_euler.fpp'
