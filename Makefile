@@ -266,6 +266,7 @@ help:
 	@echo "  FLOAT_BITS=N    - Floating point precision for block data; 32 or 64"
 	@echo "  F90C=<comp>     - Set Fortran compiler (default: mpif90)"
 	@echo "  FFLAGS_USER=... - Additional Fortran flags appended to FFLAGS"
+	@echo "  FYPP_USER=...   - Additional Fypp flags"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make 2d FLOAT_BITS=32"
