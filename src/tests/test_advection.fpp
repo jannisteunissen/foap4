@@ -29,13 +29,13 @@ program test_adv
   real(dp) :: c_abs          = 1e-6_dp
 
   logical           :: do_refinement            = .true.
-  integer           :: max_refinement_level     = 3
+  integer           :: max_refinement_level     = ndim - 1
   integer           :: min_refinement_level     = 1
   integer           :: n_steps_refinement       = 4
   integer           :: max_blocks               = 2000
   integer           :: blocks_per_dim(NDIM)     = 1
-  integer           :: bx(NDIM)                 = 32
-  integer           :: num_outputs              = 40
+  integer           :: bx(NDIM)                 = 16
+  integer           :: num_outputs              = 4
   integer           :: n_gc_out                 = 1
   integer           :: velocity_type            = 1
   real(dp)          :: load_imbalance_threshold = 1.1_dp

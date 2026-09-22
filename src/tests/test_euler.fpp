@@ -25,10 +25,10 @@ program euler
   integer           :: max_level          = 4
   integer           :: max_blocks         = 1000
   integer           :: blocks_per_dim(NDIM) = 1
-  integer           :: bx(NDIM)           = 32
-  integer           :: num_outputs        = 40
+  integer           :: bx(NDIM)           = 16
+  integer           :: num_outputs        = 4
   logical           :: do_refinement      = .false.
-  real(dp)          :: end_time           = 2.0_dp
+  real(dp)          :: end_time           = 1.0_dp
   real(dp)          :: c_refine           = 0.8_dp
   real(dp)          :: c_derefine         = 0.2_dp
   real(dp)          :: c_eps              = 0.01_dp

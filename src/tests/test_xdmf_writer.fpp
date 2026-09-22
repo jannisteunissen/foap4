@@ -157,6 +157,7 @@ contains
     call io_xdmf_write_blocks_3DCoRect(MPI_COMM_WORLD, trim(fname), n_blocks, &
          nx, n_cc, cc_names, n_gc, n_gc_out, origin, dr, levels, r_min, r_max, &
          get_block_3d, time=time, viewer=viewer)
+    deallocate(cc_3d)
   end subroutine multi_block_test_3d
 #:endif
 
