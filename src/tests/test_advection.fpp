@@ -295,10 +295,10 @@ contains
     x0(3) = z
 #:endif
 
-    select case (advection_velocity_type)
+    select case (adv_par%vtype)
     case (1)
        ! Uniform velocity field with periodic boundaries
-       x0 = x0 - advection_velocity * t
+       x0 = x0 - adv_par%velocity * t
 
     case (2)
        ! Angular rotation around domain center with 1 rad/s
@@ -318,10 +318,10 @@ contains
     x0 = modulo(x0, 1.0_dp)
 
     ! Avoid temporary array
-    dx = x0 - advection_r0
+    dx = x0 - adv_par%r0
     distance = sqrt(dot_product(dx, dx))
 
-    if (advection_use_gaussian) then
+    if (adv_par%use_gaussian) then
        rho = real(exp(-(distance/radius)**2), fp)
     else
        if (distance < radius - border) then
@@ -349,9 +349,9 @@ contains
     real(fp), parameter       :: pi = acos(-1.0_fp)
     real(fp), parameter       :: inv_T = 1/2.0_dp ! Inverse period
 
-    select case (advection_velocity_type)
+    select case (adv_par%vtype)
     case (1)
-       v = advection_velocity(flux_dim)
+       v = adv_par%velocity(flux_dim)
     case (2, 3)
        dr = f4%dr_level(:, f4%block_level(n))
        rr(1) = real(f4%block_origin(1, n) + dr(1) * (i - 0.5_dp), fp)
@@ -361,7 +361,7 @@ contains
 #:endif
        rr(flux_dim) = rr(flux_dim) + real((i0 - 0.5_dp) * dr(flux_dim), fp)
 
-       if (advection_velocity_type == 2) then
+       if (adv_par%vtype == 2) then
           ! Clockwise solid-body rotation
           vel(1) = rr(2) - 0.5_fp
           vel(2) = -(rr(1) - 0.5_fp)

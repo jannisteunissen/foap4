@@ -28,21 +28,19 @@ module m_physics_advection_${NDIM}$d
   character(len=10), parameter :: var_names(n_vars_all) = &
        [character(len=10)      :: "error", "rho"]
 
-  ! Velocity (in case of uniform velocity)
-  real(fp)                     :: advection_velocity(${NDIM}$) = 1.0_fp
-  ${DECLARE_DEVICE('advection_velocity')}$
+  type adv_params_t
+     ! Velocity (in case of uniform velocity)
+     real(fp) :: velocity(NDIM)  = 1.0_fp
+     ! Initial location of solution
+     real(dp) :: r0(NDIM)        = 0.5_dp
+     ! Type of velocity - 1: constant, 2: rotation, 3: swirl
+     integer  :: vtype           = 1
+     ! Whether to use a Gaussian solution
+     logical  :: use_gaussian    = .false.
+  end type adv_params_t
 
-  ! Initial location of solution
-  real(dp)                     :: advection_r0(NDIM) = 0.5_dp
-  ${DECLARE_DEVICE('advection_r0')}$
-
-  ! Whether to use a Gaussian solution
-  logical                      :: advection_use_gaussian = .false.
-  ${DECLARE_DEVICE('advection_use_gaussian')}$
-
-  ! Type of velocity - 1: constant, 2: rotation, 3: swirl
-  integer :: advection_velocity_type = 1
-  ${DECLARE_DEVICE('advection_velocity_type')}$
+  type(adv_params_t) :: adv_par
+  ${DECLARE_DEVICE('adv_par')}$
 
   ! Which variables are temporal
   logical, parameter           :: var_temporal(n_vars_all) = [.false., .true.]
@@ -55,17 +53,11 @@ contains
     integer, intent(in)  :: vtype
     real(dp), intent(in) :: r0(${NDIM}$)
 
-    advection_velocity = real(velocity, fp)
-    ${UPDATE_DEVICE('advection_velocity')}$
-
-    advection_use_gaussian = use_gaussian
-    ${UPDATE_DEVICE('advection_use_gaussian')}$
-
-    advection_velocity_type = vtype
-    ${UPDATE_DEVICE('advection_velocity_type')}$
-
-    advection_r0 = r0
-    ${UPDATE_DEVICE('advection_r0')}$
+    adv_par%velocity = real(velocity, fp)
+    adv_par%use_gaussian = use_gaussian
+    adv_par%vtype = vtype
+    adv_par%r0 = r0
+    ${UPDATE_DEVICE('adv_par%velocity, adv_par%r0, adv_par%vtype, adv_par%use_gaussian')}$
   end subroutine advection_initialize
 
 end module m_physics_advection_${NDIM}$d
