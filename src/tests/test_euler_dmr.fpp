@@ -227,7 +227,7 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, x_boundary)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
 
           x_boundary = dmr_xr + rr(2) / dmr_tan_angle
 
@@ -260,7 +260,7 @@ contains
           i_block = f4%gc_phys(n) + 1
           f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
           ix = f4%bc_data_ix(face, i_block)
-          rr = f4_block_face_coord(f4, i_block, face, i)
+          call f4_block_face_coord(f4, i_block, face, i, rr)
 
           if (rr(1) < dmr_xr) then
              f4%bc_data(i, i_tvars0+1:i_tvars0+n_tvars, ix) = dmr_uL
@@ -282,7 +282,7 @@ contains
           i_block = f4%gc_phys(n) + 1
           f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
           ix = f4%bc_data_ix(face, i_block)
-          rr = f4_block_face_coord(f4, i_block, face, i)
+          call f4_block_face_coord(f4, i_block, face, i, rr)
 
           if (rr(1) < x_boundary) then
              f4%bc_data(i, i_tvars0+1:i_tvars0+n_tvars, ix) = dmr_uL
@@ -302,7 +302,7 @@ contains
           i_block = f4%gc_phys(n) + 1
           f4%bc_data_ix(face, i_block) = abs(f4%bc_data_ix(face, i_block))
           ix = f4%bc_data_ix(face, i_block)
-          rr = f4_block_face_coord(f4, i_block, face, i)
+          call f4_block_face_coord(f4, i_block, face, i, rr)
 
           f4%bc_data(i, i_tvars0+1:i_tvars0+n_tvars, ix) = dmr_uL
           f4%bc_data_type(i, i_tvars0+1:i_tvars0+n_tvars, ix) = f4_bc_fixed_value

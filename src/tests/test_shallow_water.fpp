@@ -210,7 +210,7 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, d_center)')}$ ${COPYIN('dam_center')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
           d_center = sqrt((rr(1) - dam_center(1))**2 + (rr(2) - dam_center(2))**2)
 
           f4%uu(${IJK}$, i_mom0+1:i_mom0+NDIM, n) = 0.0_dp

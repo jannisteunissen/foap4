@@ -719,13 +719,13 @@ contains
          MPI_MAX, f4%mpicomm, ierror)
   end subroutine f4_get_global_highest_level
 
-
   !> Return the coordinates at the center of a grid cell
-  pure function f4_cell_coord(f4, i_block, ${IJK}$) result(rr)
+  pure subroutine f4_cell_coord(f4, i_block, ${IJK}$, rr)
     @{ROUTINE_SEQ()}@
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_block, ${IJK}$
-    real(dp)                  :: rr(NDIM), dr(NDIM)
+    real(dp), intent(out)     :: rr(NDIM)
+    real(dp)                  :: dr(NDIM)
 
     dr = f4%dr_level(:, f4%block_level(i_block))
     rr(1) = f4%block_origin(1, i_block) + dr(1) * (i - 0.5_dp)
@@ -733,17 +733,18 @@ contains
 #:if NDIM == 3
     rr(3) = f4%block_origin(3, i_block) + dr(3) * (k - 0.5_dp)
 #:endif
-  end function f4_cell_coord
+  end subroutine f4_cell_coord
 
   !> Return the coordinates at the center of a cell face on a block
 #:if NDIM == 2
-  pure function f4_block_face_coord(f4, i_block, face, i) result(rr)
+  pure subroutine f4_block_face_coord(f4, i_block, face, i, rr)
     @{ROUTINE_SEQ()}@
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_block
     integer, intent(in)       :: face
     integer, intent(in)       :: i
-    real(dp)                  :: rr(NDIM), dr(NDIM)
+    real(dp), intent(out)     :: rr(NDIM)
+    real(dp)                  :: dr(NDIM)
 
     dr = f4%dr_level(:, f4%block_level(i_block))
     rr = f4%block_origin(:, i_block)
@@ -760,15 +761,16 @@ contains
        rr(1) = rr(1) + dr(1) * (i - 0.5_dp)
        rr(2) = rr(2) + dr(2) * f4%bx(2)
     end select
-  end function f4_block_face_coord
+  end subroutine f4_block_face_coord
 #:elif NDIM == 3
-  pure function f4_block_face_coord(f4, i_block, face, i, j) result(rr)
+  pure subroutine f4_block_face_coord(f4, i_block, face, i, j, rr)
     @{ROUTINE_SEQ()}@
     type(foap4_t), intent(in) :: f4
     integer, intent(in)       :: i_block
     integer, intent(in)       :: face
     integer, intent(in)       :: i, j
-    real(dp)                  :: rr(NDIM), dr(NDIM)
+    real(dp), intent(out)     :: rr(NDIM)
+    real(dp)                  :: dr(NDIM)
 
     dr = f4%dr_level(:, f4%block_level(i_block))
     rr = f4%block_origin(:, i_block)
@@ -796,7 +798,7 @@ contains
        rr(2) = rr(2) + dr(2) * (j - 0.5_dp)
        rr(3) = rr(3) + dr(3) * f4%bx(3)
     end select
-  end function f4_block_face_coord
+  end subroutine f4_block_face_coord
 #:endif
 
   !> Update the information required to update ghost cells

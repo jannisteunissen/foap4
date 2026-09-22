@@ -115,15 +115,17 @@ contains
     call f4_destroy(f4)
   end subroutine benchmark_ghostcell
 
-  pure real(dp) function rho_init(x, y)
-    real(dp), intent(in) :: x, y
-    rho_init = x + y
-  end function rho_init
+  pure subroutine rho_init(x, y, rho)
+    real(dp), intent(in)  :: x, y
+    real(fp), intent(out) :: rho
+    rho = x + y
+  end subroutine rho_init
 
-  pure real(dp) function phi_init(x, y)
+  pure subroutine phi_init(x, y, phi)
     real(dp), intent(in) :: x, y
-    phi_init = x - y
-  end function phi_init
+    real(fp), intent(out) :: phi
+    phi = x - y
+  end subroutine phi_init
 
   subroutine set_init_cond(f4)
     type(foap4_t), intent(inout) :: f4
@@ -134,9 +136,9 @@ contains
     do n = 1, f4%n_blocks
        do j = 1, f4%bx(2)
           do i = 1, f4%bx(1)
-             rr = f4_cell_coord(f4, n, i, j)
-             f4%uu(i, j, 1, n) = real(rho_init(rr(1), rr(2)), fp)
-             f4%uu(i, j, 2, n) = real(phi_init(rr(1), rr(2)), fp)
+             call f4_cell_coord(f4, n, i, j, rr)
+             call rho_init(@{DINDEX(rr)}@, f4%uu(${IJK}$, 1, n))
+             call phi_init(@{DINDEX(rr)}@, f4%uu(${IJK}$, 2, n))
           end do
        end do
     end do

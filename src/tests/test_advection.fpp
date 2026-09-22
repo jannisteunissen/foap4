@@ -222,12 +222,8 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
-#:if NDIM == 2
-          f4%uu(${IJK}$, i_rho, n) = real(rho_solution(rr(1), rr(2), 0.0_dp), fp)
-#:elif NDIM == 3
-          f4%uu(${IJK}$, i_rho, n) = real(rho_solution(rr(1), rr(2), rr(3), 0.0_dp), fp)
-#:endif
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
+          call rho_solution(@{DINDEX(rr)}@, 0.0_dp, f4%uu(${IJK}$, i_rho, n))
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_init_cond
@@ -235,18 +231,15 @@ contains
   subroutine set_error(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, ${IJK}$
-    real(dp)                     :: rr(NDIM), sol
+    real(dp)                     :: rr(NDIM)
+    real(fp)                     :: sol
 
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, sol)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
-#:if NDIM == 2
-          sol = rho_solution(rr(1), rr(2), f4%time)
-#:elif NDIM == 3
-          sol = rho_solution(rr(1), rr(2), rr(3), f4%time)
-#:endif
-          f4%uu(${IJK}$, i_error, n) = f4%uu(${IJK}$, i_rho, n) - real(sol, fp)
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
+          call rho_solution(@{DINDEX(rr)}@, f4%time, sol)
+          f4%uu(${IJK}$, i_error, n) = f4%uu(${IJK}$, i_rho, n) - sol
        end do; ${KJI_CLOSE_LOOP}$
     end do
   end subroutine set_error
@@ -286,14 +279,15 @@ contains
     l2_err = sqrt(my_l2)
   end subroutine compute_error_norms
 
-  pure real(dp) function rho_solution(${XYZ}$, t)
+  subroutine rho_solution(${XYZ}$, t, rho)
     ${ROUTINE_SEQ()}$
-    real(dp), intent(in) :: ${XYZ}$
-    real(dp), intent(in) :: t
-    real(dp)             :: distance, q
-    real(dp), parameter  :: radius = 0.1_dp
-    real(dp), parameter  :: border = 0.05_dp
-    real(dp)             :: x0(NDIM), dx(NDIM), cos_t, sin_t
+    real(dp), intent(in)  :: ${XYZ}$
+    real(dp), intent(in)  :: t
+    real(fp), intent(out) :: rho
+    real(dp)              :: distance, q
+    real(dp), parameter   :: radius = 0.1_dp
+    real(dp), parameter   :: border = 0.05_dp
+    real(dp)              :: x0(NDIM), dx(NDIM), cos_t, sin_t
 
     x0(1) = x
     x0(2) = y
@@ -328,19 +322,19 @@ contains
     distance = sqrt(dot_product(dx, dx))
 
     if (advection_use_gaussian) then
-       rho_solution = exp(-(distance/radius)**2)
+       rho = real(exp(-(distance/radius)**2), fp)
     else
        if (distance < radius - border) then
-          rho_solution = 1.0_dp
+          rho = 1.0_fp
        else if (distance < radius) then
           ! cubic smoothstep: 1 - 3 q^2 + 2 q^3, with q in [0,1]
           q = (distance - radius + border)/border
-          rho_solution = 1.0_dp - (3.0_dp * q**2 - 2.0_dp * q**3)
+          rho = real(1.0_dp - (3.0_dp * q**2 - 2.0_dp * q**3), fp)
        else
-          rho_solution = 0.0_dp
+          rho = 0.0_fp
        end if
     end if
-  end function rho_solution
+  end subroutine rho_solution
 
   pure subroutine get_velocity(flux_dim, v, i0, n, ${IJK}$, f4)
     ${ROUTINE_SEQ()}$
@@ -350,45 +344,44 @@ contains
     integer, intent(in)       :: n       ! block index
     integer, intent(in)       :: ${IJK}$ ! i, j, k
     type(foap4_t), intent(in) :: f4
-    real(dp)                  :: rr(ndim), dr(ndim)
-    real(fp)                  :: vel(ndim)
-    real(dp), parameter       :: pi = acos(-1.0_fp)
-    real(dp), parameter       :: inv_T = 1/2.0_dp ! Inverse period
+    real(dp)                  :: dr(ndim)
+    real(fp)                  :: vel(ndim), rr(ndim), cost
+    real(fp), parameter       :: pi = acos(-1.0_fp)
+    real(fp), parameter       :: inv_T = 1/2.0_dp ! Inverse period
 
     select case (advection_velocity_type)
     case (1)
        v = advection_velocity(flux_dim)
     case (2, 3)
        dr = f4%dr_level(:, f4%block_level(n))
-       rr(1) = f4%block_origin(1, n) + dr(1) * (i - 0.5_dp)
-       rr(2) = f4%block_origin(2, n) + dr(2) * (j - 0.5_dp)
+       rr(1) = real(f4%block_origin(1, n) + dr(1) * (i - 0.5_dp), fp)
+       rr(2) = real(f4%block_origin(2, n) + dr(2) * (j - 0.5_dp), fp)
 #:if NDIM == 3
-       rr(3) = f4%block_origin(3, n) + dr(3) * (k - 0.5_dp)
+       rr(3) = real(f4%block_origin(3, n) + dr(3) * (k - 0.5_dp), fp)
 #:endif
-       rr(flux_dim) = rr(flux_dim) + (i0 - 0.5_dp) * dr(flux_dim)
+       rr(flux_dim) = rr(flux_dim) + real((i0 - 0.5_dp) * dr(flux_dim), fp)
 
        if (advection_velocity_type == 2) then
           ! Clockwise solid-body rotation
-          vel(1) = rr(2) - 0.5_dp
-          vel(2) = -(rr(1) - 0.5_dp)
+          vel(1) = rr(2) - 0.5_fp
+          vel(2) = -(rr(1) - 0.5_fp)
 #:if NDIM == 3
           vel(3) = 0.0_fp
 #:endif
        else
+          cost = cos(inv_T * pi * real(f4%time, fp))
 #:if NDIM == 2
           ! Deforming deformation, see eq. (9.5) in doi:10.1137/0733033
-          vel(1) = -sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * &
-               cos(inv_T * pi * f4%time)
-          vel(2) =  sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * &
-               cos(inv_T * pi * f4%time)
+          vel(1) = -sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * cost
+          vel(2) =  sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * cost
 #:elif NDIM == 3
           ! Deforming deformation in 3D, see eq. (11.2) in doi:10.1137/0733033
           vel(1) = 2 * sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * &
-               sin(2*pi*rr(3)) * cos(inv_T * pi * f4%time)
+               sin(2*pi*rr(3)) * cost
           vel(2) = -sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * &
-               sin(2*pi*rr(3)) * cos(inv_T * pi * f4%time)
+               sin(2*pi*rr(3)) * cost
           vel(3) = -sin(2 * pi * rr(1)) * sin(2 * pi * rr(2)) * &
-               sin(pi*rr(3))**2 * cos(inv_T * pi * f4%time)
+               sin(pi*rr(3))**2 * cost
 #:endif
        end if
        v = vel(flux_dim)

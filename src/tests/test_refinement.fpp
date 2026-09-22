@@ -182,19 +182,17 @@ contains
     call f4_destroy(f4)
   end subroutine test_refinement
 
+
+  pure subroutine phi_init(${XYZ}$, phi)
+    ${ROUTINE_SEQ()}$
+    real(dp), intent(in) :: ${XYZ}$
+    real(fp), intent(out) :: phi
 #:if NDIM == 2
-  pure real(dp) function phi_init(x, y)
-    ${ROUTINE_SEQ()}$
-    real(dp), intent(in) :: x, y
-    phi_init = x + 2*y
-  end function phi_init
+    phi = real(x + 2*y, fp)
 #:elif NDIM == 3
-  pure real(dp) function phi_init(x, y, z)
-    ${ROUTINE_SEQ()}$
-    real(dp), intent(in) :: x, y, z
-    phi_init = x + 2*y + 3*z
-  end function phi_init
+    phi = real(x + 2*y + 3*z, fp)
 #:endif
+  end subroutine phi_init
 
   subroutine bc_callback(f4)
     type(foap4_t), intent(inout) :: f4
@@ -212,8 +210,8 @@ contains
           i_block = f4%gc_phys(n) + 1
           f4%bc_data_ix(${face}$, i_block) = abs(f4%bc_data_ix(${face}$, i_block))
           ix = f4%bc_data_ix(${face}$, i_block)
-          rr = f4_block_face_coord(f4, i_block, ${face}$, i)
-          f4%bc_data(i, i_phi, ix) = real(phi_init(rr(1), rr(2)), fp)
+          call f4_block_face_coord(f4, i_block, ${face}$, i, rr)
+          call phi_init(rr(1), rr(2), f4%bc_data(i, i_phi, ix))
           f4%bc_data_type(i, i_phi, ix) = f4_bc_dirichlet
        end do
 #:elif NDIM == 3
@@ -223,8 +221,8 @@ contains
              f4%bc_data_ix(${face}$, i_block) = abs(f4%bc_data_ix(${face}$, i_block))
              ix = f4%bc_data_ix(${face}$, i_block)
 
-             rr = f4_block_face_coord(f4, i_block, ${face}$, i, j)
-             f4%bc_data(i, j, i_phi, ix) = real(phi_init(rr(1), rr(2), rr(3)), fp)
+             call f4_block_face_coord(f4, i_block, ${face}$, i, j, rr)
+             call phi_init(rr(1), rr(2), rr(3), f4%bc_data(i, j, i_phi, ix))
              f4%bc_data_type(i, j, i_phi, ix) = f4_bc_dirichlet
           end do
        end do
@@ -252,8 +250,8 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr)')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
-          f4%uu(${IJK}$, i_phi, n) = real(phi_init(@{DINDEX(rr)}@), fp)
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
+          call phi_init(@{DINDEX(rr)}@, f4%uu(${IJK}$, i_phi, n))
           f4%uu(${IJK}$, i_err, n) = 0.0_dp
        end do; ${KJI_CLOSE_LOOP}$
     end do
@@ -288,7 +286,8 @@ contains
   subroutine compute_error(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, ${IJK}$
-    real(dp)                     :: rr(NDIM), sol
+    real(dp)                     :: rr(NDIM)
+    real(fp)                     :: sol
     logical                      :: ghost_dim(NDIM), valid_cell
     real(dp), parameter          :: max_difference = 1e-15_dp
     real(dp)                     :: max_err
@@ -315,8 +314,8 @@ contains
 #:endif
 
           if (valid_cell) then
-             rr = f4_cell_coord(f4, n, ${IJK}$)
-             sol = phi_init(@{DINDEX(rr)}@)
+             call f4_cell_coord(f4, n, ${IJK}$, rr)
+             call phi_init(@{DINDEX(rr)}@, sol)
              f4%uu(${IJK}$, i_err, n) = abs(f4%uu(${IJK}$, i_phi, n) - real(sol, fp))
           else
              f4%uu(${IJK}$, i_err, n) = 0.0_dp

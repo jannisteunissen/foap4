@@ -318,7 +318,7 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr)')}$ ${COPYIN('u0')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
 
           if (rr(1) < 0.5_dp) then
              f4%uu(${IJK}$, i_tvars, n) = u0(:, 1)
@@ -359,7 +359,7 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr)')}$ ${COPYIN('k_vec')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
 
           f4%uu(${IJK}$, i_mom0+1:i_mom0+NDIM, n) = 0.0_fp
 
@@ -378,6 +378,7 @@ contains
   subroutine set_initial_conditions_vortex(f4)
     type(foap4_t), intent(inout) :: f4
     integer                      :: n, ${IJK}$
+    real(dp)                     :: rr_dp(NDIM)
     real(fp)                     :: rr(NDIM), rc(NDIM), r2
     real(fp)                     :: rho, p, T
     real(fp)                     :: v(NDIM), dv(NDIM), dT
@@ -401,7 +402,8 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, r2, dv, dT, T, rho, p, v)')}$ ${COPYIN('rc, v_inf')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = real(f4_cell_coord(f4, n, ${IJK}$), fp)
+          call f4_cell_coord(f4, n, ${IJK}$, rr_dp)
+          rr = real(rr_dp, fp)
 
           ! Distance squared from vortex center
           r2 = (rr(1) - rc(1))**2 + (rr(2) - rc(2))**2
@@ -467,7 +469,7 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, r, weight)')}$ ${COPYIN('sedov_center')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
           rr = rr - sedov_center
           r  = sqrt(sum(rr**2))
           weight = merge(1.0_fp, 0.0_fp, r < use_radius)
@@ -486,7 +488,7 @@ contains
     ${PARALLEL_LOOP_FLAT('collapse(NDIM+1) private(rr, r, weight)')}$ ${COPYIN('sedov_center')}$ ${DEFAULT_PRESENT()}$
     do n = 1, f4%n_blocks
        do @{KJI_LOOP_1_to_array(f4%bx)}@
-          rr = f4_cell_coord(f4, n, ${IJK}$)
+          call f4_cell_coord(f4, n, ${IJK}$, rr)
           rr = rr - sedov_center
           r  = sqrt(sum(rr**2))
           weight = merge(1.0_fp, 0.0_fp, r < use_radius)
