@@ -33,7 +33,6 @@ DIMS="both"                     # 2 | 3 | both
 NP=1                            # MPI ranks per test
 OMP_THREADS=""                  # exported as OMP_NUM_THREADS when set
 TIMEOUT=600                     # per-test wall-clock limit in seconds (0 = none)
-RUN_ALL=0                       # include the "extra" tests
 TEST_OVERRIDE=""                # explicit space separated test list
 MPI_RUNNER="mpirun"             # set to "" / "serial" to run without mpirun
 
@@ -47,11 +46,9 @@ MAKE_ARGS=()                    # extra NAME=VALUE pairs for make
 MPI_ARGS=()                     # extra arguments for mpirun
 TEST_ARGS=()                    # extra arguments for every test executable
 
-# Curated test sets (bar the benchmark/extra ones).
+# Curated test sets.
 MAIN_2D="test_refinement_2d test_advection_2d test_xdmf_writer_2d test_euler_2d test_shallow_water_2d"
-EXTRA_2D="test_benchmark_ghostcell_2d test_euler_dmr_2d"
 MAIN_3D="test_refinement_3d test_advection_3d test_xdmf_writer_3d test_euler_3d"
-EXTRA_3D=""
 
 # ---------------------------------------------------------------------------
 # Help
@@ -80,7 +77,6 @@ Test selection / execution:
   -D, --dims DIM          2 | 3 | both                   [default: both]
   -n, --np N              MPI ranks per test             [default: 1]
       --threads N         Export OMP_NUM_THREADS=N for the tests
-      --all               Also run extra/benchmark tests
       --tests "T1 T2 ..." Explicit list of test names to run
       --timeout SEC       Per-test timeout, 0 to disable  [default: 600]
       --serial            Run the executables directly (no mpirun)
@@ -114,7 +110,6 @@ while [[ $# -gt 0 ]]; do
     -D|--dims)       DIMS="$2"; shift 2 ;;
     -n|--np)         NP="$2"; shift 2 ;;
     --threads)       OMP_THREADS="$2"; shift 2 ;;
-    --all)           RUN_ALL=1; shift ;;
     --tests)         TEST_OVERRIDE="$2"; shift 2 ;;
     --timeout)       TIMEOUT="$2"; shift 2 ;;
     --serial)        MPI_RUNNER=""; shift ;;
@@ -235,15 +230,9 @@ build_test_list() {
   else
     if [[ "$DIMS" == "2" || "$DIMS" == "both" ]]; then
       read -r -a sel <<< "$MAIN_2D"; tests+=("${sel[@]}")
-      if [[ "$RUN_ALL" -eq 1 ]]; then
-        read -r -a sel <<< "$EXTRA_2D"; tests+=("${sel[@]}")
-      fi
     fi
     if [[ "$DIMS" == "3" || "$DIMS" == "both" ]]; then
       read -r -a sel <<< "$MAIN_3D"; tests+=("${sel[@]}")
-      if [[ "$RUN_ALL" -eq 1 && -n "$EXTRA_3D" ]]; then
-        read -r -a sel <<< "$EXTRA_3D"; tests+=("${sel[@]}")
-      fi
     fi
   fi
   printf '%s\n' "${tests[@]}"
@@ -406,4 +395,3 @@ if [[ "${#MISSING[@]}" -gt 0 ]]; then
 fi
 
 exit "$rc_overall"
-
