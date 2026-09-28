@@ -324,9 +324,11 @@ contains
        if (distance < radius - border) then
           rho = 1.0_fp
        else if (distance < radius) then
-          ! cubic smoothstep: 1 - 3 q^2 + 2 q^3, with q in [0,1]
           q = (distance - radius + border)/border
+          ! cubic smoothstep: 1 - 3 q^2 + 2 q^3, with q in [0,1]
           rho = real(1.0_dp - (3.0_dp * q**2 - 2.0_dp * q**3), fp)
+          ! C^3 smootherstep alternative (7th order polynomial)
+          ! rho = real(1.0_dp - (q**4 * (35 - 84*q + 70*q**2 - 20*q**3)), fp)
        else
           rho = 0.0_fp
        end if
@@ -369,7 +371,7 @@ contains
     real(dp)                  :: dr(ndim)
     real(fp)                  :: vel(ndim), rr(ndim), cost
     real(fp), parameter       :: pi = acos(-1.0_fp)
-    real(fp), parameter       :: inv_T = 1/2.0_dp ! Inverse period
+    real(fp), parameter       :: inv_T = 1/1.0_dp ! Inverse period
 
     dr = f4%dr_level(:, f4%block_level(n))
     rr(1) = real(f4%block_origin(1, n) + dr(1) * (i - 0.5_dp), fp)
