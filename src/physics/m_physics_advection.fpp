@@ -33,8 +33,6 @@ module m_physics_advection_${NDIM}$d
      real(fp) :: velocity(NDIM)  = 1.0_fp
      ! Initial location of solution
      real(dp) :: r0(NDIM)        = 0.5_dp
-     ! Type of velocity - 1: constant, 2: rotation, 3: swirl
-     integer  :: vtype           = 1
      ! Whether to use a Gaussian solution
      logical  :: use_gaussian    = .false.
   end type adv_params_t
@@ -47,17 +45,15 @@ module m_physics_advection_${NDIM}$d
 
 contains
 
-  subroutine advection_initialize(velocity, use_gaussian, vtype, r0)
+  subroutine advection_initialize(velocity, use_gaussian, r0)
     real(dp), intent(in) :: velocity(${NDIM}$)
     logical, intent(in)  :: use_gaussian
-    integer, intent(in)  :: vtype
     real(dp), intent(in) :: r0(${NDIM}$)
 
     adv_par%velocity = real(velocity, fp)
     adv_par%use_gaussian = use_gaussian
-    adv_par%vtype = vtype
     adv_par%r0 = r0
-    ${UPDATE_DEVICE('adv_par%velocity, adv_par%r0, adv_par%vtype, adv_par%use_gaussian')}$
+    ${UPDATE_DEVICE('adv_par%velocity, adv_par%r0, adv_par%use_gaussian')}$
   end subroutine advection_initialize
 
 end module m_physics_advection_${NDIM}$d

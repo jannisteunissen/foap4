@@ -2,6 +2,7 @@
 #:include 'definitions_parallel.fpp'
 #:set LIMITER = getvar('USE_LIMITER', 'weno5')
 #:set FLUX_SCHEME = getvar('USE_FLUX_SCHEME', 'hll')
+#:set ADVECTION_TYPE = getvar('USE_ADVECTION_TYPE', 'uniform')
 
 program test_adv
   use iso_fortran_env, only: int64
@@ -37,7 +38,6 @@ program test_adv
   integer           :: bx(NDIM)                 = 16
   integer           :: num_outputs              = 4
   integer           :: n_gc_out                 = 1
-  integer           :: velocity_type            = 1
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=40) :: integrator_name          = "heuns_method"
   character(len=40) :: viewer                   = "visit"
@@ -70,8 +70,6 @@ program test_adv
   call CFG_add_get(cfg, 'blocks_per_dim', blocks_per_dim, &
        'Number of blocks (per dimension) on coarse grid')
   call CFG_add_get(cfg, 'max_blocks', max_blocks, 'Max. number of blocks')
-  call CFG_add_get(cfg, 'velocity_type', velocity_type, &
-       'Velocity type (1: uniform, 2: rotation, 3: deform)')
   call CFG_add_get(cfg, 'velocity', velocity, 'Velocity (for uniform profile)')
   call CFG_add_get(cfg, 'r0', r0, 'Center of initial solution')
   call CFG_add_get(cfg, 'end_time', end_time, 'End time')
@@ -84,8 +82,6 @@ program test_adv
 
   if (max_refinement_level < min_refinement_level) &
        error stop "max_refinement_level < min_refinement_level"
-  if (velocity_type < 1 .or. velocity_type > 3) &
-       error stop "velocity type should be between 1 and 3"
 
   call test_advection(f4, bx, do_refinement, max_blocks, &
        num_outputs, "output/test_adv_${NDIM}$d", end_time, integrator_name)
@@ -116,7 +112,7 @@ contains
     real(dp)                     :: t0, t1
     real(dp)                     :: rho_initial_sum, rho_sum, l1_err, l2_err
 
-    call advection_initialize(velocity, use_gaussian, velocity_type, r0)
+    call advection_initialize(velocity, use_gaussian, r0)
 
     f4%time = 0.0_dp
     dt_lim = 0.0_dp
@@ -287,7 +283,7 @@ contains
     real(dp)              :: distance, q
     real(dp), parameter   :: radius = 0.1_dp
     real(dp), parameter   :: border = 0.05_dp
-    real(dp)              :: x0(NDIM), dx(NDIM), cos_t, sin_t
+    real(dp)              :: x0(NDIM), dx(NDIM)
 
     x0(1) = x
     x0(2) = y
@@ -295,24 +291,25 @@ contains
     x0(3) = z
 #:endif
 
-    select case (adv_par%vtype)
-    case (1)
-       ! Uniform velocity field with periodic boundaries
-       x0 = x0 - adv_par%velocity * t
+#:if ADVECTION_TYPE == 'uniform'
+    ! Uniform velocity field with periodic boundaries
+    x0 = x0 - adv_par%velocity * t
 
-    case (2)
-       ! Angular rotation around domain center with 1 rad/s
-       dx = x0 - 0.5_dp
-       cos_t = cos(t)
-       sin_t = sin(t)
+#:elif ADVECTION_TYPE == 'rotate'
+    block
+      real(dp)              :: cos_t, sin_t
+      ! Angular rotation around domain center with 1 rad/s
+      dx = x0 - 0.5_dp
+      cos_t = cos(t)
+      sin_t = sin(t)
 
-       x0(1) = 0.5_dp + cos_t * dx(1) - sin_t * dx(2)
-       x0(2) = 0.5_dp + sin_t * dx(1) + cos_t * dx(2)
-    case (3)
-       ! No simple analytic solution is available, except for t = T, where T is
-       ! the period of the deformation
-    case default
-    end select
+      x0(1) = 0.5_dp + cos_t * dx(1) - sin_t * dx(2)
+      x0(2) = 0.5_dp + sin_t * dx(1) + cos_t * dx(2)
+    end block
+#:elif ADVECTION_TYPE == 'deform'
+    ! No simple analytic solution is available, except for t = T, where T is
+    ! the period of the deformation
+#:endif
 
     ! Keep the point inside the periodic domain
     x0 = modulo(x0, 1.0_dp)
@@ -344,50 +341,63 @@ contains
     integer, intent(in)       :: n       ! block index
     integer, intent(in)       :: ${IJK}$ ! i, j, k
     type(foap4_t), intent(in) :: f4
+
+#:if ADVECTION_TYPE == 'uniform'
+    v = adv_par%velocity(flux_dim)
+
+#:elif ADVECTION_TYPE == 'rotate'
+    real(dp)                  :: dr(ndim)
+    real(fp)                  :: vel(ndim), rr(ndim)
+
+    dr = f4%dr_level(:, f4%block_level(n))
+    rr(1) = real(f4%block_origin(1, n) + dr(1) * (i - 0.5_dp), fp)
+    rr(2) = real(f4%block_origin(2, n) + dr(2) * (j - 0.5_dp), fp)
+#:if NDIM == 3
+    rr(3) = real(f4%block_origin(3, n) + dr(3) * (k - 0.5_dp), fp)
+#:endif
+    rr(flux_dim) = rr(flux_dim) + real((i0 - 0.5_dp) * dr(flux_dim), fp)
+
+    ! Clockwise solid-body rotation
+    vel(1) = rr(2) - 0.5_fp
+    vel(2) = -(rr(1) - 0.5_fp)
+#:if NDIM == 3
+    vel(3) = 0.0_fp
+#:endif
+    v = vel(flux_dim)
+
+#:elif ADVECTION_TYPE == 'deform'
     real(dp)                  :: dr(ndim)
     real(fp)                  :: vel(ndim), rr(ndim), cost
     real(fp), parameter       :: pi = acos(-1.0_fp)
     real(fp), parameter       :: inv_T = 1/2.0_dp ! Inverse period
 
-    select case (adv_par%vtype)
-    case (1)
-       v = adv_par%velocity(flux_dim)
-    case (2, 3)
-       dr = f4%dr_level(:, f4%block_level(n))
-       rr(1) = real(f4%block_origin(1, n) + dr(1) * (i - 0.5_dp), fp)
-       rr(2) = real(f4%block_origin(2, n) + dr(2) * (j - 0.5_dp), fp)
+    dr = f4%dr_level(:, f4%block_level(n))
+    rr(1) = real(f4%block_origin(1, n) + dr(1) * (i - 0.5_dp), fp)
+    rr(2) = real(f4%block_origin(2, n) + dr(2) * (j - 0.5_dp), fp)
 #:if NDIM == 3
-       rr(3) = real(f4%block_origin(3, n) + dr(3) * (k - 0.5_dp), fp)
+    rr(3) = real(f4%block_origin(3, n) + dr(3) * (k - 0.5_dp), fp)
 #:endif
-       rr(flux_dim) = rr(flux_dim) + real((i0 - 0.5_dp) * dr(flux_dim), fp)
+    rr(flux_dim) = rr(flux_dim) + real((i0 - 0.5_dp) * dr(flux_dim), fp)
 
-       if (adv_par%vtype == 2) then
-          ! Clockwise solid-body rotation
-          vel(1) = rr(2) - 0.5_fp
-          vel(2) = -(rr(1) - 0.5_fp)
-#:if NDIM == 3
-          vel(3) = 0.0_fp
-#:endif
-       else
-          cost = cos(inv_T * pi * real(f4%time, fp))
+    cost = cos(inv_T * pi * real(f4%time, fp))
 #:if NDIM == 2
-          ! Deforming deformation, see eq. (9.5) in doi:10.1137/0733033
-          vel(1) = -sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * cost
-          vel(2) =  sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * cost
+    ! Deforming deformation, see eq. (9.5) in doi:10.1137/0733033
+    vel(1) = -sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * cost
+    vel(2) =  sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * cost
 #:elif NDIM == 3
-          ! Deforming deformation in 3D, see eq. (11.2) in doi:10.1137/0733033
-          vel(1) = 2 * sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * &
-               sin(2*pi*rr(3)) * cost
-          vel(2) = -sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * &
-               sin(2*pi*rr(3)) * cost
-          vel(3) = -sin(2 * pi * rr(1)) * sin(2 * pi * rr(2)) * &
-               sin(pi*rr(3))**2 * cost
+    ! Deforming deformation in 3D, see eq. (11.2) in doi:10.1137/0733033
+    vel(1) = 2 * sin(pi * rr(1))**2 * sin(2 * pi * rr(2)) * &
+         sin(2*pi*rr(3)) * cost
+    vel(2) = -sin(2 * pi * rr(1)) * sin(pi * rr(2))**2 * &
+         sin(2*pi*rr(3)) * cost
+    vel(3) = -sin(2 * pi * rr(1)) * sin(2 * pi * rr(2)) * &
+         sin(pi*rr(3))**2 * cost
 #:endif
-       end if
-       v = vel(flux_dim)
-    case default
-       v = 0.0_fp
-    end select
+    v = vel(flux_dim)
+
+#:else
+    v = 0
+#:endif
   end subroutine get_velocity
 
 #:include 'physics_advection.fpp'
