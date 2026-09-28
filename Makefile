@@ -217,7 +217,7 @@ NUMERICS_GEN_3D := $(patsubst $(NUMERICSDIR)/%.fpp,$(GENDIR)/%_3d.f90,$(FLUX_FPP
 # ==============================================================================
 # Phony targets
 # ==============================================================================
-.PHONY: all clean 2d 3d libs lib2d lib3d help build-summary
+.PHONY: all clean 2d 3d libs lib2d lib3d help build-summary show-build-dir
 
 all: libs $(TARGETS_2D) $(TARGETS_3D)
 	@$(MAKE) --no-print-directory build-summary
@@ -237,6 +237,9 @@ build-summary:
 	@echo "  Float bits      : $(FLOAT_BITS)"
 	@echo "  Binaries in     : $(BINDIR)"
 	@echo "=============================================="
+
+show-build-dir:
+	@echo "$(BUILDDIR)"
 
 libs: lib2d lib3d
 
