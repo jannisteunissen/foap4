@@ -101,7 +101,7 @@ contains
     type(foap4_t), intent(inout) :: f4
     real(dp), intent(in)         :: dt     !< Current time step
     real(dp), intent(out)        :: dt_lim !< Time step limit
-    !> One of the pre-defined time integrators (e.g. af_heuns_method)
+    !> One of the pre-defined time integrators (e.g. rk_heuns_method)
     integer, intent(in)          :: time_integrator
     !> Forward Euler method provided by the user
     procedure(subr_feuler)       :: forward_euler
@@ -174,8 +174,7 @@ contains
        ${UPDATE_DEVICE('f4%time')}$
        call forward_euler(f4, 0.5_dp*dt, dt_lim, offset, &
             1, [0], [1.0_dp], 2*offset, 2, n_steps)
-       f4%time = time_in + 0.5_dp * dt
-       ${UPDATE_DEVICE('f4%time')}$
+       ! No need to update time here
        call forward_euler(f4, dt, dt_lim, 2*offset, &
             1, [0], [1.0_dp], 3*offset, 3, n_steps)
        f4%time = time_in + dt
