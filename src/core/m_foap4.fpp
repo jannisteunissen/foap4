@@ -624,8 +624,10 @@ contains
     end do
 
     associate (bc_data_ix => f4%bc_data_ix, bflux_ix => f4%bflux_ix)
-      ${UPDATE_DEVICE('bc_data_ix(:, 1:f4%n_blocks)')}$
-      ${UPDATE_DEVICE('bflux_ix(:, 1:f4%n_blocks)')}$
+      if (f4%n_blocks > 0) then
+         ${UPDATE_DEVICE('bc_data_ix(:, 1:f4%n_blocks)')}$
+         ${UPDATE_DEVICE('bflux_ix(:, 1:f4%n_blocks)')}$
+      end if
     end associate
 
   end subroutine set_face_data_storage
@@ -702,8 +704,10 @@ contains
     associate (block_origin => f4%block_origin, &
          block_level => f4%block_level)
       ${UPDATE_DEVICE('f4%n_blocks')}$
-      ${UPDATE_DEVICE('block_origin(:, 1:f4%n_blocks)')}$
-      ${UPDATE_DEVICE('block_level(1:f4%n_blocks)')}$
+      if (f4%n_blocks > 0) then
+         ${UPDATE_DEVICE('block_origin(:, 1:f4%n_blocks)')}$
+         ${UPDATE_DEVICE('block_level(1:f4%n_blocks)')}$
+      end if
     end associate
   end subroutine f4_set_quadrants
 
