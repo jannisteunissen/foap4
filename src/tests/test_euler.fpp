@@ -39,7 +39,7 @@ program euler
   real(dp)          :: load_imbalance_threshold = 1.1_dp
   character(len=10) :: test_case          = "sod"
   character(len=40) :: integrator_name    = "heuns_method"
-  character(len=40) :: amr_variable       = "rho"
+  character(len=40) :: amr_variable       = ""
   character(len=40) :: viewer             = "visit"
   character(len=200) :: output_prefix     = "output/test_euler_${NDIM}$d"
   logical           :: write_vtu          = .false.
@@ -101,7 +101,11 @@ program euler
   case ("energy")
      i_amr_var = i_e
   case default
-     error stop "Invalid value for amr_variable (options: rho, energy)"
+     if (test_case == "sedov") then
+        i_amr_var = i_e
+     else
+        i_amr_var = i_rho
+     end if
   end select
 
   call test_euler(f4, bx, min_level, max_blocks, &
