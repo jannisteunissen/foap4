@@ -72,6 +72,7 @@ end subroutine get_flux
 
 !> This implements formula (10.52) from "Riemann Solvers and Numerical Methods
 !> for Fluid Dynamics" by Toro.
+!> Note: with this routine, HLL becomes the HLLE scheme
 pure subroutine get_min_max_wavespeed(flux_dim, u_LR, cmin, cmax, i0, n, ${IJK}$, f4)
   ${ROUTINE_SEQ()}$
   integer, intent(in)       :: flux_dim
