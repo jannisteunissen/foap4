@@ -194,6 +194,7 @@ TARGETS_2D := $(addprefix $(BINDIR)/,\
     test_benchmark_ghostcell_2d \
     test_shallow_water_2d \
     test_euler_dmr_2d \
+    test_gpu_mpi_2d \
 )
 
 TARGETS_3D := $(addprefix $(BINDIR)/,\
@@ -201,6 +202,7 @@ TARGETS_3D := $(addprefix $(BINDIR)/,\
     test_advection_3d \
     test_xdmf_writer_3d \
     test_euler_3d \
+    test_gpu_mpi_3d \
 )
 
 # ==============================================================================

@@ -49,6 +49,8 @@ module m_foap4_${NDIM}$d
   public :: f4_fix_c2f_flux
   public :: f4_compute_sum
   public :: f4_compute_max
+  public :: f4_mpi_isend_wrapper
+  public :: f4_mpi_irecv_wrapper
 
 contains
 
@@ -2113,7 +2115,7 @@ contains
        ihi = f4%send_offset(rank+1)
 
        if (ihi >= ilo) then
-          call mpi_isend_wrapper(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
+          call f4_mpi_isend_wrapper(f4%send_buffer(ilo:ihi), ihi-ilo+1, &
                rank, tag, f4%mpicomm, send_req, n_send, ierr)
        end if
 
@@ -2121,7 +2123,7 @@ contains
        ihi = f4%recv_offset(rank+1)
 
        if (ihi >= ilo) then
-          call mpi_irecv_wrapper(f4%recv_buffer(ilo:ihi), ihi-ilo+1, &
+          call f4_mpi_irecv_wrapper(f4%recv_buffer(ilo:ihi), ihi-ilo+1, &
                rank, tag, f4%mpicomm, recv_req, n_recv, ierr)
        end if
     end do
@@ -2139,7 +2141,7 @@ contains
   !> wrapper, there is no offset in "buf". The large-count interface
   !> (mpi_isend_c) is not widely supported, but can replace the use of
   !> multiple messages in the future.
-  subroutine mpi_isend_wrapper(buf, count, dest, tag, comm, requests, nreqs, ierror)
+  subroutine f4_mpi_isend_wrapper(buf, count, dest, tag, comm, requests, nreqs, ierror)
     integer(MPI_COUNT_KIND), intent(in) :: count
     integer, intent(in)                 :: dest, tag
     real(fp), intent(in)                :: buf(count)
@@ -2184,9 +2186,9 @@ contains
     end do
 
     if (present(ierror)) ierror = MPI_SUCCESS
-  end subroutine mpi_isend_wrapper
+  end subroutine f4_mpi_isend_wrapper
 
-  subroutine mpi_irecv_wrapper(buf, count, source, tag, comm, requests, nreqs, ierror)
+  subroutine f4_mpi_irecv_wrapper(buf, count, source, tag, comm, requests, nreqs, ierror)
     integer(MPI_COUNT_KIND), intent(in) :: count
     integer, intent(in)                 :: source, tag
     real(fp), intent(inout)             :: buf(count)
@@ -2231,7 +2233,7 @@ contains
     end do
 
     if (present(ierror)) ierror = MPI_SUCCESS
-  end subroutine mpi_irecv_wrapper
+  end subroutine f4_mpi_irecv_wrapper
 
   !> After buffers have been communicated, handle all ghost cells for "round
   !> one", which excludes coarse-to-fine interpolation
@@ -3852,7 +3854,7 @@ contains
 
           if (n_blocks_transfer > 0) then
              count = dsize * n_blocks_transfer
-             call mpi_irecv_wrapper(f4%uu(@{DTIMES(:)}@, :, block_ix), &
+             call f4_mpi_irecv_wrapper(f4%uu(@{DTIMES(:)}@, :, block_ix), &
                   count, rank, tag, f4%mpicomm, recv_req, n_recv, ierr)
              block_ix = block_ix + n_blocks_transfer
           end if
@@ -3873,7 +3875,7 @@ contains
 
           if (n_blocks_transfer > 0) then
              count = dsize * n_blocks_transfer
-             call mpi_isend_wrapper(f4%uu(@{DTIMES(:)}@, :, block_ix), &
+             call f4_mpi_isend_wrapper(f4%uu(@{DTIMES(:)}@, :, block_ix), &
                   count, rank, tag, f4%mpicomm, send_req, n_send, ierr)
              block_ix = block_ix + n_blocks_transfer
           end if
