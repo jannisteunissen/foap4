@@ -4,10 +4,7 @@ set -e
 
 cd p4est
 
-if [ ! -f "./configure" ]; then
-    ./bootstrap
-fi
-
+./bootstrap
 mkdir -p build
 cd build
 
