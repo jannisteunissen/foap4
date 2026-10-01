@@ -3656,8 +3656,9 @@ contains
 
     if (load_imbalance > load_imbalance_threshold) call f4_partition(f4)
 
-    t0 = MPI_Wtime()
     call update_ghostcell_pattern(f4)
+
+    t0 = MPI_Wtime()
     call set_face_data_storage(f4)
     if (associated(f4%bc_callback)) call f4%bc_callback(f4)
     t1 = MPI_Wtime()
