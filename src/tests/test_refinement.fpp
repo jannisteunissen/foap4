@@ -73,8 +73,8 @@ program test_ref
      r_ref = 0.5_dp
 
      ! Use only two steps of additional refinement
-     call test_refinement(f4, n_gc, min_level, 2, r_ref, .true., &
-          test_coarsening, write_output, trim(output_name), n)
+     call test_refinement(f4, n_gc, min_level, min(num_refine_steps, 2), &
+          r_ref, .true., test_coarsening, write_output, trim(output_name), n)
   end do
 
   do n_gc = 1, 4

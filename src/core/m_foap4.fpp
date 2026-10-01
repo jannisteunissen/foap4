@@ -3677,6 +3677,8 @@ contains
     if (offset_copy + n_blocks_old > size(f4%uu, NDIM+2)) then
        write(error_unit, "(A,I0,A,I0)") "ERROR: allocated_blocks = ", &
             size(f4%uu, NDIM+2), ", copy requires ", offset_copy + n_blocks_old
+       write(error_unit, "(A,I0,A,I0)") "       n_blocks_old = ", &
+            n_blocks_old, ", n_blocks_new = ", n_blocks_new
        error stop "Not enough block memory for copying"
     end if
 
