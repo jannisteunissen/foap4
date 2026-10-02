@@ -118,13 +118,13 @@ contains
   pure subroutine rho_init(x, y, rho)
     real(dp), intent(in)  :: x, y
     real(fp), intent(out) :: rho
-    rho = x + y
+    rho = real(x + y, fp)
   end subroutine rho_init
 
   pure subroutine phi_init(x, y, phi)
     real(dp), intent(in) :: x, y
     real(fp), intent(out) :: phi
-    phi = x - y
+    phi = real(x - y, fp)
   end subroutine phi_init
 
   subroutine set_init_cond(f4)
