@@ -116,7 +116,6 @@ copyin(${varlist}$)
 #:enddef
 
 #:def DEFAULT_PRESENT()
-defaultmap(present)
 #:enddef
 
 #:def COPYIN(varlist)
