@@ -30,6 +30,7 @@ To see a list of compilation options, use
 Compilation examples:
 
     make
+    make OFFLOAD=acc # Default
     make OFFLOAD=omp
     make FLOAT_BITS=32 OFFLOAD=ompcpu
     make DEBUG=1 OFFLOAD=none
@@ -38,10 +39,10 @@ The `BUILDDIR` will automatically be set based on the compiler and main compilat
 
 ## Included examples
 
-These are compiled under `$BUILDDIR/bin/`, typically as both a 2D and 3D variant. Some notable tests/examples are:
+These are compiled under `$BUILDDIR/bin/`, typically as both a 2D and 3D variant. Relevant tests/examples are:
 
 * `test_refinement_2/3d`: tests mesh refinement, prolongation and restriction
-* `test_xdmf_writer_2/3d`: tests XDMF output
+* `test_xdmf_writer_2/3d`: tests Xdmf output
 * `test_advection_2/3d`: simple scalar advection test
 * `test_euler_2/3d`: solves Euler's equations of gas dynamics
 
@@ -53,11 +54,17 @@ When using OpenMP, it can be important to specify `--bind-to none` so that the O
 
 ## Viewing results
 
-There is currently an inconsistency between Visit and Paraview regarding the order of XDMF data. To write output that can be viewed from Paraview, add `viewer="paraview"` to `io_write_grid` calls, like:
+There is currently an inconsistency between Visit and Paraview regarding the order of Xdmf data. To write output that can be viewed from Paraview, add `viewer="paraview"` to `io_write_grid` calls, like:
 
     call io_write_grid(f4, base_name, n_output, viewer="paraview")
 
-Then use the legacy `XDMF Reader`. For visit no `viewer="visit"` argument is required, since it is the default.
+Then use the legacy `Xdmf Reader`. For visit no `viewer="visit"` argument is required, since it is the default.
 For most of the included test cases, the type of output is controlled by an optional argument, like:
 
     mpirun -np 1 <builddir>/bin/test_euler_2d -viewer=paraview
+
+### Ghost cells with Xdmf
+
+Visit can use ghost cell data from Xdmf files to render surfaces and volumes correctly at block boundaries. To enable this, provide `n_gc_out=1` as an argument to `io_write_grid()`.
+
+A [pull request](https://github.com/visit-dav/visit/pull/21150) has been opened to fix the use of ghost cells in Visit with 2D Xdmf files. In 3D, things should work fine.
