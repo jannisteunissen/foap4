@@ -1,9 +1,9 @@
 # TODO list
 
-- Implement flux fixing at refinement boundaries
-- Implement 3D
+- Improve documentation, maybe add nice looking examples
+- Test on AMD hardware
 
-# p4est questions
+## p4est questions
 
 - Can refine and coarsen be combined with a single flag?
 - How to construct coarse grid hierarchy?
